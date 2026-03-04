@@ -38,6 +38,10 @@ export interface Workspace {
   member_count: number;
 }
 
+export interface WorkspaceDetail extends Workspace {
+  group_count: number;
+}
+
 export interface WorkspaceMember {
   user_id: string;
   email: string;
@@ -75,6 +79,20 @@ export interface ResourcePermission {
   shares: ResourceShare[];
 }
 
+export interface AdminResourcePermission {
+  id: string;
+  service_name: string;
+  resource_type: string;
+  resource_id: string;
+  workspace_id: string;
+  owner_id: string;
+  owner_email: string | null;
+  visibility: string;
+  created_at: string;
+  share_count: number;
+  shares: ResourceShare[];
+}
+
 export interface ResourceShare {
   id: string;
   grantee_type: string;
@@ -91,10 +109,59 @@ export interface PaginatedResponse<T> {
   page_size: number;
 }
 
+export interface TopWorkspace {
+  id: string;
+  name: string;
+  slug: string;
+  member_count: number;
+}
+
+export interface WorkspaceOption {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export interface Stats {
   total_users: number;
   total_workspaces: number;
   total_groups: number;
   total_resources: number;
+  active_users: number;
+  inactive_users: number;
   recent_users: User[];
+  top_workspaces: TopWorkspace[];
+}
+
+export interface ActivityLog {
+  id: string;
+  action: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  actor_email: string | null;
+  target_type: string;
+  target_id: string;
+  workspace_id: string | null;
+  detail: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface CsvImportRow {
+  email: string;
+  name: string;
+  workspace_slug: string;
+  role: string;
+  error: string | null;
+}
+
+export interface CsvImportPreview {
+  rows: CsvImportRow[];
+  valid_count: number;
+  error_count: number;
+}
+
+export interface CsvImportResult {
+  users_created: number;
+  memberships_added: number;
+  errors: string[];
 }
