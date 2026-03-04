@@ -5,7 +5,7 @@ into docu-store (or any FastAPI app). Use this when working in the docu-store re
 
 ## Prerequisites
 
-1. Identity service running at `http://localhost:8001` (or configured URL)
+1. Identity service running at `http://localhost:90003` (or configured URL)
 2. JWT public key available (from identity service's `/keys/public.pem`)
 3. SDK installed: `uv add daikon-identity-sdk` or editable install from `/Users/sidx/workspace/identity-service/sdk`
 
@@ -34,7 +34,7 @@ from identity_sdk.middleware import JWTAuthMiddleware
 
 # Load the identity service's public key
 PUBLIC_KEY = Path("path/to/identity-service-public.pem").read_text()
-# Or fetch from identity service: GET http://localhost:8001/.well-known/jwks.json (future)
+# Or fetch from identity service: GET http://localhost:90003/.well-known/jwks.json (future)
 
 app.add_middleware(
     JWTAuthMiddleware,
@@ -62,7 +62,7 @@ def get_permission_client() -> PermissionClient:
     global _permission_client
     if _permission_client is None:
         _permission_client = PermissionClient(
-            base_url="http://localhost:8001",  # from settings
+            base_url="http://localhost:90003",  # from settings
             service_name="docu-store",
         )
     return _permission_client
@@ -247,7 +247,7 @@ from identity_sdk.dependencies import (
 ```python
 from identity_sdk.permissions import PermissionClient
 
-client = PermissionClient(base_url="http://localhost:8001", service_name="docu-store")
+client = PermissionClient(base_url="http://localhost:90003", service_name="docu-store")
 await client.can(token, "artifact", artifact_id, "edit")  # -> bool
 await client.register_resource(token, "artifact", id, workspace_id, owner_id)
 await client.check(token, [PermissionCheck(...), ...])  # -> list[PermissionResult]
@@ -274,8 +274,8 @@ Run a one-time script that:
 ## Network Configuration
 
 Both services must be on the same Docker network:
-- Identity service: `docker compose up` in identity-service repo (port 8001)
+- Identity service: `docker compose up` in identity-service repo (port 90003)
 - Docu-store: `make docker-up` in docu-store repo
 - Shared network: `docu_store-network` (external, created once)
-- Inside Docker, docu-store reaches identity service at `http://identity-service:8001`
-- In local dev (no Docker for app), use `http://localhost:8001`
+- Inside Docker, docu-store reaches identity service at `http://identity-service:90003`
+- In local dev (no Docker for app), use `http://localhost:90003`

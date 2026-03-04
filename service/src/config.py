@@ -8,10 +8,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Database
-    database_url: str = "postgresql+asyncpg://identity:identity_dev@localhost:5433/identity"
+    database_url: str = "postgresql+asyncpg://identity:identity_dev@localhost:90001/identity"
 
     # Redis
-    redis_url: str = "redis://localhost:6380/0"
+    redis_url: str = "redis://localhost:90002/0"
 
     # JWT
     jwt_private_key_path: Path = Path("keys/private.pem")
@@ -31,8 +31,8 @@ class Settings(BaseSettings):
 
     # Service
     service_host: str = "0.0.0.0"
-    service_port: int = 8001
-    base_url: str = "http://localhost:8001"
+    service_port: int = 90003
+    base_url: str = "http://localhost:90003"
     frontend_url: str = "http://localhost:3000"
 
     # CORS

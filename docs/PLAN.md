@@ -540,7 +540,7 @@ services:
       POSTGRES_USER: identity
       POSTGRES_PASSWORD: identity_dev
     ports:
-      - "5433:5432"
+      - "90001:5432"
     volumes:
       - identity_pg_data:/var/lib/postgresql/data
     networks:
@@ -549,14 +549,14 @@ services:
   identity-redis:
     image: redis:7-alpine
     ports:
-      - "6380:6379"
+      - "90002:6379"
     networks:
       - docu_store-network
 
   identity-service:
     build: ./service
     ports:
-      - "8001:8001"
+      - "90003:90003"
     environment:
       DATABASE_URL: postgresql+asyncpg://identity:identity_dev@identity-postgres:5432/identity
       REDIS_URL: redis://identity-redis:6379/0

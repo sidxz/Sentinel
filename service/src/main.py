@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from src.api.admin_routes import router as admin_router
 from src.api.auth_routes import router as auth_router
 from src.api.group_routes import router as group_router
 from src.api.permission_routes import router as permission_router
@@ -40,6 +41,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(admin_router)
 app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(workspace_router)
