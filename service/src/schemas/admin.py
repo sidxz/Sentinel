@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AdminUserResponse(BaseModel):
@@ -63,6 +63,99 @@ class AdminWorkspaceResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdminWorkspaceCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    description: str | None = None
+
+
+class AdminWorkspaceDetailResponse(BaseModel):
+    id: uuid.UUID
+    slug: str
+    name: str
+    description: str | None
+    created_by: uuid.UUID
+    created_at: datetime
+    member_count: int
+    group_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class AdminAddUserToWorkspaceRequest(BaseModel):
+    workspace_id: uuid.UUID
+    role: str = Field(default="viewer", pattern=r"^(owner|admin|editor|viewer)$")
+
+
+class AdminResourcePermissionResponse(BaseModel):
+    id: uuid.UUID
+    service_name: str
+    resource_type: str
+    resource_id: uuid.UUID
+    workspace_id: uuid.UUID
+    owner_id: uuid.UUID
+    owner_email: str | None = None
+    visibility: str
+    created_at: datetime
+    share_count: int = 0
+    shares: list["AdminResourceShareResponse"] = []
+
+
+class AdminResourceShareResponse(BaseModel):
+    id: uuid.UUID
+    grantee_type: str
+    grantee_id: uuid.UUID
+    permission: str
+    granted_by: uuid.UUID
+    granted_at: datetime
+
+
+class CsvImportRow(BaseModel):
+    email: str
+    name: str
+    workspace_slug: str
+    role: str = "viewer"
+    error: str | None = None
+
+
+class CsvImportPreview(BaseModel):
+    rows: list[CsvImportRow]
+    valid_count: int
+    error_count: int
+
+
+class CsvImportResult(BaseModel):
+    users_created: int
+    memberships_added: int
+    errors: list[str]
+
+
+class ActivityLogResponse(BaseModel):
+    id: uuid.UUID
+    action: str
+    actor_id: uuid.UUID | None
+    actor_name: str | None
+    actor_email: str | None
+    target_type: str
+    target_id: uuid.UUID
+    workspace_id: uuid.UUID | None
+    detail: dict | None
+    created_at: datetime
+
+
+class TopWorkspace(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    member_count: int
+
+
+class WorkspaceOption(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+
+
 class PaginatedResponse(BaseModel):
     items: list
     total: int
@@ -75,4 +168,7 @@ class AdminStatsResponse(BaseModel):
     total_workspaces: int
     total_groups: int
     total_resources: int
+    active_users: int
+    inactive_users: int
     recent_users: list[AdminUserResponse]
+    top_workspaces: list[TopWorkspace]

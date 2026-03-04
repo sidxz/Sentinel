@@ -1,13 +1,16 @@
+import csv
+import io
 import uuid
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.models.group import Group
-from src.models.permission import ResourcePermission
+from src.models.permission import ResourcePermission, ResourceShare
 from src.models.user import SocialAccount, User
 from src.models.workspace import Workspace, WorkspaceMembership
+from src.services import activity_service
 
 
 async def get_stats(db: AsyncSession) -> dict:
@@ -15,6 +18,8 @@ async def get_stats(db: AsyncSession) -> dict:
     total_workspaces = await db.scalar(select(func.count(Workspace.id)))
     total_groups = await db.scalar(select(func.count(Group.id)))
     total_resources = await db.scalar(select(func.count(ResourcePermission.id)))
+    active_users = await db.scalar(select(func.count(User.id)).where(User.is_active == True))  # noqa: E712
+    inactive_users = (total_users or 0) - (active_users or 0)
 
     recent_stmt = (
         select(User, func.count(WorkspaceMembership.id).label("workspace_count"))
@@ -37,12 +42,29 @@ async def get_stats(db: AsyncSession) -> dict:
         for user, count in result.all()
     ]
 
+    # Top 5 workspaces by member count
+    top_ws_stmt = (
+        select(Workspace, func.count(WorkspaceMembership.id).label("member_count"))
+        .outerjoin(WorkspaceMembership, Workspace.id == WorkspaceMembership.workspace_id)
+        .group_by(Workspace.id)
+        .order_by(func.count(WorkspaceMembership.id).desc())
+        .limit(5)
+    )
+    top_ws_result = await db.execute(top_ws_stmt)
+    top_workspaces = [
+        {"id": ws.id, "name": ws.name, "slug": ws.slug, "member_count": count}
+        for ws, count in top_ws_result.all()
+    ]
+
     return {
         "total_users": total_users or 0,
         "total_workspaces": total_workspaces or 0,
         "total_groups": total_groups or 0,
         "total_resources": total_resources or 0,
+        "active_users": active_users or 0,
+        "inactive_users": inactive_users,
         "recent_users": recent_users,
+        "top_workspaces": top_workspaces,
     }
 
 
@@ -196,3 +218,276 @@ async def list_workspaces(
     ]
 
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+async def get_workspace_detail(db: AsyncSession, workspace_id: uuid.UUID) -> dict | None:
+    workspace = await db.get(Workspace, workspace_id)
+    if not workspace:
+        return None
+
+    member_count = await db.scalar(
+        select(func.count(WorkspaceMembership.id)).where(
+            WorkspaceMembership.workspace_id == workspace_id
+        )
+    )
+    group_count = await db.scalar(
+        select(func.count(Group.id)).where(Group.workspace_id == workspace_id)
+    )
+
+    return {
+        "id": workspace.id,
+        "slug": workspace.slug,
+        "name": workspace.name,
+        "description": workspace.description,
+        "created_by": workspace.created_by,
+        "created_at": workspace.created_at,
+        "member_count": member_count or 0,
+        "group_count": group_count or 0,
+    }
+
+
+async def list_all_workspaces(db: AsyncSession) -> list[dict]:
+    stmt = select(Workspace).order_by(Workspace.name)
+    result = await db.execute(stmt)
+    return [
+        {"id": ws.id, "name": ws.name, "slug": ws.slug}
+        for ws in result.scalars().all()
+    ]
+
+
+async def list_permissions(
+    db: AsyncSession,
+    page: int = 1,
+    page_size: int = 20,
+    workspace_id: uuid.UUID | None = None,
+    service_name: str | None = None,
+) -> dict:
+    base_query = (
+        select(
+            ResourcePermission,
+            User.email.label("owner_email"),
+            func.count(ResourceShare.id).label("share_count"),
+        )
+        .outerjoin(User, ResourcePermission.owner_id == User.id)
+        .outerjoin(ResourceShare, ResourcePermission.id == ResourceShare.resource_permission_id)
+        .group_by(ResourcePermission.id, User.email)
+    )
+
+    count_query = select(func.count()).select_from(ResourcePermission)
+
+    if workspace_id:
+        base_query = base_query.where(ResourcePermission.workspace_id == workspace_id)
+        count_query = count_query.where(ResourcePermission.workspace_id == workspace_id)
+    if service_name:
+        base_query = base_query.where(ResourcePermission.service_name == service_name)
+        count_query = count_query.where(ResourcePermission.service_name == service_name)
+
+    total = await db.scalar(count_query) or 0
+
+    stmt = (
+        base_query
+        .order_by(ResourcePermission.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    result = await db.execute(stmt)
+
+    items = [
+        {
+            "id": perm.id,
+            "service_name": perm.service_name,
+            "resource_type": perm.resource_type,
+            "resource_id": perm.resource_id,
+            "workspace_id": perm.workspace_id,
+            "owner_id": perm.owner_id,
+            "owner_email": owner_email,
+            "visibility": perm.visibility,
+            "created_at": perm.created_at,
+            "share_count": share_count,
+        }
+        for perm, owner_email, share_count in result.all()
+    ]
+
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+async def get_permission_detail(db: AsyncSession, permission_id: uuid.UUID) -> dict | None:
+    stmt = (
+        select(ResourcePermission, User.email.label("owner_email"))
+        .outerjoin(User, ResourcePermission.owner_id == User.id)
+        .where(ResourcePermission.id == permission_id)
+    )
+    result = await db.execute(stmt)
+    row = result.one_or_none()
+    if not row:
+        return None
+    perm, owner_email = row
+
+    # Load shares
+    shares_stmt = select(ResourceShare).where(
+        ResourceShare.resource_permission_id == permission_id
+    )
+    shares_result = await db.execute(shares_stmt)
+    shares = [
+        {
+            "id": s.id,
+            "grantee_type": s.grantee_type,
+            "grantee_id": s.grantee_id,
+            "permission": s.permission,
+            "granted_by": s.granted_by,
+            "granted_at": s.granted_at,
+        }
+        for s in shares_result.scalars().all()
+    ]
+
+    return {
+        "id": perm.id,
+        "service_name": perm.service_name,
+        "resource_type": perm.resource_type,
+        "resource_id": perm.resource_id,
+        "workspace_id": perm.workspace_id,
+        "owner_id": perm.owner_id,
+        "owner_email": owner_email,
+        "visibility": perm.visibility,
+        "created_at": perm.created_at,
+        "share_count": len(shares),
+        "shares": shares,
+    }
+
+
+async def add_user_to_workspace(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    role: str,
+    actor_id: uuid.UUID | None = None,
+) -> WorkspaceMembership:
+    membership = WorkspaceMembership(workspace_id=workspace_id, user_id=user_id, role=role)
+    db.add(membership)
+    await db.flush()
+    await activity_service.log_activity(
+        db,
+        action="member_invited",
+        target_type="user",
+        target_id=user_id,
+        actor_id=actor_id,
+        workspace_id=workspace_id,
+        detail={"role": role},
+    )
+    await db.commit()
+    return membership
+
+
+def parse_csv(content: str) -> dict:
+    reader = csv.DictReader(io.StringIO(content))
+    rows = []
+    valid_count = 0
+    error_count = 0
+
+    required = {"email", "name", "workspace_slug", "role"}
+    if reader.fieldnames:
+        missing = required - set(reader.fieldnames)
+        if missing:
+            return {
+                "rows": [],
+                "valid_count": 0,
+                "error_count": 1,
+            }
+
+    for row in reader:
+        email = (row.get("email") or "").strip()
+        name = (row.get("name") or "").strip()
+        workspace_slug = (row.get("workspace_slug") or "").strip()
+        role = (row.get("role") or "viewer").strip()
+
+        error = None
+        if not email:
+            error = "Missing email"
+        elif not name:
+            error = "Missing name"
+        elif not workspace_slug:
+            error = "Missing workspace_slug"
+        elif role not in ("owner", "admin", "editor", "viewer"):
+            error = f"Invalid role: {role}"
+
+        if error:
+            error_count += 1
+        else:
+            valid_count += 1
+
+        rows.append({
+            "email": email,
+            "name": name,
+            "workspace_slug": workspace_slug,
+            "role": role,
+            "error": error,
+        })
+
+    return {"rows": rows, "valid_count": valid_count, "error_count": error_count}
+
+
+async def execute_import(
+    db: AsyncSession,
+    rows: list[dict],
+    actor_id: uuid.UUID | None = None,
+) -> dict:
+    users_created = 0
+    memberships_added = 0
+    errors: list[str] = []
+
+    for row in rows:
+        if row.get("error"):
+            continue
+
+        email = row["email"]
+        name = row["name"]
+        workspace_slug = row["workspace_slug"]
+        role = row["role"]
+
+        try:
+            # Find or create user
+            user_result = await db.execute(select(User).where(User.email == email))
+            user = user_result.scalar_one_or_none()
+            if not user:
+                user = User(email=email, name=name)
+                db.add(user)
+                await db.flush()
+                users_created += 1
+
+            # Find workspace
+            ws_result = await db.execute(select(Workspace).where(Workspace.slug == workspace_slug))
+            workspace = ws_result.scalar_one_or_none()
+            if not workspace:
+                errors.append(f"Workspace '{workspace_slug}' not found for {email}")
+                continue
+
+            # Check existing membership
+            existing = await db.execute(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == workspace.id,
+                    WorkspaceMembership.user_id == user.id,
+                )
+            )
+            if existing.scalar_one_or_none():
+                errors.append(f"{email} already in workspace '{workspace_slug}'")
+                continue
+
+            membership = WorkspaceMembership(workspace_id=workspace.id, user_id=user.id, role=role)
+            db.add(membership)
+            memberships_added += 1
+
+        except Exception as e:
+            errors.append(f"Error processing {email}: {str(e)}")
+
+    if users_created or memberships_added:
+        await activity_service.log_activity(
+            db,
+            action="batch_import",
+            target_type="system",
+            target_id=uuid.uuid4(),
+            actor_id=actor_id,
+            detail={"users_created": users_created, "memberships_added": memberships_added},
+        )
+
+    await db.commit()
+    return {"users_created": users_created, "memberships_added": memberships_added, "errors": errors}
