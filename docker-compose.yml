@@ -6,11 +6,11 @@ services:
       POSTGRES_USER: identity
       POSTGRES_PASSWORD: identity_dev
     ports:
-      - "90001:5432"
+      - "9001:5432"
     volumes:
       - identity_pg_data:/var/lib/postgresql/data
     networks:
-      - docu_store-network
+      - daikon-identity-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U identity"]
       interval: 5s
@@ -20,9 +20,9 @@ services:
   identity-redis:
     image: redis:7-alpine
     ports:
-      - "90002:6379"
+      - "9002:6379"
     networks:
-      - docu_store-network
+      - daikon-identity-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -32,7 +32,7 @@ services:
   identity-service:
     build: ./service
     ports:
-      - "90003:90003"
+      - "9003:9003"
     env_file:
       - .env
     depends_on:
@@ -41,11 +41,11 @@ services:
       identity-redis:
         condition: service_healthy
     networks:
-      - docu_store-network
+      - daikon-identity-network
 
 volumes:
   identity_pg_data:
 
 networks:
-  docu_store-network:
-    external: true
+  daikon-identity-network:
+    driver: bridge

@@ -11,6 +11,6 @@ COPY src/ src/
 COPY migrations/ migrations/
 COPY alembic.ini .
 
-EXPOSE 90003
+EXPOSE 9003
 
-CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "90003"]
+CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "9003"]

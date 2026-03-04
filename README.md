@@ -57,10 +57,10 @@ cd ..
 
 ```bash
 cd service
-uv run uvicorn src.main:app --host 0.0.0.0 --port 90003 --reload
+uv run uvicorn src.main:app --host 0.0.0.0 --port 9003 --reload
 ```
 
-The API is now available at http://localhost:90003. Interactive docs at http://localhost:90003/docs.
+The API is now available at http://localhost:9003. Interactive docs at http://localhost:9003/docs.
 
 ## Project Structure
 
@@ -151,7 +151,7 @@ async def create_thing(user: AuthenticatedUser = Depends(require_role("editor"))
 from identity_sdk.permissions import PermissionClient
 
 perm_client = PermissionClient(
-    base_url="http://localhost:90003",
+    base_url="http://localhost:9003",
     service_name="my-app",
 )
 
@@ -179,21 +179,21 @@ await perm_client.register_resource(
 
 1. Go to Google Cloud Console > APIs & Services > Credentials
 2. Create an OAuth 2.0 Client ID (Web application)
-3. Set redirect URI: `http://localhost:90003/auth/callback/google`
+3. Set redirect URI: `http://localhost:9003/auth/callback/google`
 4. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env`
 
 ### GitHub
 
 1. Go to GitHub > Settings > Developer Settings > OAuth Apps
 2. Create a new OAuth App
-3. Set callback URL: `http://localhost:90003/auth/callback/github`
+3. Set callback URL: `http://localhost:9003/auth/callback/github`
 4. Add `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` to `.env`
 
 ### Microsoft EntraID
 
 1. Go to Azure Portal > App registrations
 2. Register a new application
-3. Set redirect URI: `http://localhost:90003/auth/callback/entra_id`
+3. Set redirect URI: `http://localhost:9003/auth/callback/entra_id`
 4. Add `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, and `ENTRA_TENANT_ID` to `.env`
 
 ## Permission Model
