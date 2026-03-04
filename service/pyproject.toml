@@ -17,6 +17,7 @@ dependencies = [
     "redis>=5.2.0",
     "structlog>=24.4.0",
     "itsdangerous>=2.2.0",
+    "python-multipart>=0.0.9",
 ]
 
 [build-system]
