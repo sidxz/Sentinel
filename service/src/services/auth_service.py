@@ -3,7 +3,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.jwt import create_access_token, create_refresh_token
+from src.auth.jwt import create_access_token, create_admin_token, create_refresh_token
+from src.config import settings
 from src.models.group import GroupMembership
 from src.models.user import SocialAccount, User
 from src.models.workspace import WorkspaceMembership
@@ -54,6 +55,11 @@ async def find_or_create_user(
         provider_data=provider_data,
     )
     db.add(social_account)
+
+    # Auto-promote admin emails from config
+    if user.email in settings.admin_email_list and not user.is_admin:
+        user.is_admin = True
+
     await db.commit()
     return user
 

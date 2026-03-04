@@ -35,15 +35,22 @@ class Settings(BaseSettings):
     base_url: str = "http://localhost:9003"
     frontend_url: str = "http://localhost:3000"
 
-    # CORS
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # CORS (comma-separated in .env)
+    cors_origins: str = "http://localhost:3000"
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v: str | list[str]) -> list[str]:
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
-        return v
+    # Admin
+    admin_emails: str = ""
+    admin_url: str = "http://localhost:9004"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def admin_email_list(self) -> list[str]:
+        if not self.admin_emails:
+            return []
+        return [e.strip() for e in self.admin_emails.split(",") if e.strip()]
 
 
 settings = Settings()

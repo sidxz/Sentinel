@@ -16,9 +16,27 @@ from src.config import settings
 logger = structlog.get_logger()
 
 
+async def _run_migrations():
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    from alembic import command
+    from alembic.config import Config
+
+    def _migrate():
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        await loop.run_in_executor(pool, _migrate)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("daikon-identity-service starting", port=settings.service_port)
+    await _run_migrations()
+    logger.info("database migrations applied")
     yield
     logger.info("daikon-identity-service shutting down")
 
@@ -35,7 +53,7 @@ app.add_middleware(SessionMiddleware, secret_key="change-me-in-production")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

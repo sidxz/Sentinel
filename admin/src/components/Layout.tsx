@@ -1,4 +1,6 @@
 import { NavLink } from "react-router-dom";
+import { adminLogout } from "../api/client";
+import { useAdmin } from "./AuthGuard";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
@@ -8,6 +10,12 @@ const NAV = [
 ] as const;
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const admin = useAdmin();
+  const handleLogout = async () => {
+    await adminLogout();
+    window.location.href = "/";
+  };
+
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
@@ -36,8 +44,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </NavLink>
           ))}
         </nav>
-        <div className="px-4 py-3 border-t border-zinc-800 text-xs text-zinc-500">
-          v0.1.0
+        <div className="px-4 py-3 border-t border-zinc-800">
+          <div className="flex items-center justify-between">
+            <div className="min-w-0">
+              <p className="truncate text-sm text-zinc-300">{admin.name}</p>
+              <p className="truncate text-xs text-zinc-500">{admin.email}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+              title="Sign out"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+              </svg>
+            </button>
+          </div>
         </div>
       </aside>
 
