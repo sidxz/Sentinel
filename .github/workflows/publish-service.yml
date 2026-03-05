@@ -3,7 +3,7 @@ name: Publish Service Image
 on:
   push:
     tags:
-      - "v*"
+      - "service-v*"
   workflow_dispatch:
 
 jobs:
