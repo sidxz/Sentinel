@@ -48,8 +48,11 @@ from src.schemas.role import (
     RoleUpdateRequest,
     ServiceActionResponse,
 )
+from src.middleware.rate_limit import limiter
 from src.services import admin_service, activity_service, workspace_service, group_service, permission_service, role_service
 from src.services import token_service
+
+_ADMIN_RATE_LIMIT = "30/minute"
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 

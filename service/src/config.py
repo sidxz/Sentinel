@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "RS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
+    admin_token_expire_minutes: int = 60
 
     # OAuth2 providers
     google_client_id: str = ""
@@ -45,6 +46,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = False  # Set True in production (requires HTTPS)
     allowed_hosts: str = "*"  # comma-separated; * = allow all (dev)
     service_api_keys: str = ""  # comma-separated; empty = no enforcement (dev)
+    debug: bool = True  # Set False in production (disables /docs, /redoc)
 
     # Admin
     admin_emails: str = ""

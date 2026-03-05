@@ -18,6 +18,14 @@ async def require_admin(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if not payload.get("admin"):
         raise HTTPException(status_code=403, detail="Not an admin")
+
+    # Check admin token revocation (jti denylist)
+    if jti := payload.get("jti"):
+        from src.services.token_service import is_access_token_blacklisted
+
+        if await is_access_token_blacklisted(jti):
+            raise HTTPException(status_code=401, detail="Token has been revoked")
+
     return payload
 
 

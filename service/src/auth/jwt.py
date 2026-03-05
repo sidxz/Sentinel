@@ -57,11 +57,12 @@ def create_admin_token(user_id: uuid.UUID, email: str, name: str) -> str:
     now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
+        "jti": str(uuid.uuid4()),
         "email": email,
         "name": name,
         "admin": True,
         "iat": now,
-        "exp": now + timedelta(hours=8),
+        "exp": now + timedelta(minutes=settings.admin_token_expire_minutes),
         "type": "admin_access",
     }
     return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)

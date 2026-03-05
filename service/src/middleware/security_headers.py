@@ -17,6 +17,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["X-XSS-Protection"] = "0"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Server"] = "daikon"
         if self.hsts:
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         return response

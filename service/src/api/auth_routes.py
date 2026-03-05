@@ -100,8 +100,8 @@ async def refresh_token(
 ):
     try:
         tokens = await auth_service.rotate_refresh_token(db, body.refresh_token)
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=str(e) if isinstance(e, ValueError) else "Invalid refresh token")
     return tokens
 
 
@@ -117,6 +117,8 @@ async def logout(
         payload = decode_token(token_str)
         if jti := payload.get("jti"):
             await token_service.blacklist_access_token(jti, payload["exp"])
+        # Revoke all refresh token families for this user
+        await token_service.revoke_all_user_tokens(payload["sub"])
     except Exception:
         pass  # Token already expired or invalid — still log out
     return {"ok": True}
@@ -218,7 +220,10 @@ async def admin_me(admin: dict = Depends(require_admin)):
 
 
 @router.post("/admin/logout")
-async def admin_logout():
+async def admin_logout(request: Request, admin: dict = Depends(require_admin)):
+    # Blacklist the admin token so it can't be replayed
+    if jti := admin.get("jti"):
+        await token_service.blacklist_access_token(jti, admin["exp"])
     response = JSONResponse({"ok": True})
     response.delete_cookie("admin_token", path="/")
     return response

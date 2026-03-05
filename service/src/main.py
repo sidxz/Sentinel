@@ -17,7 +17,7 @@ from src.api.workspace_routes import router as workspace_router
 from slowapi.errors import RateLimitExceeded
 
 from src.config import settings
-from src.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from src.middleware.rate_limit import GlobalRateLimitMiddleware, limiter, rate_limit_exceeded_handler
 from src.middleware.security_headers import SecurityHeadersMiddleware
 
 logger = structlog.get_logger()
@@ -44,6 +44,15 @@ async def lifespan(app: FastAPI):
     logger.info("daikon-identity-service starting", port=settings.service_port)
     await _run_migrations()
     logger.info("database migrations applied")
+
+    # Security warnings
+    if settings.session_secret_key == "dev-only-change-me-in-production":
+        logger.warning("SESSION_SECRET_KEY is using the default dev value — set a random secret in production")
+    if not settings.service_api_key_set:
+        logger.warning("SERVICE_API_KEYS is empty — all service-key checks are bypassed")
+    if not settings.cookie_secure:
+        logger.warning("COOKIE_SECURE is False — admin cookies will be sent over HTTP")
+
     app.state.start_time = time.time()
     yield
     logger.info("daikon-identity-service shutting down")
@@ -54,9 +63,15 @@ app = FastAPI(
     description="Authentication, workspace management, and permissions",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None,
+    openapi_url="/openapi.json" if settings.debug else None,
 )
 
 # --- Middleware (applied bottom-to-top, so first added = outermost) ---
+
+# Global rate limiting (30 req/min per IP, all endpoints)
+app.add_middleware(GlobalRateLimitMiddleware, requests_per_minute=30)
 
 # Security headers on every response
 app.add_middleware(SecurityHeadersMiddleware, hsts=settings.cookie_secure)
