@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -47,7 +48,7 @@ class Settings(BaseSettings):
 
     # Security
     cookie_secure: bool = False  # Set True in production (requires HTTPS)
-    allowed_hosts: str = "*"  # comma-separated; * = allow all (dev)
+    allowed_hosts: str = ""  # comma-separated override; empty = derived from BASE_URL
     service_api_keys: str = ""  # comma-separated; empty = no enforcement (dev)
     debug: bool = True  # Set False in production (disables /docs, /redoc)
 
@@ -67,7 +68,15 @@ class Settings(BaseSettings):
 
     @property
     def allowed_hosts_list(self) -> list[str]:
-        return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+        if self.allowed_hosts:
+            return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+        # Derive from BASE_URL + ADMIN_URL
+        hosts = set()
+        for url in [self.base_url, self.admin_url]:
+            parsed = urlparse(url)
+            if parsed.hostname:
+                hosts.add(parsed.hostname)
+        return list(hosts) if hosts else ["*"]
 
     @property
     def service_api_key_set(self) -> set[str]:
