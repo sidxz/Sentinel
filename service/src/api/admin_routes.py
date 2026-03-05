@@ -15,7 +15,6 @@ from src.database import get_db
 from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.schemas.admin import (
-    ActivityLogResponse,
     AdminAddUserToWorkspaceRequest,
     AdminResourcePermissionResponse,
     AdminStatsResponse,
@@ -38,7 +37,12 @@ from src.schemas.workspace import (
     WorkspaceMemberResponse,
     WorkspaceUpdateRequest,
 )
-from src.schemas.group import GroupCreateRequest, GroupUpdateRequest, GroupResponse, GroupMemberResponse
+from src.schemas.group import (
+    GroupCreateRequest,
+    GroupUpdateRequest,
+    GroupResponse,
+    GroupMemberResponse,
+)
 from src.schemas.permission import ShareRequest, UpdateVisibilityRequest
 from src.schemas.role import (
     AddRoleActionsRequest,
@@ -48,16 +52,25 @@ from src.schemas.role import (
     RoleUpdateRequest,
     ServiceActionResponse,
 )
-from src.middleware.rate_limit import limiter
-from src.services import admin_service, activity_service, workspace_service, group_service, permission_service, role_service
+from src.services import (
+    admin_service,
+    activity_service,
+    workspace_service,
+    group_service,
+    permission_service,
+    role_service,
+)
 from src.services import token_service
 
 _ADMIN_RATE_LIMIT = "30/minute"
 
-router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+router = APIRouter(
+    prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)]
+)
 
 
 # ── Stats & Dashboard ────────────────────────────────────────────────
+
 
 @router.get("/stats", response_model=AdminStatsResponse)
 async def get_stats(db: AsyncSession = Depends(get_db)):
@@ -77,10 +90,15 @@ async def get_activity(
     db: AsyncSession = Depends(get_db),
 ):
     return await activity_service.list_paginated(
-        db, page=page, page_size=page_size,
-        action=action, target_type=target_type,
-        workspace_id=workspace_id, actor_id=actor_id,
-        from_date=from_date, to_date=to_date,
+        db,
+        page=page,
+        page_size=page_size,
+        action=action,
+        target_type=target_type,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        from_date=from_date,
+        to_date=to_date,
     )
 
 
@@ -90,6 +108,7 @@ async def list_all_workspaces(db: AsyncSession = Depends(get_db)):
 
 
 # ── System ────────────────────────────────────────────────────────────
+
 
 @router.get("/system/health", response_model=SystemHealthResponse)
 async def system_health(
@@ -102,16 +121,22 @@ async def system_health(
     try:
         t0 = time.time()
         await db.execute(text("SELECT 1"))
-        checks["database"] = HealthCheckDetail(status="ok", latency_ms=round((time.time() - t0) * 1000, 1))
+        checks["database"] = HealthCheckDetail(
+            status="ok", latency_ms=round((time.time() - t0) * 1000, 1)
+        )
     except Exception as e:
-        checks["database"] = HealthCheckDetail(status="error", latency_ms=0, error=str(e))
+        checks["database"] = HealthCheckDetail(
+            status="error", latency_ms=0, error=str(e)
+        )
 
     # Redis check
     try:
         r = await token_service.get_redis()
         t0 = time.time()
         await r.ping()
-        checks["redis"] = HealthCheckDetail(status="ok", latency_ms=round((time.time() - t0) * 1000, 1))
+        checks["redis"] = HealthCheckDetail(
+            status="ok", latency_ms=round((time.time() - t0) * 1000, 1)
+        )
     except Exception as e:
         checks["redis"] = HealthCheckDetail(status="error", latency_ms=0, error=str(e))
 
@@ -127,7 +152,6 @@ async def system_health(
 
 @router.get("/system/settings", response_model=SystemSettingsResponse)
 async def system_settings():
-    import redis.asyncio as redis_lib
 
     # OAuth providers
     providers = [
@@ -164,7 +188,8 @@ async def system_settings():
         "cookie_secure": settings.cookie_secure,
         "allowed_hosts": settings.allowed_hosts_list,
         "cors_origins": settings.cors_origin_list,
-        "session_secret_configured": settings.session_secret_key != "dev-only-change-me-in-production",
+        "session_secret_configured": settings.session_secret_key
+        != "dev-only-change-me-in-production",
         "admin_emails": settings.admin_email_list,
     }
 
@@ -178,7 +203,12 @@ async def system_settings():
     # Service keys
     service_keys = []
     for i, key in enumerate(settings.service_api_key_set):
-        service_keys.append({"name": f"key-{i + 1}", "preview": f"****{key[-4:]}" if len(key) >= 4 else "****"})
+        service_keys.append(
+            {
+                "name": f"key-{i + 1}",
+                "preview": f"****{key[-4:]}" if len(key) >= 4 else "****",
+            }
+        )
 
     service_info = {
         "base_url": settings.base_url,
@@ -197,6 +227,7 @@ async def system_settings():
 
 
 # ── Users ─────────────────────────────────────────────────────────────
+
 
 @router.post("/users/bulk-status")
 async def bulk_user_status(
@@ -224,7 +255,9 @@ async def list_users(
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    return await admin_service.list_users(db, page=page, page_size=page_size, search=search)
+    return await admin_service.list_users(
+        db, page=page, page_size=page_size, search=search
+    )
 
 
 @router.get("/users/{user_id}", response_model=AdminUserDetailResponse)
@@ -246,7 +279,11 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
 ):
     user = await admin_service.update_user(
-        db, user_id, name=body.name, is_active=body.is_active, is_admin=body.is_admin,
+        db,
+        user_id,
+        name=body.name,
+        is_active=body.is_active,
+        is_admin=body.is_admin,
     )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -264,11 +301,17 @@ async def update_user(
         action = "user_updated"
 
     if action:
-        await activity_service.log_activity(
-            db, action=action, target_type="user", target_id=user_id,
-            actor_id=uuid.UUID(admin["sub"]),
-        )
-        await db.commit()
+        try:
+            await activity_service.log_activity(
+                db,
+                action=action,
+                target_type="user",
+                target_id=user_id,
+                actor_id=uuid.UUID(admin["sub"]),
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
 
     return await admin_service.get_user_detail(db, user_id)
 
@@ -282,7 +325,10 @@ async def add_user_to_workspace(
 ):
     try:
         await admin_service.add_user_to_workspace(
-            db, user_id, body.workspace_id, body.role,
+            db,
+            user_id,
+            body.workspace_id,
+            body.role,
             actor_id=uuid.UUID(admin["sub"]),
         )
     except Exception as e:
@@ -298,7 +344,10 @@ async def revoke_user_tokens(
 ):
     count = await token_service.revoke_all_user_tokens(str(user_id))
     await activity_service.log_activity(
-        db, action="tokens_revoked", target_type="user", target_id=user_id,
+        db,
+        action="tokens_revoked",
+        target_type="user",
+        target_id=user_id,
         actor_id=uuid.UUID(admin["sub"]),
         detail={"tokens_revoked": count},
     )
@@ -308,6 +357,7 @@ async def revoke_user_tokens(
 
 # ── Workspaces ────────────────────────────────────────────────────────
 
+
 @router.get("/workspaces", response_model=PaginatedResponse)
 async def list_workspaces(
     page: int = Query(1, ge=1),
@@ -315,10 +365,14 @@ async def list_workspaces(
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    return await admin_service.list_workspaces(db, page=page, page_size=page_size, search=search)
+    return await admin_service.list_workspaces(
+        db, page=page, page_size=page_size, search=search
+    )
 
 
-@router.post("/workspaces", response_model=AdminWorkspaceDetailResponse, status_code=201)
+@router.post(
+    "/workspaces", response_model=AdminWorkspaceDetailResponse, status_code=201
+)
 async def create_workspace(
     body: AdminWorkspaceCreateRequest,
     admin: dict = Depends(require_admin),
@@ -327,14 +381,23 @@ async def create_workspace(
     actor_id = uuid.UUID(admin["sub"])
     try:
         ws = await workspace_service.create_workspace(
-            db, name=body.name, slug=body.slug, created_by=actor_id, description=body.description,
+            db,
+            name=body.name,
+            slug=body.slug,
+            created_by=actor_id,
+            description=body.description,
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="workspace_created", target_type="workspace", target_id=ws.id,
-        actor_id=actor_id, workspace_id=ws.id, detail={"name": ws.name, "slug": ws.slug},
+        db,
+        action="workspace_created",
+        target_type="workspace",
+        target_id=ws.id,
+        actor_id=actor_id,
+        workspace_id=ws.id,
+        detail={"name": ws.name, "slug": ws.slug},
     )
     await db.commit()
     return await admin_service.get_workspace_detail(db, ws.id)
@@ -359,13 +422,19 @@ async def update_workspace(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        await workspace_service.update_workspace(db, workspace_id, name=body.name, description=body.description)
+        await workspace_service.update_workspace(
+            db, workspace_id, name=body.name, description=body.description
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="workspace_updated", target_type="workspace", target_id=workspace_id,
-        actor_id=uuid.UUID(admin["sub"]), workspace_id=workspace_id,
+        db,
+        action="workspace_updated",
+        target_type="workspace",
+        target_id=workspace_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        workspace_id=workspace_id,
     )
     await db.commit()
     return await admin_service.get_workspace_detail(db, workspace_id)
@@ -386,15 +455,22 @@ async def delete_workspace(
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="workspace_deleted", target_type="workspace", target_id=workspace_id,
-        actor_id=uuid.UUID(admin["sub"]), detail={"name": detail["name"], "slug": detail["slug"]},
+        db,
+        action="workspace_deleted",
+        target_type="workspace",
+        target_id=workspace_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={"name": detail["name"], "slug": detail["slug"]},
     )
     await db.commit()
 
 
 # ── Workspace Members ─────────────────────────────────────────────────
 
-@router.get("/workspaces/{workspace_id}/members", response_model=list[WorkspaceMemberResponse])
+
+@router.get(
+    "/workspaces/{workspace_id}/members", response_model=list[WorkspaceMemberResponse]
+)
 async def list_workspace_members(
     workspace_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -410,13 +486,19 @@ async def invite_workspace_member(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        m = await workspace_service.invite_member(db, workspace_id, body.email, body.role)
+        m = await workspace_service.invite_member(
+            db, workspace_id, body.email, body.role
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="member_invited", target_type="user", target_id=m.user_id,
-        actor_id=uuid.UUID(admin["sub"]), workspace_id=workspace_id,
+        db,
+        action="member_invited",
+        target_type="user",
+        target_id=m.user_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        workspace_id=workspace_id,
         detail={"email": body.email, "role": body.role},
     )
     await db.commit()
@@ -437,8 +519,12 @@ async def update_workspace_member_role(
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="member_role_changed", target_type="user", target_id=user_id,
-        actor_id=uuid.UUID(admin["sub"]), workspace_id=workspace_id,
+        db,
+        action="member_role_changed",
+        target_type="user",
+        target_id=user_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        workspace_id=workspace_id,
         detail={"role": body.role},
     )
     await db.commit()
@@ -458,13 +544,18 @@ async def remove_workspace_member(
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="member_removed", target_type="user", target_id=user_id,
-        actor_id=uuid.UUID(admin["sub"]), workspace_id=workspace_id,
+        db,
+        action="member_removed",
+        target_type="user",
+        target_id=user_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        workspace_id=workspace_id,
     )
     await db.commit()
 
 
 # ── Groups ────────────────────────────────────────────────────────────
+
 
 @router.get("/workspaces/{workspace_id}/groups", response_model=list[GroupResponse])
 async def list_workspace_groups(
@@ -474,7 +565,9 @@ async def list_workspace_groups(
     return await group_service.list_groups(db, workspace_id)
 
 
-@router.post("/workspaces/{workspace_id}/groups", response_model=GroupResponse, status_code=201)
+@router.post(
+    "/workspaces/{workspace_id}/groups", response_model=GroupResponse, status_code=201
+)
 async def create_group(
     workspace_id: uuid.UUID,
     body: GroupCreateRequest,
@@ -482,10 +575,17 @@ async def create_group(
     db: AsyncSession = Depends(get_db),
 ):
     actor_id = uuid.UUID(admin["sub"])
-    group = await group_service.create_group(db, workspace_id, body.name, actor_id, body.description)
+    group = await group_service.create_group(
+        db, workspace_id, body.name, actor_id, body.description
+    )
     await activity_service.log_activity(
-        db, action="group_created", target_type="group", target_id=group.id,
-        actor_id=actor_id, workspace_id=workspace_id, detail={"name": group.name},
+        db,
+        action="group_created",
+        target_type="group",
+        target_id=group.id,
+        actor_id=actor_id,
+        workspace_id=workspace_id,
+        detail={"name": group.name},
     )
     await db.commit()
     return group
@@ -499,12 +599,17 @@ async def update_group(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        group = await group_service.update_group(db, group_id, name=body.name, description=body.description)
+        group = await group_service.update_group(
+            db, group_id, name=body.name, description=body.description
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="group_updated", target_type="group", target_id=group_id,
+        db,
+        action="group_updated",
+        target_type="group",
+        target_id=group_id,
         actor_id=uuid.UUID(admin["sub"]),
     )
     await db.commit()
@@ -523,7 +628,10 @@ async def delete_group(
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="group_deleted", target_type="group", target_id=group_id,
+        db,
+        action="group_deleted",
+        target_type="group",
+        target_id=group_id,
         actor_id=uuid.UUID(admin["sub"]),
     )
     await db.commit()
@@ -550,7 +658,10 @@ async def add_group_member(
         raise HTTPException(status_code=400, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="group_member_added", target_type="user", target_id=user_id,
+        db,
+        action="group_member_added",
+        target_type="user",
+        target_id=user_id,
         actor_id=uuid.UUID(admin["sub"]),
     )
     await db.commit()
@@ -570,13 +681,17 @@ async def remove_group_member(
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="group_member_removed", target_type="user", target_id=user_id,
+        db,
+        action="group_member_removed",
+        target_type="user",
+        target_id=user_id,
         actor_id=uuid.UUID(admin["sub"]),
     )
     await db.commit()
 
 
 # ── Permissions ───────────────────────────────────────────────────────
+
 
 @router.get("/permissions", response_model=PaginatedResponse)
 async def list_permissions(
@@ -587,12 +702,17 @@ async def list_permissions(
     db: AsyncSession = Depends(get_db),
 ):
     return await admin_service.list_permissions(
-        db, page=page, page_size=page_size,
-        workspace_id=workspace_id, service_name=service_name,
+        db,
+        page=page,
+        page_size=page_size,
+        workspace_id=workspace_id,
+        service_name=service_name,
     )
 
 
-@router.get("/permissions/{permission_id}", response_model=AdminResourcePermissionResponse)
+@router.get(
+    "/permissions/{permission_id}", response_model=AdminResourcePermissionResponse
+)
 async def get_permission_detail(
     permission_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -611,13 +731,18 @@ async def update_permission_visibility(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        perm = await permission_service.update_visibility(db, permission_id, body.visibility)
+        perm = await permission_service.update_visibility(
+            db, permission_id, body.visibility
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="permission_visibility_changed", target_type="resource_permission",
-        target_id=permission_id, actor_id=uuid.UUID(admin["sub"]),
+        db,
+        action="permission_visibility_changed",
+        target_type="resource_permission",
+        target_id=permission_id,
+        actor_id=uuid.UUID(admin["sub"]),
         detail={"visibility": body.visibility},
     )
     await db.commit()
@@ -634,14 +759,22 @@ async def share_permission(
     actor_id = uuid.UUID(admin["sub"])
     try:
         await permission_service.share_resource(
-            db, permission_id, body.grantee_type, body.grantee_id, body.permission, actor_id,
+            db,
+            permission_id,
+            body.grantee_type,
+            body.grantee_id,
+            body.permission,
+            actor_id,
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="permission_shared", target_type="resource_permission",
-        target_id=permission_id, actor_id=actor_id,
+        db,
+        action="permission_shared",
+        target_type="resource_permission",
+        target_id=permission_id,
+        actor_id=actor_id,
         detail={"grantee_type": body.grantee_type, "grantee_id": str(body.grantee_id)},
     )
     await db.commit()
@@ -657,19 +790,25 @@ async def revoke_permission_share(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        await permission_service.revoke_share(db, permission_id, grantee_type, grantee_id)
+        await permission_service.revoke_share(
+            db, permission_id, grantee_type, grantee_id
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="permission_revoked", target_type="resource_permission",
-        target_id=permission_id, actor_id=uuid.UUID(admin["sub"]),
+        db,
+        action="permission_revoked",
+        target_type="resource_permission",
+        target_id=permission_id,
+        actor_id=uuid.UUID(admin["sub"]),
     )
     await db.commit()
     return {"status": "ok"}
 
 
 # ── Roles (RBAC) ─────────────────────────────────────────────────────
+
 
 @router.get("/service-actions", response_model=list[ServiceActionResponse])
 async def list_service_actions(
@@ -687,7 +826,9 @@ async def list_workspace_roles(
     return await role_service.list_workspace_roles(db, workspace_id)
 
 
-@router.post("/workspaces/{workspace_id}/roles", response_model=RoleResponse, status_code=201)
+@router.post(
+    "/workspaces/{workspace_id}/roles", response_model=RoleResponse, status_code=201
+)
 async def create_role(
     workspace_id: uuid.UUID,
     body: RoleCreateRequest,
@@ -696,11 +837,20 @@ async def create_role(
 ):
     actor_id = uuid.UUID(admin["sub"])
     role = await role_service.create_role(
-        db, workspace_id, body.name, body.description, created_by=actor_id,
+        db,
+        workspace_id,
+        body.name,
+        body.description,
+        created_by=actor_id,
     )
     await activity_service.log_activity(
-        db, action="role_created", target_type="role", target_id=role.id,
-        actor_id=actor_id, workspace_id=workspace_id, detail={"name": role.name},
+        db,
+        action="role_created",
+        target_type="role",
+        target_id=role.id,
+        actor_id=actor_id,
+        workspace_id=workspace_id,
+        detail={"name": role.name},
     )
     await db.commit()
     # Return with counts
@@ -716,12 +866,17 @@ async def update_role(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        role = await role_service.update_role(db, role_id, name=body.name, description=body.description)
+        role = await role_service.update_role(
+            db, role_id, name=body.name, description=body.description
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="role_updated", target_type="role", target_id=role_id,
+        db,
+        action="role_updated",
+        target_type="role",
+        target_id=role_id,
         actor_id=uuid.UUID(admin["sub"]),
     )
     await db.commit()
@@ -741,7 +896,10 @@ async def delete_role(
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="role_deleted", target_type="role", target_id=role_id,
+        db,
+        action="role_deleted",
+        target_type="role",
+        target_id=role_id,
         actor_id=uuid.UUID(admin["sub"]),
     )
     await db.commit()
@@ -768,7 +926,10 @@ async def add_role_actions(
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="role_action_added", target_type="role", target_id=role_id,
+        db,
+        action="role_action_added",
+        target_type="role",
+        target_id=role_id,
         actor_id=uuid.UUID(admin["sub"]),
         detail={"action_ids": [str(i) for i in body.service_action_ids]},
     )
@@ -789,7 +950,10 @@ async def remove_role_action(
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="role_action_removed", target_type="role", target_id=role_id,
+        db,
+        action="role_action_removed",
+        target_type="role",
+        target_id=role_id,
         actor_id=uuid.UUID(admin["sub"]),
         detail={"service_action_id": str(service_action_id)},
     )
@@ -812,12 +976,17 @@ async def assign_role_member(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        await role_service.assign_user_role(db, user_id, role_id, assigned_by=uuid.UUID(admin["sub"]))
+        await role_service.assign_user_role(
+            db, user_id, role_id, assigned_by=uuid.UUID(admin["sub"])
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="role_member_added", target_type="user", target_id=user_id,
+        db,
+        action="role_member_added",
+        target_type="user",
+        target_id=user_id,
         actor_id=uuid.UUID(admin["sub"]),
         detail={"role_id": str(role_id)},
     )
@@ -838,7 +1007,10 @@ async def remove_role_member(
         raise HTTPException(status_code=404, detail=str(e))
 
     await activity_service.log_activity(
-        db, action="role_member_removed", target_type="user", target_id=user_id,
+        db,
+        action="role_member_removed",
+        target_type="user",
+        target_id=user_id,
         actor_id=uuid.UUID(admin["sub"]),
         detail={"role_id": str(role_id)},
     )
@@ -872,11 +1044,14 @@ async def csv_execute(
     content = await _read_csv(file)
     preview = admin_service.parse_csv(content)
     return await admin_service.execute_import(
-        db, preview["rows"], actor_id=uuid.UUID(admin["sub"]),
+        db,
+        preview["rows"],
+        actor_id=uuid.UUID(admin["sub"]),
     )
 
 
 # ── Data Export ──────────────────────────────────────────────────────
+
 
 @router.get("/export/users")
 async def export_users(db: AsyncSession = Depends(get_db)):
@@ -891,15 +1066,32 @@ async def export_users(db: AsyncSession = Depends(get_db)):
     def generate():
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["id", "email", "name", "is_active", "is_admin", "created_at", "workspace_count"])
+        writer.writerow(
+            [
+                "id",
+                "email",
+                "name",
+                "is_active",
+                "is_admin",
+                "created_at",
+                "workspace_count",
+            ]
+        )
         yield output.getvalue()
         output.seek(0)
         output.truncate(0)
         for user, ws_count in result.all():
-            writer.writerow([
-                str(user.id), user.email, user.name, user.is_active,
-                user.is_admin, user.created_at.isoformat(), ws_count,
-            ])
+            writer.writerow(
+                [
+                    str(user.id),
+                    user.email,
+                    user.name,
+                    user.is_active,
+                    user.is_admin,
+                    user.created_at.isoformat(),
+                    ws_count,
+                ]
+            )
             yield output.getvalue()
             output.seek(0)
             output.truncate(0)
@@ -915,7 +1107,9 @@ async def export_users(db: AsyncSession = Depends(get_db)):
 async def export_workspaces(db: AsyncSession = Depends(get_db)):
     stmt = (
         select(Workspace, func.count(WorkspaceMembership.id).label("member_count"))
-        .outerjoin(WorkspaceMembership, Workspace.id == WorkspaceMembership.workspace_id)
+        .outerjoin(
+            WorkspaceMembership, Workspace.id == WorkspaceMembership.workspace_id
+        )
         .group_by(Workspace.id)
         .order_by(Workspace.created_at.desc())
     )
@@ -924,15 +1118,32 @@ async def export_workspaces(db: AsyncSession = Depends(get_db)):
     def generate():
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["id", "slug", "name", "description", "created_by", "created_at", "member_count"])
+        writer.writerow(
+            [
+                "id",
+                "slug",
+                "name",
+                "description",
+                "created_by",
+                "created_at",
+                "member_count",
+            ]
+        )
         yield output.getvalue()
         output.seek(0)
         output.truncate(0)
         for ws, m_count in result.all():
-            writer.writerow([
-                str(ws.id), ws.slug, ws.name, ws.description or "",
-                str(ws.created_by), ws.created_at.isoformat(), m_count,
-            ])
+            writer.writerow(
+                [
+                    str(ws.id),
+                    ws.slug,
+                    ws.name,
+                    ws.description or "",
+                    str(ws.created_by),
+                    ws.created_at.isoformat(),
+                    m_count,
+                ]
+            )
             yield output.getvalue()
             output.seek(0)
             output.truncate(0)

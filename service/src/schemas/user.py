@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
+
+from src.schemas.validators import SafeStrOptional
 
 
 class UserResponse(BaseModel):
@@ -16,5 +18,5 @@ class UserResponse(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
-    name: str | None = None
+    name: SafeStrOptional = None
     avatar_url: str | None = None

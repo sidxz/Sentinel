@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.role import Role, RoleAction, ServiceAction, UserRole
@@ -93,7 +93,9 @@ async def list_service_actions(
     db: AsyncSession,
     service_name: str | None = None,
 ) -> list[ServiceAction]:
-    stmt = select(ServiceAction).order_by(ServiceAction.service_name, ServiceAction.action)
+    stmt = select(ServiceAction).order_by(
+        ServiceAction.service_name, ServiceAction.action
+    )
     if service_name:
         stmt = stmt.where(ServiceAction.service_name == service_name)
     result = await db.execute(stmt)
@@ -160,7 +162,9 @@ async def list_workspace_roles(
         .scalar_subquery()
     )
     stmt = (
-        select(Role, action_count.label("action_count"), member_count.label("member_count"))
+        select(
+            Role, action_count.label("action_count"), member_count.label("member_count")
+        )
         .where(Role.workspace_id == workspace_id)
         .order_by(Role.created_at)
     )

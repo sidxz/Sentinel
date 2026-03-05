@@ -14,12 +14,16 @@ async def create_workspace(
     created_by: uuid.UUID,
     description: str | None = None,
 ) -> Workspace:
-    workspace = Workspace(name=name, slug=slug, description=description, created_by=created_by)
+    workspace = Workspace(
+        name=name, slug=slug, description=description, created_by=created_by
+    )
     db.add(workspace)
     await db.flush()
 
     # Creator becomes owner
-    membership = WorkspaceMembership(workspace_id=workspace.id, user_id=created_by, role="owner")
+    membership = WorkspaceMembership(
+        workspace_id=workspace.id, user_id=created_by, role="owner"
+    )
     db.add(membership)
     await db.commit()
     return workspace
@@ -97,7 +101,9 @@ async def invite_member(
     if not user:
         raise ValueError(f"User with email {email} not found")
 
-    membership = WorkspaceMembership(workspace_id=workspace_id, user_id=user.id, role=role)
+    membership = WorkspaceMembership(
+        workspace_id=workspace_id, user_id=user.id, role=role
+    )
     db.add(membership)
     await db.commit()
     return membership
@@ -122,7 +128,9 @@ async def update_member_role(
     return membership
 
 
-async def remove_member(db: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID) -> None:
+async def remove_member(
+    db: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
     stmt = select(WorkspaceMembership).where(
         WorkspaceMembership.workspace_id == workspace_id,
         WorkspaceMembership.user_id == user_id,

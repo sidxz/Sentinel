@@ -38,7 +38,11 @@ async def create_workspace(
     db: AsyncSession = Depends(get_db),
 ):
     workspace = await workspace_service.create_workspace(
-        db, name=body.name, slug=body.slug, created_by=user.user_id, description=body.description
+        db,
+        name=body.name,
+        slug=body.slug,
+        created_by=user.user_id,
+        description=body.description,
     )
     return workspace
 
@@ -73,7 +77,9 @@ async def update_workspace(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    return await workspace_service.update_workspace(db, workspace_id, name=body.name, description=body.description)
+    return await workspace_service.update_workspace(
+        db, workspace_id, name=body.name, description=body.description
+    )
 
 
 @router.delete("/{workspace_id}", status_code=204)
@@ -100,7 +106,11 @@ async def list_members(
     return await workspace_service.list_members(db, workspace_id)
 
 
-@router.post("/{workspace_id}/members/invite", response_model=WorkspaceMemberResponse, status_code=201)
+@router.post(
+    "/{workspace_id}/members/invite",
+    response_model=WorkspaceMemberResponse,
+    status_code=201,
+)
 async def invite_member(
     workspace_id: uuid.UUID,
     body: InviteMemberRequest,
@@ -109,7 +119,9 @@ async def invite_member(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    membership = await workspace_service.invite_member(db, workspace_id, email=body.email, role=body.role)
+    membership = await workspace_service.invite_member(
+        db, workspace_id, email=body.email, role=body.role
+    )
     return membership
 
 
@@ -123,7 +135,9 @@ async def update_member_role(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    return await workspace_service.update_member_role(db, workspace_id, user_id, role=body.role)
+    return await workspace_service.update_member_role(
+        db, workspace_id, user_id, role=body.role
+    )
 
 
 @router.delete("/{workspace_id}/members/{user_id}", status_code=204)

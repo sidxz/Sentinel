@@ -77,5 +77,7 @@ async def require_service_key(request: Request) -> str:
         return ""
     key = request.headers.get("X-Service-Key")
     if not key or key not in allowed:
-        raise HTTPException(status_code=401, detail="Invalid or missing service API key")
+        raise HTTPException(
+            status_code=401, detail="Invalid or missing service API key"
+        )
     return key

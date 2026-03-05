@@ -3,15 +3,17 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from src.schemas.validators import SafeStr, SafeStrOptional
+
 
 class GroupCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
-    description: str | None = None
+    name: SafeStr = Field(min_length=1, max_length=255)
+    description: SafeStrOptional = None
 
 
 class GroupUpdateRequest(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = None
+    name: SafeStrOptional = Field(default=None, min_length=1, max_length=255)
+    description: SafeStrOptional = None
 
 
 class GroupResponse(BaseModel):

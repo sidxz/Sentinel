@@ -10,10 +10,10 @@ from src.config import settings
 _redis: redis.Redis | None = None
 
 # Key prefixes
-_REFRESH_PREFIX = "rt:"       # rt:{jti} → JSON {user_id, family_id}
-_FAMILY_PREFIX = "rtf:"       # rtf:{family_id} → set of jtis
-_BLACKLIST_PREFIX = "bl:"     # bl:{jti} → "1"
-_USER_FAMILIES_PREFIX = "uf:" # uf:{user_id} → set of family_ids
+_REFRESH_PREFIX = "rt:"  # rt:{jti} → JSON {user_id, family_id}
+_FAMILY_PREFIX = "rtf:"  # rtf:{family_id} → set of jtis
+_BLACKLIST_PREFIX = "bl:"  # bl:{jti} → "1"
+_USER_FAMILIES_PREFIX = "uf:"  # uf:{user_id} → set of family_ids
 
 
 async def get_redis() -> redis.Redis:

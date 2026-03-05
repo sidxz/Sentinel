@@ -26,4 +26,6 @@ async def update_me(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await user_service.update_user(db, user.user_id, name=body.name, avatar_url=body.avatar_url)
+    return await user_service.update_user(
+        db, user.user_id, name=body.name, avatar_url=body.avatar_url
+    )

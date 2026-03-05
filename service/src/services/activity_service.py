@@ -41,10 +41,9 @@ async def list_paginated(
     from_date: datetime | None = None,
     to_date: datetime | None = None,
 ) -> dict:
-    base = (
-        select(ActivityLog, User.name.label("actor_name"), User.email.label("actor_email"))
-        .outerjoin(User, ActivityLog.actor_id == User.id)
-    )
+    base = select(
+        ActivityLog, User.name.label("actor_name"), User.email.label("actor_email")
+    ).outerjoin(User, ActivityLog.actor_id == User.id)
     count_q = select(func.count()).select_from(ActivityLog)
 
     if action:
@@ -69,8 +68,7 @@ async def list_paginated(
     total = await db.scalar(count_q) or 0
 
     stmt = (
-        base
-        .order_by(ActivityLog.created_at.desc())
+        base.order_by(ActivityLog.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -95,7 +93,9 @@ async def list_paginated(
 
 async def list_recent(db: AsyncSession, limit: int = 20) -> list[dict]:
     stmt = (
-        select(ActivityLog, User.name.label("actor_name"), User.email.label("actor_email"))
+        select(
+            ActivityLog, User.name.label("actor_name"), User.email.label("actor_email")
+        )
         .outerjoin(User, ActivityLog.actor_id == User.id)
         .order_by(ActivityLog.created_at.desc())
         .limit(limit)

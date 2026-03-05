@@ -3,10 +3,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from src.schemas.validators import SafeStr, SafeStrOptional
+
 
 class ActionDefinition(BaseModel):
     action: str = Field(pattern=r"^[a-z][a-z0-9_.:-]*$")
-    description: str | None = None
+    description: SafeStrOptional = None
 
 
 class RegisterActionsRequest(BaseModel):
@@ -21,13 +23,13 @@ class CheckActionRequest(BaseModel):
 
 
 class RoleCreateRequest(BaseModel):
-    name: str
-    description: str | None = None
+    name: SafeStr
+    description: SafeStrOptional = None
 
 
 class RoleUpdateRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
+    name: SafeStrOptional = None
+    description: SafeStrOptional = None
 
 
 class AddRoleActionsRequest(BaseModel):

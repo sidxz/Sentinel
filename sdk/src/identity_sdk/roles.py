@@ -8,7 +8,9 @@ import httpx
 class RoleClient:
     """Client for the identity service's RBAC role/action API."""
 
-    def __init__(self, base_url: str, service_name: str, service_key: str | None = None):
+    def __init__(
+        self, base_url: str, service_name: str, service_key: str | None = None
+    ):
         self.base_url = base_url.rstrip("/")
         self.service_name = service_name
         self.service_key = service_key

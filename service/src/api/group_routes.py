@@ -32,7 +32,11 @@ async def create_group(
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
     return await group_service.create_group(
-        db, workspace_id=workspace_id, name=body.name, created_by=user.user_id, description=body.description
+        db,
+        workspace_id=workspace_id,
+        name=body.name,
+        created_by=user.user_id,
+        description=body.description,
     )
 
 
@@ -56,7 +60,9 @@ async def update_group(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    return await group_service.update_group(db, group_id, name=body.name, description=body.description)
+    return await group_service.update_group(
+        db, group_id, name=body.name, description=body.description
+    )
 
 
 @router.delete("/{group_id}", status_code=204)

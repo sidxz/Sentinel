@@ -20,7 +20,9 @@ router = APIRouter(prefix="/roles", tags=["roles"])
 # --- Service-only auth: service key ---
 
 
-@router.post("/actions/register", response_model=list[ServiceActionResponse], status_code=201)
+@router.post(
+    "/actions/register", response_model=list[ServiceActionResponse], status_code=201
+)
 async def register_actions(
     body: RegisterActionsRequest,
     _key: str = Depends(require_service_key),
@@ -29,7 +31,9 @@ async def register_actions(
     actions = await role_service.register_actions(
         db,
         service_name=body.service_name,
-        actions=[{"action": a.action, "description": a.description} for a in body.actions],
+        actions=[
+            {"action": a.action, "description": a.description} for a in body.actions
+        ],
     )
     return actions
 
@@ -66,7 +70,9 @@ async def get_user_actions(
     db: AsyncSession = Depends(get_db),
 ):
     if workspace_id != user.workspace_id:
-        raise HTTPException(status_code=403, detail="Cross-workspace lookup not allowed")
+        raise HTTPException(
+            status_code=403, detail="Cross-workspace lookup not allowed"
+        )
 
     actions = await role_service.get_user_actions(
         db,

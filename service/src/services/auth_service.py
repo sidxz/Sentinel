@@ -3,8 +3,9 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.jwt import create_access_token, create_admin_token, create_refresh_token, decode_token
+from src.auth.jwt import create_access_token, create_refresh_token, decode_token
 from src.config import settings
+from src.schemas.validators import strip_html
 from src.models.group import GroupMembership
 from src.models.user import SocialAccount, User
 from src.models.workspace import WorkspaceMembership
@@ -31,8 +32,8 @@ async def find_or_create_user(
 
     if social_account:
         user = await db.get(User, social_account.user_id)
-        # Update profile from provider
-        user.name = name
+        # Update profile from provider (sanitize IdP data)
+        user.name = strip_html(name)
         if avatar_url:
             user.avatar_url = avatar_url
         social_account.provider_data = provider_data
@@ -45,7 +46,7 @@ async def find_or_create_user(
     user = result.scalar_one_or_none()
 
     if not user:
-        user = User(email=email, name=name, avatar_url=avatar_url)
+        user = User(email=email, name=strip_html(name), avatar_url=avatar_url)
         db.add(user)
         await db.flush()
 
@@ -169,6 +170,7 @@ async def rotate_refresh_token(
 
     # Get workspace slug
     from src.models.workspace import Workspace
+
     workspace = await db.get(Workspace, membership.workspace_id)
 
     # Get group IDs

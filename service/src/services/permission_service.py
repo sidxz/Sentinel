@@ -3,9 +3,7 @@ import uuid
 from sqlalchemy import select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.group import GroupMembership
 from src.models.permission import ResourcePermission, ResourceShare
-from src.models.workspace import WorkspaceMembership
 
 
 async def register_resource(
@@ -205,11 +203,7 @@ async def lookup_accessible_resources(
 
     if is_privileged:
         # Admin/owner: all resources in workspace for this service/type
-        stmt = (
-            select(ResourcePermission.resource_id)
-            .where(*base_filter)
-            .limit(limit)
-        )
+        stmt = select(ResourcePermission.resource_id).where(*base_filter).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all()), True
 
@@ -240,7 +234,10 @@ async def lookup_accessible_resources(
     if action == "view":
         user_shared = (
             select(ResourcePermission.resource_id)
-            .join(ResourceShare, ResourceShare.resource_permission_id == ResourcePermission.id)
+            .join(
+                ResourceShare,
+                ResourceShare.resource_permission_id == ResourcePermission.id,
+            )
             .where(
                 *base_filter,
                 ResourceShare.grantee_type == "user",
@@ -250,7 +247,10 @@ async def lookup_accessible_resources(
     else:
         user_shared = (
             select(ResourcePermission.resource_id)
-            .join(ResourceShare, ResourceShare.resource_permission_id == ResourcePermission.id)
+            .join(
+                ResourceShare,
+                ResourceShare.resource_permission_id == ResourcePermission.id,
+            )
             .where(
                 *base_filter,
                 ResourceShare.grantee_type == "user",
@@ -265,7 +265,10 @@ async def lookup_accessible_resources(
         if action == "view":
             group_shared = (
                 select(ResourcePermission.resource_id)
-                .join(ResourceShare, ResourceShare.resource_permission_id == ResourcePermission.id)
+                .join(
+                    ResourceShare,
+                    ResourceShare.resource_permission_id == ResourcePermission.id,
+                )
                 .where(
                     *base_filter,
                     ResourceShare.grantee_type == "group",
@@ -275,7 +278,10 @@ async def lookup_accessible_resources(
         else:
             group_shared = (
                 select(ResourcePermission.resource_id)
-                .join(ResourceShare, ResourceShare.resource_permission_id == ResourcePermission.id)
+                .join(
+                    ResourceShare,
+                    ResourceShare.resource_permission_id == ResourcePermission.id,
+                )
                 .where(
                     *base_filter,
                     ResourceShare.grantee_type == "group",

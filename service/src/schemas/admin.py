@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from src.schemas.validators import SafeStr, SafeStrOptional
+
 
 class AdminUserResponse(BaseModel):
     id: uuid.UUID
@@ -49,7 +51,7 @@ class UserMembershipResponse(BaseModel):
 
 
 class AdminUserUpdateRequest(BaseModel):
-    name: str | None = None
+    name: SafeStrOptional = None
     is_active: bool | None = None
     is_admin: bool | None = None
 
@@ -67,9 +69,9 @@ class AdminWorkspaceResponse(BaseModel):
 
 
 class AdminWorkspaceCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
+    name: SafeStr = Field(min_length=1, max_length=255)
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
-    description: str | None = None
+    description: SafeStrOptional = None
 
 
 class AdminWorkspaceDetailResponse(BaseModel):
@@ -115,7 +117,7 @@ class AdminResourceShareResponse(BaseModel):
 
 class CsvImportRow(BaseModel):
     email: str
-    name: str
+    name: SafeStr
     workspace_slug: str
     role: str = "viewer"
     error: str | None = None
@@ -179,6 +181,7 @@ class AdminStatsResponse(BaseModel):
 
 # ── Health ───────────────────────────────────────────────────────────
 
+
 class HealthCheckDetail(BaseModel):
     status: str
     latency_ms: float
@@ -193,6 +196,7 @@ class SystemHealthResponse(BaseModel):
 
 
 # ── Settings ─────────────────────────────────────────────────────────
+
 
 class OAuthProviderInfo(BaseModel):
     name: str
@@ -241,6 +245,7 @@ class SystemSettingsResponse(BaseModel):
 
 
 # ── Bulk Operations ──────────────────────────────────────────────────
+
 
 class BulkUserStatusRequest(BaseModel):
     user_ids: list[uuid.UUID]

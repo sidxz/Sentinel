@@ -64,9 +64,14 @@ async def accessible_resources(
     db: AsyncSession = Depends(get_db),
 ):
     if body.workspace_id != user.workspace_id:
-        raise HTTPException(status_code=403, detail="Cross-workspace lookup not allowed")
+        raise HTTPException(
+            status_code=403, detail="Cross-workspace lookup not allowed"
+        )
 
-    resource_ids, has_full_access = await permission_service.lookup_accessible_resources(
+    (
+        resource_ids,
+        has_full_access,
+    ) = await permission_service.lookup_accessible_resources(
         db,
         user_id=user.user_id,
         workspace_id=user.workspace_id,
@@ -77,7 +82,9 @@ async def accessible_resources(
         action=body.action,
         limit=body.limit,
     )
-    return AccessibleResourcesResponse(resource_ids=resource_ids, has_full_access=has_full_access)
+    return AccessibleResourcesResponse(
+        resource_ids=resource_ids, has_full_access=has_full_access
+    )
 
 
 @router.post("/{permission_id}/share", status_code=201)
@@ -127,7 +134,9 @@ async def update_visibility(
     _key: str = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
-    return await permission_service.update_visibility(db, permission_id, body.visibility)
+    return await permission_service.update_visibility(
+        db, permission_id, body.visibility
+    )
 
 
 @router.delete("/{permission_id}/share")
@@ -146,7 +155,10 @@ async def revoke_share(
     return {"status": "ok"}
 
 
-@router.get("/resource/{service_name}/{resource_type}/{resource_id}", response_model=ResourcePermissionResponse)
+@router.get(
+    "/resource/{service_name}/{resource_type}/{resource_id}",
+    response_model=ResourcePermissionResponse,
+)
 async def get_resource_acl(
     service_name: str,
     resource_type: str,
@@ -154,7 +166,9 @@ async def get_resource_acl(
     _key: str = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
-    perm = await permission_service.get_resource_permission(db, service_name, resource_type, resource_id)
+    perm = await permission_service.get_resource_permission(
+        db, service_name, resource_type, resource_id
+    )
     if not perm:
         raise HTTPException(status_code=404, detail="Resource not found")
     return perm

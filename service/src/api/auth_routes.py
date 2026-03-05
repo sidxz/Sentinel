@@ -27,7 +27,9 @@ async def list_providers():
 async def login(provider: str, request: Request):
     configured = get_configured_providers()
     if provider not in configured:
-        raise HTTPException(status_code=400, detail=f"Provider '{provider}' is not configured")
+        raise HTTPException(
+            status_code=400, detail=f"Provider '{provider}' is not configured"
+        )
     client = oauth.create_client(provider)
     redirect_uri = f"{settings.base_url}/auth/callback/{provider}"
     return await client.authorize_redirect(request, redirect_uri)
@@ -42,7 +44,9 @@ async def callback(
 ):
     configured = get_configured_providers()
     if provider not in configured:
-        raise HTTPException(status_code=400, detail=f"Provider '{provider}' is not configured")
+        raise HTTPException(
+            status_code=400, detail=f"Provider '{provider}' is not configured"
+        )
 
     client = oauth.create_client(provider)
     token = await client.authorize_access_token(request)
@@ -81,14 +85,23 @@ async def callback(
     )
 
     await activity_service.log_activity(
-        db, action="user_login", target_type="user", target_id=user.id,
-        actor_id=user.id, detail={"provider": provider, "ip": request.client.host if request.client else None},
+        db,
+        action="user_login",
+        target_type="user",
+        target_id=user.id,
+        actor_id=user.id,
+        detail={
+            "provider": provider,
+            "ip": request.client.host if request.client else None,
+        },
     )
     await db.commit()
 
     # TODO: redirect to frontend with auth code / set cookie
     # For now, redirect to frontend with user ID for workspace selection
-    return RedirectResponse(url=f"{settings.frontend_url}/auth/callback?user_id={user.id}")
+    return RedirectResponse(
+        url=f"{settings.frontend_url}/auth/callback?user_id={user.id}"
+    )
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -101,7 +114,10 @@ async def refresh_token(
     try:
         tokens = await auth_service.rotate_refresh_token(db, body.refresh_token)
     except Exception as e:
-        raise HTTPException(status_code=401, detail=str(e) if isinstance(e, ValueError) else "Invalid refresh token")
+        raise HTTPException(
+            status_code=401,
+            detail=str(e) if isinstance(e, ValueError) else "Invalid refresh token",
+        )
     return tokens
 
 
@@ -132,7 +148,9 @@ async def logout(
 async def admin_login(provider: str, request: Request):
     configured = get_configured_providers()
     if provider not in configured:
-        raise HTTPException(status_code=400, detail=f"Provider '{provider}' is not configured")
+        raise HTTPException(
+            status_code=400, detail=f"Provider '{provider}' is not configured"
+        )
     client = oauth.create_client(provider)
     redirect_uri = f"{settings.base_url}/auth/admin/callback/{provider}"
     return await client.authorize_redirect(request, redirect_uri)
@@ -148,7 +166,9 @@ async def admin_callback(
     try:
         configured = get_configured_providers()
         if provider not in configured:
-            raise HTTPException(status_code=400, detail=f"Provider '{provider}' is not configured")
+            raise HTTPException(
+                status_code=400, detail=f"Provider '{provider}' is not configured"
+            )
 
         client = oauth.create_client(provider)
         token = await client.authorize_access_token(request)
@@ -190,12 +210,21 @@ async def admin_callback(
             )
 
         await activity_service.log_activity(
-            db, action="admin_login", target_type="user", target_id=user.id,
-            actor_id=user.id, detail={"provider": provider, "ip": request.client.host if request.client else None},
+            db,
+            action="admin_login",
+            target_type="user",
+            target_id=user.id,
+            actor_id=user.id,
+            detail={
+                "provider": provider,
+                "ip": request.client.host if request.client else None,
+            },
         )
         await db.commit()
 
-        admin_token = create_admin_token(user_id=user.id, email=user.email, name=user.name)
+        admin_token = create_admin_token(
+            user_id=user.id, email=user.email, name=user.name
+        )
         response = RedirectResponse(url=f"{settings.admin_url}/", status_code=302)
         response.set_cookie(
             key="admin_token",
@@ -211,7 +240,9 @@ async def admin_callback(
         raise
     except Exception as e:
         logger.error("admin callback error", error=str(e), exc_info=True)
-        return JSONResponse(status_code=500, content={"detail": "Authentication failed"})
+        return JSONResponse(
+            status_code=500, content={"detail": "Authentication failed"}
+        )
 
 
 @router.get("/admin/me")

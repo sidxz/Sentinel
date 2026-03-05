@@ -1,236 +1,163 @@
-# Daikon Identity Service
+# DAIKON IDENTITY SERVICE
 
-Authentication, workspace management, and entity-level permissions as a reusable microservice.
+A production-ready authentication, workspace management, and entity-level permissions microservice. Built for teams that need SSO-first identity with fine-grained authorization — without the complexity of Keycloak or Ory.
 
-Users always come from external identity providers (Google, GitHub, Microsoft EntraID, or any OIDC-compliant SSO). The service stores a local user record synced from the IdP on login, and manages workspaces, groups, and resource permissions.
+## Status
 
-## Quick Start
+[![CI](https://github.com/sidxz/DIS/actions/workflows/ci.yml/badge.svg)](https://github.com/sidxz/DIS/actions/workflows/ci.yml)
+[![Docs](https://github.com/sidxz/DIS/actions/workflows/docs.yml/badge.svg)](https://sidxz.github.io/DIS/)
+[![Python](https://img.shields.io/badge/Python-3.12+-3776ab?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169e1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Redis-7-dc382d?logo=redis&logoColor=white)](https://redis.io/)
 
-### Prerequisites
+## Why it exists
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) (package manager)
-- Docker & Docker Compose
+Modern microservice architectures need a central identity layer that does more than just login. Daikon Identity Service handles the full lifecycle: external IdP login (Google, GitHub, Microsoft EntraID), workspace isolation, group management, and a three-tier authorization model that scales from coarse role checks to per-resource Zanzibar-style ACLs.
 
-### 1. Clone and install
+Users always come from external identity providers — there is no local password management. The service stores a synced user record on login and manages everything else.
+
+## Capabilities
+
+- **SSO-first authentication** via OAuth2/OIDC with PKCE (Google, GitHub, Microsoft EntraID, any OIDC provider).
+- **Three-tier authorization** — workspace roles (JWT claims), custom RBAC roles (DB), and entity ACLs (Zanzibar-style).
+- **Token lifecycle** with RS256 JWTs, refresh rotation, reuse detection, and Redis denylist revocation.
+- **Workspace isolation** — users, groups, roles, and permissions are scoped per workspace.
+- **Admin panel** — React SPA with full CRUD, audit logs, CSV import/export, and role management.
+- **SDK** — pip-installable `daikon-identity-sdk` with middleware, FastAPI dependencies, and HTTP clients.
+- **Security hardened** — rate limiting, CORS, HSTS, CSP, trusted hosts, session encryption, and a comprehensive pentest suite.
+
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+    Client[Client App] -->|Bearer JWT| API[FastAPI Service]
+    Admin[Admin SPA] -->|Cookie Auth| API
+    Backend[Backend Service] -->|X-Service-Key + JWT| API
+    API --> PG[(PostgreSQL)]
+    API --> RD[(Redis)]
+    API -->|OAuth2/OIDC| IdP[Google / GitHub / EntraID]
+```
+
+## Authorization model
+
+```mermaid
+flowchart TD
+    Request[Incoming Request] --> T1{Workspace Role?}
+    T1 -->|owner/admin/editor/viewer| T2{Custom RBAC Role?}
+    T1 -->|insufficient| Deny[403 Denied]
+    T2 -->|action granted| T3{Entity ACL?}
+    T2 -->|no action match| Deny
+    T3 -->|owner / shared / workspace-visible| Allow[200 Allowed]
+    T3 -->|private + no share| Deny
+```
+
+| Tier | Mechanism | Granularity | Example |
+|------|-----------|-------------|---------|
+| **Workspace Roles** | JWT claims | Coarse | "Is user an editor in this workspace?" |
+| **Custom RBAC** | DB roles + actions | Action-level | "Can user export reports?" |
+| **Entity ACLs** | Zanzibar-style DB | Per-resource | "Can user edit document X?" |
+
+## Quick start
 
 ```bash
-cd identity-service
-uv sync
+# One-time setup: generates keys, installs deps, starts Postgres + Redis
+make setup
+
+# Start the identity service on :9003
+make start
+
+# Start the admin panel on :9004
+make admin
+
+# (Optional) Seed with test data
+make seed
 ```
 
-### 2. Generate JWT signing keys
+The API is available at `http://localhost:9003` with interactive docs at `/docs`.
+
+## SDK usage
+
+Install the SDK in your consuming service:
 
 ```bash
-mkdir -p keys
-openssl genrsa -out keys/private.pem 2048
-openssl rsa -in keys/private.pem -pubout -out keys/public.pem
+pip install daikon-identity-sdk
 ```
 
-### 3. Configure environment
-
-```bash
-cp .env.example .env
-# Edit .env with your OAuth provider credentials
-```
-
-### 4. Start infrastructure
-
-```bash
-# Create the shared network (if it doesn't exist)
-docker network create docu_store-network 2>/dev/null || true
-
-# Start PostgreSQL + Redis
-docker compose up -d identity-postgres identity-redis
-```
-
-### 5. Run database migrations
-
-```bash
-cd service
-uv run alembic revision --autogenerate -m "initial"
-uv run alembic upgrade head
-cd ..
-```
-
-### 6. Start the service
-
-```bash
-cd service
-uv run uvicorn src.main:app --host 0.0.0.0 --port 9003 --reload
-```
-
-The API is now available at http://localhost:9003. Interactive docs at http://localhost:9003/docs.
-
-## Project Structure
-
-```
-identity-service/
-├── service/                # FastAPI microservice
-│   ├── src/
-│   │   ├── main.py         # App entrypoint
-│   │   ├── config.py       # Pydantic settings
-│   │   ├── database.py     # SQLAlchemy async engine
-│   │   ├── models/         # SQLAlchemy ORM models (8 tables)
-│   │   ├── schemas/        # Pydantic request/response models
-│   │   ├── services/       # Business logic layer
-│   │   ├── auth/           # OAuth2 providers + JWT
-│   │   └── api/            # FastAPI route handlers
-│   ├── migrations/         # Alembic migrations
-│   └── Dockerfile
-├── sdk/                    # Pip-installable SDK
-│   └── src/identity_sdk/
-│       ├── types.py        # AuthenticatedUser, WorkspaceContext
-│       ├── middleware.py   # JWTAuthMiddleware
-│       ├── dependencies.py # FastAPI deps (get_current_user, require_role, require_action)
-│       ├── permissions.py  # PermissionClient (entity ACL HTTP client)
-│       └── roles.py        # RoleClient (RBAC HTTP client)
-├── demo/                   # Demo app for testing
-├── docs/                   # Design documents
-│   └── PLAN.md
-├── docker-compose.yml
-└── .env.example
-```
-
-## API Overview
-
-| Group | Endpoints | Description |
-|-------|-----------|-------------|
-| **Auth** | `GET /auth/login/{provider}`, `GET /auth/callback/{provider}`, `POST /auth/refresh`, `POST /auth/logout` | OAuth2/OIDC login flow |
-| **Users** | `GET /users/me`, `PATCH /users/me` | Current user profile |
-| **Workspaces** | `POST /workspaces`, `GET /workspaces`, `GET/PATCH/DELETE /workspaces/{id}` | Workspace CRUD |
-| **Members** | `GET /workspaces/{id}/members`, `POST .../invite`, `PATCH/DELETE .../members/{uid}` | Membership management |
-| **Groups** | `POST/GET /workspaces/{id}/groups`, `PATCH/DELETE .../groups/{gid}`, member add/remove | Group management |
-| **Permissions** | `POST /permissions/check`, `POST /permissions/register`, share/revoke, get ACL | Entity-level ACLs |
-| **Roles (RBAC)** | `POST /roles/actions/register`, `POST /roles/check-action`, `GET /roles/user-actions` | Action-based authorization |
-
-Full interactive docs available at `/docs` when the service is running.
-
-## SDK Usage
-
-Install the SDK in your consuming app:
-
-```bash
-# Development (editable install)
-uv add --editable /path/to/identity-service/sdk
-
-# Or add to pyproject.toml
-# dependencies = ["daikon-identity-sdk"]
-```
-
-### Add JWT middleware to your FastAPI app
+Add JWT middleware and use dependency injection:
 
 ```python
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from identity_sdk.middleware import JWTAuthMiddleware
-
-app = FastAPI()
-public_key = open("path/to/public.pem").read()
-app.add_middleware(JWTAuthMiddleware, public_key=public_key)
-```
-
-### Use dependency injection in routes
-
-```python
-from fastapi import Depends
-from identity_sdk.dependencies import get_current_user, require_role, get_workspace_id
+from identity_sdk.dependencies import get_current_user, require_role
 from identity_sdk.types import AuthenticatedUser
 
-@router.get("/my-things")
+app = FastAPI()
+app.add_middleware(JWTAuthMiddleware, public_key=open("public.pem").read())
+
+@app.get("/things")
 async def list_things(user: AuthenticatedUser = Depends(get_current_user)):
-    # user.user_id, user.workspace_id, user.workspace_role, user.groups
     return await fetch_things(workspace_id=user.workspace_id)
 
-@router.post("/my-things")
+@app.post("/things")
 async def create_thing(user: AuthenticatedUser = Depends(require_role("editor"))):
-    # Only editors, admins, and owners can reach this
     ...
 ```
 
-### Check entity-level permissions
+Check entity-level permissions from any backend service:
 
 ```python
 from identity_sdk.permissions import PermissionClient
 
-perm_client = PermissionClient(
-    base_url="http://localhost:9003",
-    service_name="my-app",
-)
+perm = PermissionClient(base_url="http://localhost:9003", service_name="my-app")
 
-# Check if user can edit a specific resource
-allowed = await perm_client.can(
-    token=user_jwt,
-    resource_type="document",
-    resource_id=doc_id,
-    action="edit",
-)
-
-# Register a new resource when created
-await perm_client.register_resource(
-    token=user_jwt,
-    resource_type="document",
-    resource_id=new_doc_id,
-    workspace_id=workspace_id,
-    owner_id=user_id,
-)
+allowed = await perm.can(token=jwt, resource_type="document", resource_id=doc_id, action="edit")
 ```
 
-### Check action-based permissions (RBAC)
+## Project structure
 
-```python
-from identity_sdk.roles import RoleClient
-from identity_sdk.dependencies import require_action
-
-role_client = RoleClient(
-    base_url="http://localhost:9003",
-    service_name="my-app",
-    service_key="sk_your_service_key",
-)
-
-# Register actions on startup
-await role_client.register_actions([
-    {"action": "reports:export", "description": "Export reports"},
-])
-
-# Use as a dependency
-@router.get("/reports/export")
-async def export(user = Depends(require_action(role_client, "reports:export"))):
-    ...
+```
+identity-service/
+├── service/              # FastAPI microservice (auth, users, workspaces, permissions, RBAC)
+├── sdk/                  # Pip-installable SDK (middleware, dependencies, HTTP clients)
+├── admin/                # React admin panel (Vite + TailwindCSS)
+├── pentest/              # Security testing suite (ZAP, Nuclei, Nikto, jwt_tool + 110 custom tests)
+├── docs/                 # Documentation site (MkDocs Material)
+├── docker-compose.yml    # PostgreSQL 16 + Redis 7
+└── Makefile              # setup, start, admin, seed, pentest, docs
 ```
 
-## OAuth2 Provider Setup
+## API overview
 
-### Google
+| Group | Key Endpoints | Auth Tier |
+|-------|---------------|-----------|
+| **Auth** | `login/{provider}`, `callback/{provider}`, `refresh`, `logout` | Public / User JWT |
+| **Users** | `GET/PATCH /users/me` | User JWT |
+| **Workspaces** | CRUD + member invite/remove | User JWT (role-gated) |
+| **Groups** | CRUD + member management | User JWT (role-gated) |
+| **Permissions** | `check`, `register`, `share`, `accessible` | Service Key + JWT |
+| **Roles (RBAC)** | `register-actions`, `check-action`, `user-actions` | Service Key + JWT |
+| **Admin** | Full CRUD, audit logs, CSV export, system settings | Admin Cookie |
 
-1. Go to Google Cloud Console > APIs & Services > Credentials
-2. Create an OAuth 2.0 Client ID (Web application)
-3. Set redirect URI: `http://localhost:9003/auth/callback/google`
-4. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env`
+## Security
 
-### GitHub
+The service ships with defense-in-depth middleware, per-endpoint rate limiting, and a comprehensive penetration testing suite. See the [security documentation](https://sidxz.github.io/DIS/security/) for the full architecture.
 
-1. Go to GitHub > Settings > Developer Settings > OAuth Apps
-2. Create a new OAuth App
-3. Set callback URL: `http://localhost:9003/auth/callback/github`
-4. Add `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` to `.env`
+```bash
+# Run the pentest suite
+make pentest-setup    # install tools (one-time)
+make pentest          # ZAP + Nuclei + Nikto + jwt_tool + custom scripts
+```
 
-### Microsoft EntraID
+## Documentation
 
-1. Go to Azure Portal > App registrations
-2. Register a new application
-3. Set redirect URI: `http://localhost:9003/auth/callback/entra_id`
-4. Add `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, and `ENTRA_TENANT_ID` to `.env`
+Full documentation is hosted at [sidxz.github.io/DIS](https://sidxz.github.io/DIS/) — covering getting started, architecture guides, API reference, SDK reference, deployment, and security.
 
-## Authorization Model
+```bash
+# Serve docs locally
+make docs-serve
+```
 
-**Three-tier system:**
+## License
 
-1. **Workspace roles** (from JWT, no service call): `viewer` < `editor` < `admin` < `owner`
-2. **Custom roles / RBAC** (via role service): service-scoped actions organized into workspace roles (e.g., "can user export reports?")
-3. **Entity ACLs** (via permission service): per-resource visibility (`private`/`workspace`) + sharing grants
-
-**Entity ACL resolution order:** workspace member? -> entity owner? -> workspace admin? -> workspace-visible? -> user share? -> group share? -> deny.
-
-## Architecture
-
-For the full design document including data model, JWT structure, and integration plan, see [docs/PLAN.md](docs/PLAN.md).
+MIT

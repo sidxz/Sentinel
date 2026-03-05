@@ -1,14 +1,17 @@
 from pathlib import Path
 
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     # Database
-    database_url: str = "postgresql+asyncpg://identity:identity_dev@localhost:9001/identity"
+    database_url: str = (
+        "postgresql+asyncpg://identity:identity_dev@localhost:9001/identity"
+    )
 
     # Redis
     redis_url: str = "redis://localhost:9002/0"

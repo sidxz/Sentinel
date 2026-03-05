@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from src.models.group import Group
 from src.models.permission import ResourcePermission, ResourceShare
-from src.models.user import SocialAccount, User
+from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.services import activity_service
 
@@ -18,7 +18,9 @@ async def get_stats(db: AsyncSession) -> dict:
     total_workspaces = await db.scalar(select(func.count(Workspace.id)))
     total_groups = await db.scalar(select(func.count(Group.id)))
     total_resources = await db.scalar(select(func.count(ResourcePermission.id)))
-    active_users = await db.scalar(select(func.count(User.id)).where(User.is_active == True))  # noqa: E712
+    active_users = await db.scalar(
+        select(func.count(User.id)).where(User.is_active.is_(True))
+    )
     inactive_users = (total_users or 0) - (active_users or 0)
 
     recent_stmt = (
@@ -46,7 +48,9 @@ async def get_stats(db: AsyncSession) -> dict:
     # Top 5 workspaces by member count
     top_ws_stmt = (
         select(Workspace, func.count(WorkspaceMembership.id).label("member_count"))
-        .outerjoin(WorkspaceMembership, Workspace.id == WorkspaceMembership.workspace_id)
+        .outerjoin(
+            WorkspaceMembership, Workspace.id == WorkspaceMembership.workspace_id
+        )
         .group_by(Workspace.id)
         .order_by(func.count(WorkspaceMembership.id).desc())
         .limit(5)
@@ -95,7 +99,11 @@ async def list_users(
     total = await db.scalar(count_query) or 0
 
     # Fetch page
-    stmt = base_query.order_by(User.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    stmt = (
+        base_query.order_by(User.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     result = await db.execute(stmt)
 
     items = [
@@ -156,7 +164,11 @@ async def get_user_detail(db: AsyncSession, user_id: uuid.UUID) -> dict | None:
         "created_at": user.created_at,
         "updated_at": user.updated_at,
         "social_accounts": [
-            {"id": sa.id, "provider": sa.provider, "provider_user_id": sa.provider_user_id}
+            {
+                "id": sa.id,
+                "provider": sa.provider,
+                "provider_user_id": sa.provider_user_id,
+            }
             for sa in user.social_accounts
         ],
         "memberships": memberships,
@@ -191,7 +203,9 @@ async def list_workspaces(
 ) -> dict:
     base_query = (
         select(Workspace, func.count(WorkspaceMembership.id).label("member_count"))
-        .outerjoin(WorkspaceMembership, Workspace.id == WorkspaceMembership.workspace_id)
+        .outerjoin(
+            WorkspaceMembership, Workspace.id == WorkspaceMembership.workspace_id
+        )
         .group_by(Workspace.id)
     )
 
@@ -207,7 +221,11 @@ async def list_workspaces(
         )
     total = await db.scalar(count_query) or 0
 
-    stmt = base_query.order_by(Workspace.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    stmt = (
+        base_query.order_by(Workspace.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     result = await db.execute(stmt)
 
     items = [
@@ -226,7 +244,9 @@ async def list_workspaces(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
-async def get_workspace_detail(db: AsyncSession, workspace_id: uuid.UUID) -> dict | None:
+async def get_workspace_detail(
+    db: AsyncSession, workspace_id: uuid.UUID
+) -> dict | None:
     workspace = await db.get(Workspace, workspace_id)
     if not workspace:
         return None
@@ -256,8 +276,7 @@ async def list_all_workspaces(db: AsyncSession) -> list[dict]:
     stmt = select(Workspace).order_by(Workspace.name)
     result = await db.execute(stmt)
     return [
-        {"id": ws.id, "name": ws.name, "slug": ws.slug}
-        for ws in result.scalars().all()
+        {"id": ws.id, "name": ws.name, "slug": ws.slug} for ws in result.scalars().all()
     ]
 
 
@@ -275,7 +294,9 @@ async def list_permissions(
             func.count(ResourceShare.id).label("share_count"),
         )
         .outerjoin(User, ResourcePermission.owner_id == User.id)
-        .outerjoin(ResourceShare, ResourcePermission.id == ResourceShare.resource_permission_id)
+        .outerjoin(
+            ResourceShare, ResourcePermission.id == ResourceShare.resource_permission_id
+        )
         .group_by(ResourcePermission.id, User.email)
     )
 
@@ -291,8 +312,7 @@ async def list_permissions(
     total = await db.scalar(count_query) or 0
 
     stmt = (
-        base_query
-        .order_by(ResourcePermission.created_at.desc())
+        base_query.order_by(ResourcePermission.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -317,7 +337,9 @@ async def list_permissions(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
-async def get_permission_detail(db: AsyncSession, permission_id: uuid.UUID) -> dict | None:
+async def get_permission_detail(
+    db: AsyncSession, permission_id: uuid.UUID
+) -> dict | None:
     stmt = (
         select(ResourcePermission, User.email.label("owner_email"))
         .outerjoin(User, ResourcePermission.owner_id == User.id)
@@ -368,7 +390,9 @@ async def add_user_to_workspace(
     role: str,
     actor_id: uuid.UUID | None = None,
 ) -> WorkspaceMembership:
-    membership = WorkspaceMembership(workspace_id=workspace_id, user_id=user_id, role=role)
+    membership = WorkspaceMembership(
+        workspace_id=workspace_id, user_id=user_id, role=role
+    )
     db.add(membership)
     await db.flush()
     await activity_service.log_activity(
@@ -390,6 +414,7 @@ async def bulk_update_status(
     is_active: bool,
 ) -> int:
     from sqlalchemy import update
+
     result = await db.execute(
         update(User).where(User.id.in_(user_ids)).values(is_active=is_active)
     )
@@ -434,13 +459,15 @@ def parse_csv(content: str) -> dict:
         else:
             valid_count += 1
 
-        rows.append({
-            "email": email,
-            "name": name,
-            "workspace_slug": workspace_slug,
-            "role": role,
-            "error": error,
-        })
+        rows.append(
+            {
+                "email": email,
+                "name": name,
+                "workspace_slug": workspace_slug,
+                "role": role,
+                "error": error,
+            }
+        )
 
     return {"rows": rows, "valid_count": valid_count, "error_count": error_count}
 
@@ -474,7 +501,9 @@ async def execute_import(
                 users_created += 1
 
             # Find workspace
-            ws_result = await db.execute(select(Workspace).where(Workspace.slug == workspace_slug))
+            ws_result = await db.execute(
+                select(Workspace).where(Workspace.slug == workspace_slug)
+            )
             workspace = ws_result.scalar_one_or_none()
             if not workspace:
                 errors.append(f"Workspace '{workspace_slug}' not found for {email}")
@@ -491,7 +520,9 @@ async def execute_import(
                 errors.append(f"{email} already in workspace '{workspace_slug}'")
                 continue
 
-            membership = WorkspaceMembership(workspace_id=workspace.id, user_id=user.id, role=role)
+            membership = WorkspaceMembership(
+                workspace_id=workspace.id, user_id=user.id, role=role
+            )
             db.add(membership)
             memberships_added += 1
 
@@ -505,8 +536,15 @@ async def execute_import(
             target_type="system",
             target_id=uuid.uuid4(),
             actor_id=actor_id,
-            detail={"users_created": users_created, "memberships_added": memberships_added},
+            detail={
+                "users_created": users_created,
+                "memberships_added": memberships_added,
+            },
         )
 
     await db.commit()
-    return {"users_created": users_created, "memberships_added": memberships_added, "errors": errors}
+    return {
+        "users_created": users_created,
+        "memberships_added": memberships_added,
+        "errors": errors,
+    }
