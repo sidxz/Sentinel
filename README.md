@@ -29,6 +29,10 @@ Modern microservice architectures need a central identity layer that does more t
 - **SDK** — pip-installable `sentinel-auth-sdk` with middleware, FastAPI dependencies, and HTTP clients.
 - **Security hardened** — rate limiting, CORS, HSTS, CSP, trusted hosts, session encryption, and a comprehensive pentest suite.
 
+## Documentation
+
+Documentation is hosted at [sidxz.github.io/Sentinel/](sidxz.github.io/Sentinel/)
+
 ## Architecture at a glance
 
 ```mermaid
@@ -129,35 +133,14 @@ identity-service/
 └── Makefile              # setup, start, admin, seed, pentest, docs
 ```
 
-## API overview
-
-| Group | Key Endpoints | Auth Tier |
-|-------|---------------|-----------|
-| **Auth** | `login/{provider}`, `callback/{provider}`, `refresh`, `logout` | Public / User JWT |
-| **Users** | `GET/PATCH /users/me` | User JWT |
-| **Workspaces** | CRUD + member invite/remove | User JWT (role-gated) |
-| **Groups** | CRUD + member management | User JWT (role-gated) |
-| **Permissions** | `check`, `register`, `share`, `accessible` | Service Key + JWT |
-| **Roles (RBAC)** | `register-actions`, `check-action`, `user-actions` | Service Key + JWT |
-| **Admin** | Full CRUD, audit logs, CSV export, system settings | Admin Cookie |
-
 ## Security
 
-The service ships with defense-in-depth middleware, per-endpoint rate limiting, and a comprehensive penetration testing suite. See the [security documentation](https://sidxz.github.io/DIS/security/) for the full architecture.
+The service ships with defense-in-depth middleware, per-endpoint rate limiting, and a comprehensive penetration testing suite. See the [security documentation](https://sidxz.github.io/Sentinel/security/) for the full architecture.
 
 ```bash
 # Run the pentest suite
 make pentest-setup    # install tools (one-time)
 make pentest          # ZAP + Nuclei + Nikto + jwt_tool + custom scripts
-```
-
-## Documentation
-
-Full documentation is hosted at [sidxz.github.io/DIS](https://sidxz.github.io/DIS/) — covering getting started, architecture guides, API reference, SDK reference, deployment, and security.
-
-```bash
-# Serve docs locally
-make docs-serve
 ```
 
 ## License
