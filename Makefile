@@ -1,4 +1,4 @@
-.PHONY: help setup start admin seed create-admin status clean nuke docs docs-serve
+.PHONY: help setup start admin seed create-admin status clean nuke docs docs-serve pentest pentest-custom pentest-setup
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -51,3 +51,12 @@ clean: ## Stop containers and wipe database
 nuke: clean ## Full reset: wipe everything including deps and keys
 	rm -rf keys/ .venv service/.venv sdk/.venv admin/node_modules
 	@echo "Run 'make setup' to start fresh."
+
+pentest-setup: ## Install pentest tools (ZAP, Nuclei, Nikto, jwt_tool)
+	cd pentest && bash setup_tools.sh
+
+pentest: ## Run full pentest suite (tools + custom scripts)
+	cd pentest && python run_all.py --all
+
+pentest-custom: ## Run custom pentest scripts only
+	cd pentest && python run_all.py --custom
