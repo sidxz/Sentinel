@@ -11,6 +11,7 @@ jobs:
     name: Build & Publish SDK
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       id-token: write  # PyPI trusted publishing
     steps:
       - uses: actions/checkout@v4
