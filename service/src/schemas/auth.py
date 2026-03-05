@@ -26,3 +26,15 @@ class TokenPayload(BaseModel):
 
 class ProviderListResponse(BaseModel):
     providers: list[str]
+
+
+class SelectWorkspaceRequest(BaseModel):
+    user_id: uuid.UUID
+    workspace_id: uuid.UUID
+
+
+class WorkspaceOptionResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    role: str

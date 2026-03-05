@@ -1,5 +1,8 @@
+import uuid
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse, RedirectResponse
 
@@ -8,9 +11,22 @@ from src.auth.jwt import create_admin_token, decode_token
 from src.auth.providers import get_configured_providers, oauth
 from src.config import settings
 from src.database import get_db
-from src.schemas.auth import ProviderListResponse, RefreshRequest, TokenResponse
+from src.models.user import User
+from src.models.workspace import Workspace, WorkspaceMembership
+from src.schemas.auth import (
+    ProviderListResponse,
+    RefreshRequest,
+    SelectWorkspaceRequest,
+    TokenResponse,
+    WorkspaceOptionResponse,
+)
 from src.middleware.rate_limit import limiter
-from src.services import activity_service, auth_service, token_service
+from src.services import (
+    activity_service,
+    auth_service,
+    token_service,
+    workspace_service,
+)
 
 logger = structlog.get_logger()
 
@@ -102,6 +118,58 @@ async def callback(
     return RedirectResponse(
         url=f"{settings.frontend_url}/auth/callback?user_id={user.id}"
     )
+
+
+@router.get("/workspaces", response_model=list[WorkspaceOptionResponse])
+@limiter.limit("10/minute")
+async def list_workspaces_for_login(
+    request: Request,
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """List workspaces a user belongs to (for workspace selection after OAuth)."""
+    user = await db.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    workspaces = await workspace_service.list_user_workspaces(db, user_id)
+
+    result = []
+    for ws in workspaces:
+        stmt = select(WorkspaceMembership.role).where(
+            WorkspaceMembership.workspace_id == ws.id,
+            WorkspaceMembership.user_id == user_id,
+        )
+        role_result = await db.execute(stmt)
+        role = role_result.scalar_one()
+        result.append(
+            WorkspaceOptionResponse(id=ws.id, name=ws.name, slug=ws.slug, role=role)
+        )
+    return result
+
+
+@router.post("/token", response_model=TokenResponse)
+@limiter.limit("10/minute")
+async def select_workspace_and_issue_tokens(
+    request: Request,
+    body: SelectWorkspaceRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Exchange user_id + workspace_id for JWT tokens after OAuth login."""
+    user = await db.get(User, body.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    workspace = await db.get(Workspace, body.workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    try:
+        tokens = await auth_service.issue_tokens(db, user, workspace.id, workspace.slug)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    return tokens
 
 
 @router.post("/refresh", response_model=TokenResponse)

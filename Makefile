@@ -1,4 +1,4 @@
-.PHONY: help setup start admin seed create-admin status clean nuke docs docs-serve pentest pentest-custom pentest-setup
+.PHONY: help setup start admin seed create-admin status clean nuke docs docs-serve lint fmt pentest pentest-custom pentest-setup
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -38,6 +38,14 @@ status: ## Check what's running
 	@docker compose ps 2>/dev/null || echo "No containers"
 	@printf "Service: " && curl -sf http://localhost:9003/health 2>/dev/null || echo "not running"
 	@curl -sf -o /dev/null http://localhost:9004 && echo "Admin:   running on :9004" || echo "Admin:   not running"
+
+lint: ## Run ruff linter and format check
+	uv run ruff check service/src/ sdk/src/
+	uv run ruff format --check service/src/ sdk/src/
+
+fmt: ## Auto-fix lint and formatting issues
+	uv run ruff check --fix service/src/ sdk/src/
+	uv run ruff format service/src/ sdk/src/
 
 docs: ## Build documentation site
 	uv run --extra docs mkdocs build

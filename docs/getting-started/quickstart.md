@@ -91,8 +91,26 @@ The admin panel runs on **port 9004** at [http://localhost:9004](http://localhos
 !!! note "Admin access"
     To access the admin UI, your user's email must be listed in the `ADMIN_EMAILS` environment variable (comma-separated). You can also promote a user with `make create-admin`.
 
+## Try the Demo App
+
+The repository includes a complete demo application ("Team Notes") that showcases all identity service features — JWT auth, workspace roles, entity ACLs, and custom RBAC — with a React frontend and FastAPI backend.
+
+```bash
+# Terminal 1: Identity service (if not already running)
+make start
+
+# Terminal 2: Demo backend
+cd demo/backend && uv sync && uv run python -m src.main
+
+# Terminal 3: Demo frontend
+cd demo/frontend && npm install && npm run dev
+```
+
+Open [http://localhost:9101](http://localhost:9101) and sign in with Google. See the [Tutorial](../guide/tutorial.md) for a detailed walkthrough of how the demo is built.
+
 ## Next Steps
 
 - Review all available settings in the [Configuration](configuration.md) reference.
 - Read the [Architecture](../guide/architecture.md) section to understand how the service is structured.
+- Follow the [Tutorial](../guide/tutorial.md) to build your own app with the SDK.
 - Integrate your application using the [SDK guide](../sdk/index.md).

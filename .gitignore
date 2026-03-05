@@ -13,5 +13,11 @@ wheels/
 keys/
 .env
 
+# Node
+node_modules/
+
+# Archive
+_archive/
+
 # MkDocs build output
 site/

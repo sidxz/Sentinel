@@ -88,6 +88,7 @@ nav:
     - Configuration: getting-started/configuration.md
   - Guide:
     - guide/index.md
+    - Tutorial: guide/tutorial.md
     - Architecture: guide/architecture.md
     - Authentication: guide/authentication.md
     - JWT Tokens: guide/jwt.md

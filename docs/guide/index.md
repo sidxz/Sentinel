@@ -2,6 +2,12 @@
 
 This section covers the core concepts and design decisions behind the Daikon Identity Service. Each page dives deep into a specific area of the system.
 
+## Tutorial
+
+A step-by-step guide to building a "Team Notes" app that demonstrates authentication, workspace isolation, role enforcement, custom RBAC, and entity-level permissions. Start here if you want to integrate the SDK into your own app.
+
+[Read more](tutorial.md)
+
 ## Architecture
 
 How the service is structured, why we chose each technology, and how the major components fit together. Includes the full entity-relationship diagram and system topology.

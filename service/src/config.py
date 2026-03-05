@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     session_secret_key: str = "dev-only-change-me-in-production"
 
     # CORS (comma-separated in .env)
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://localhost:9101"
 
     # Security
     cookie_secure: bool = False  # Set True in production (requires HTTPS)
