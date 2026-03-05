@@ -310,3 +310,117 @@ Returned by `POST /permissions/accessible`.
 |---|---|---|---|
 | `resource_ids` | `list[UUID]` | Yes | List of resource IDs the user can access |
 | `has_full_access` | `boolean` | Yes | `true` if the user's workspace role grants blanket access (no need to filter by individual shares) |
+
+---
+
+## Role Schemas (RBAC)
+
+### ActionDefinition
+
+Individual action within a [RegisterActionsRequest](#registeractionsrequest).
+
+| Field | Type | Required | Constraints | Description |
+|---|---|---|---|---|
+| `action` | `string` | Yes | Pattern: `^[a-z][a-z0-9_.:-]*$` | Action identifier (e.g., `reports:export`) |
+| `description` | `string \| null` | No | -- | Human-readable description of the action |
+
+### RegisterActionsRequest
+
+Request body for `POST /roles/actions/register`.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `service_name` | `string` | Yes | Name of the service registering actions |
+| `actions` | `list[ActionDefinition]` | Yes | List of actions to register |
+
+### CheckActionRequest
+
+Request body for `POST /roles/check-action`.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `service_name` | `string` | Yes | Service to check the action for |
+| `action` | `string` | Yes | Action identifier to check |
+| `workspace_id` | `UUID` | Yes | Workspace to check within (must match JWT) |
+
+### ServiceActionResponse
+
+Returned by action registration and listing endpoints.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | `UUID` | Yes | Service action record ID |
+| `service_name` | `string` | Yes | Service that owns this action |
+| `action` | `string` | Yes | Action identifier |
+| `description` | `string \| null` | Yes | Human-readable description |
+| `created_at` | `datetime` | Yes | When the action was registered (ISO 8601) |
+
+### RoleResponse
+
+Returned by role CRUD endpoints.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | `UUID` | Yes | Role ID |
+| `workspace_id` | `UUID` | Yes | Parent workspace ID |
+| `name` | `string` | Yes | Role display name |
+| `description` | `string \| null` | Yes | Role description |
+| `created_by` | `UUID \| null` | Yes | ID of the user who created the role |
+| `created_at` | `datetime` | Yes | Creation timestamp (ISO 8601) |
+| `action_count` | `integer` | Yes | Number of actions assigned to this role |
+| `member_count` | `integer` | Yes | Number of users assigned to this role |
+
+### RoleCreateRequest
+
+Request body for `POST /admin/workspaces/{id}/roles`.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | `string` | Yes | Role display name |
+| `description` | `string \| null` | No | Optional role description |
+
+### RoleUpdateRequest
+
+Request body for `PATCH /admin/roles/{id}`.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | `string \| null` | No | New role name |
+| `description` | `string \| null` | No | New role description |
+
+### AddRoleActionsRequest
+
+Request body for `POST /admin/roles/{id}/actions`.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `service_action_ids` | `list[UUID]` | Yes | List of service action IDs to add to the role |
+
+### RoleMemberResponse
+
+Returned when listing role members.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `user_id` | `UUID` | Yes | Member's user ID |
+| `email` | `string` | Yes | Member's email address |
+| `name` | `string` | Yes | Member's display name |
+| `assigned_at` | `datetime` | Yes | When the member was assigned to the role (ISO 8601) |
+| `assigned_by` | `UUID \| null` | Yes | User ID of who assigned the member |
+
+### CheckActionResponse
+
+Returned by `POST /roles/check-action`.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `allowed` | `boolean` | Yes | Whether the action is permitted |
+| `roles` | `list[string]` | Yes | Names of roles that grant this action |
+
+### UserActionsResponse
+
+Returned by `GET /roles/user-actions`.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `actions` | `list[string]` | Yes | List of action identifiers the user can perform |

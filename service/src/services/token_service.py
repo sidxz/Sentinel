@@ -13,6 +13,7 @@ _redis: redis.Redis | None = None
 _REFRESH_PREFIX = "rt:"       # rt:{jti} → JSON {user_id, family_id}
 _FAMILY_PREFIX = "rtf:"       # rtf:{family_id} → set of jtis
 _BLACKLIST_PREFIX = "bl:"     # bl:{jti} → "1"
+_USER_FAMILIES_PREFIX = "uf:" # uf:{user_id} → set of family_ids
 
 
 async def get_redis() -> redis.Redis:
@@ -34,6 +35,8 @@ async def store_refresh_token(
     pipe.set(f"{_REFRESH_PREFIX}{jti}", f"{user_id}:{family_id}", ex=ttl)
     pipe.sadd(f"{_FAMILY_PREFIX}{family_id}", jti)
     pipe.expire(f"{_FAMILY_PREFIX}{family_id}", ttl)
+    pipe.sadd(f"{_USER_FAMILIES_PREFIX}{user_id}", family_id)
+    pipe.expire(f"{_USER_FAMILIES_PREFIX}{user_id}", ttl)
     await pipe.execute()
 
 
@@ -65,6 +68,19 @@ async def revoke_token_family(family_id: str) -> int:
     pipe.delete(f"{_FAMILY_PREFIX}{family_id}")
     results = await pipe.execute()
     return sum(1 for x in results[:-1] if x)
+
+
+async def revoke_all_user_tokens(user_id: str) -> int:
+    """Revoke all token families for a user. Returns total tokens revoked."""
+    r = await get_redis()
+    family_ids = await r.smembers(f"{_USER_FAMILIES_PREFIX}{user_id}")
+    if not family_ids:
+        return 0
+    total = 0
+    for fid in family_ids:
+        total += await revoke_token_family(fid)
+    await r.delete(f"{_USER_FAMILIES_PREFIX}{user_id}")
+    return total
 
 
 async def blacklist_access_token(jti: str, exp: int) -> None:

@@ -4,6 +4,7 @@ export interface User {
   name: string;
   avatar_url: string | null;
   is_active: boolean;
+  is_admin: boolean;
   created_at: string;
   workspace_count: number;
 }
@@ -102,6 +103,35 @@ export interface ResourceShare {
   granted_at: string;
 }
 
+// ── RBAC ────────────────────────────────────────────────────────────
+
+export interface ServiceAction {
+  id: string;
+  service_name: string;
+  action: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface CustomRole {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  created_by: string | null;
+  created_at: string;
+  action_count: number;
+  member_count: number;
+}
+
+export interface RoleMember {
+  user_id: string;
+  email: string;
+  name: string;
+  assigned_at: string;
+  assigned_by: string | null;
+}
+
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;
@@ -164,4 +194,67 @@ export interface CsvImportResult {
   users_created: number;
   memberships_added: number;
   errors: string[];
+}
+
+// ── System Health ───────────────────────────────────────────────────
+
+export interface HealthCheckDetail {
+  status: string;
+  latency_ms: number;
+  error: string | null;
+}
+
+export interface SystemHealth {
+  status: string;
+  checks: Record<string, HealthCheckDetail>;
+  uptime_seconds: number;
+  version: string;
+}
+
+// ── Settings ────────────────────────────────────────────────────────
+
+export interface OAuthProviderInfo {
+  name: string;
+  configured: boolean;
+}
+
+export interface JwtInfo {
+  algorithm: string;
+  access_token_expire_minutes: number;
+  refresh_token_expire_days: number;
+  public_key_preview: string;
+  denylist_count: number;
+}
+
+export interface SecurityInfo {
+  cookie_secure: boolean;
+  allowed_hosts: string[];
+  cors_origins: string[];
+  session_secret_configured: boolean;
+  admin_emails: string[];
+}
+
+export interface RateLimitInfo {
+  endpoint: string;
+  limit: string;
+}
+
+export interface ServiceKeyInfo {
+  name: string;
+  preview: string;
+}
+
+export interface ServiceInfoType {
+  base_url: string;
+  frontend_url: string;
+  admin_url: string;
+}
+
+export interface SystemSettings {
+  oauth_providers: OAuthProviderInfo[];
+  jwt: JwtInfo;
+  security: SecurityInfo;
+  rate_limits: RateLimitInfo[];
+  service_keys: ServiceKeyInfo[];
+  service: ServiceInfoType;
 }

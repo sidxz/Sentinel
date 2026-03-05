@@ -44,6 +44,25 @@ Full CRUD operations on workspaces:
 - **Manage members**: Invite, change role, remove members
 - **Manage groups**: Create, update, delete groups; add/remove group members
 
+### Roles Management
+
+Custom RBAC roles within workspaces (accessible from the workspace detail page, "Roles" tab):
+
+- **List roles**: View all custom roles in a workspace with action and member counts
+- **Create role**: Define a new named role with an optional description
+- **Edit role**: Update role name and description
+- **Delete role**: Remove a role and all its assignments
+- **Manage role actions**: Add or remove service actions from a role (dropdown of all registered actions)
+- **Manage role members**: Assign or remove workspace members from a role
+
+### Service Actions Browser
+
+A dedicated "Actions" page in the sidebar showing all registered service actions:
+
+- **Grouped by service**: Each service displayed as a card with its actions in a table
+- **Action details**: Action name, description, and registration date
+- **Read-only**: Actions are registered by services, not created manually
+
 ### Permissions Browser
 
 Browse and manage resource permissions across all workspaces:
@@ -63,6 +82,9 @@ A chronological feed of system events:
 - Member invitations, role changes, and removals
 - Group creation, updates, deletion, and membership changes
 - Permission visibility changes and share modifications
+- Role creation, updates, deletion, and membership changes
+- Service action registration
+- Role action additions and removals
 
 Each log entry records the action, target type and ID, actor ID, workspace context (if applicable), and a detail payload with event-specific metadata.
 
@@ -188,6 +210,17 @@ All admin endpoints are prefixed with `/admin` and require the `require_admin` d
 | Groups | `/admin/groups/{id}/members` | GET | List group members |
 | Groups | `/admin/groups/{id}/members/{uid}` | POST | Add group member |
 | Groups | `/admin/groups/{id}/members/{uid}` | DELETE | Remove group member |
+| Roles | `/admin/service-actions` | GET | List registered service actions |
+| Roles | `/admin/workspaces/{id}/roles` | GET | List workspace roles |
+| Roles | `/admin/workspaces/{id}/roles` | POST | Create role |
+| Roles | `/admin/roles/{id}` | PATCH | Update role |
+| Roles | `/admin/roles/{id}` | DELETE | Delete role |
+| Roles | `/admin/roles/{id}/actions` | GET | List role actions |
+| Roles | `/admin/roles/{id}/actions` | POST | Add actions to role |
+| Roles | `/admin/roles/{id}/actions/{said}` | DELETE | Remove action from role |
+| Roles | `/admin/roles/{id}/members` | GET | List role members |
+| Roles | `/admin/roles/{id}/members/{uid}` | POST | Assign user to role |
+| Roles | `/admin/roles/{id}/members/{uid}` | DELETE | Remove user from role |
 | Permissions | `/admin/permissions` | GET | Paginated permission list |
 | Permissions | `/admin/permissions/{id}` | GET | Permission detail |
 | Permissions | `/admin/permissions/{id}/visibility` | PATCH | Update visibility |

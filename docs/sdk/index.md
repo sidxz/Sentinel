@@ -16,6 +16,7 @@ A set of injectable dependencies for FastAPI routes:
 - **`get_workspace_id`** -- returns the active workspace UUID
 - **`get_workspace_context`** -- returns a `WorkspaceContext` with workspace and user identifiers
 - **`require_role`** -- dependency factory that enforces a minimum workspace role (`viewer`, `editor`, `admin`, `owner`)
+- **`require_action`** -- dependency factory that enforces an RBAC action via the identity service
 
 ### Async Permission Client
 
@@ -24,6 +25,15 @@ A set of injectable dependencies for FastAPI routes:
 - Single and batch permission checks (`can`, `check`)
 - Resource registration (`register_resource`)
 - Accessible resource lookups for list filtering (`accessible`)
+- Async context manager support for clean resource management
+
+### Async Role Client
+
+`RoleClient` is an async HTTP client for the identity service's RBAC API. It supports:
+
+- Service action registration (`register_actions`)
+- Action permission checks (`check_action`)
+- User action queries (`get_user_actions`)
 - Async context manager support for clean resource management
 
 ### Type Definitions
@@ -59,11 +69,12 @@ The SDK depends on:
 
 ```
 identity_sdk/
-    __init__.py          # Re-exports AuthenticatedUser, WorkspaceContext
+    __init__.py          # Re-exports AuthenticatedUser, WorkspaceContext, RoleClient
     types.py             # AuthenticatedUser, WorkspaceContext dataclasses
     middleware.py         # JWTAuthMiddleware
-    dependencies.py      # get_current_user, get_workspace_id, get_workspace_context, require_role
+    dependencies.py      # get_current_user, get_workspace_id, get_workspace_context, require_role, require_action
     permissions.py        # PermissionClient, PermissionCheck, PermissionResult
+    roles.py             # RoleClient
 ```
 
 ## Quick Start
@@ -118,5 +129,6 @@ async def get_document(
 - [Middleware](middleware.md) -- configure JWT validation
 - [Dependencies](dependencies.md) -- use FastAPI dependency injection for auth
 - [Permission Client](permission-client.md) -- check and manage entity-level permissions
+- [Role Client](role-client.md) -- RBAC action registration and checks
 - [Integration Guide](integration.md) -- step-by-step walkthrough for adding auth to your service
 - [Examples](examples.md) -- common patterns and recipes

@@ -25,6 +25,9 @@ class Workspace(Base):
     groups: Mapped[list["Group"]] = relationship(  # noqa: F821
         back_populates="workspace", cascade="all, delete-orphan"
     )
+    roles: Mapped[list["Role"]] = relationship(  # noqa: F821
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
 
 
 class WorkspaceMembership(Base):

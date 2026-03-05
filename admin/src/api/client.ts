@@ -3,10 +3,15 @@ import type {
   AdminResourcePermission,
   CsvImportPreview,
   CsvImportResult,
+  CustomRole,
   Group,
   GroupMember,
   PaginatedResponse,
+  RoleMember,
+  ServiceAction,
   Stats,
+  SystemHealth,
+  SystemSettings,
   User,
   UserDetail,
   Workspace,
@@ -54,8 +59,27 @@ export const adminLogout = () =>
 
 export const getStats = () => request<Stats>("/admin/stats");
 
-export const getActivity = (limit = 20) =>
-  request<ActivityLog[]>(`/admin/activity?limit=${limit}`);
+export const getActivity = (params: {
+  page?: number;
+  page_size?: number;
+  action?: string;
+  target_type?: string;
+  workspace_id?: string;
+  actor_id?: string;
+  from_date?: string;
+  to_date?: string;
+} = {}) => {
+  const p = new URLSearchParams();
+  p.set("page", String(params.page ?? 1));
+  p.set("page_size", String(params.page_size ?? 20));
+  if (params.action) p.set("action", params.action);
+  if (params.target_type) p.set("target_type", params.target_type);
+  if (params.workspace_id) p.set("workspace_id", params.workspace_id);
+  if (params.actor_id) p.set("actor_id", params.actor_id);
+  if (params.from_date) p.set("from_date", params.from_date);
+  if (params.to_date) p.set("to_date", params.to_date);
+  return request<PaginatedResponse<ActivityLog>>(`/admin/activity?${p}`);
+};
 
 export const getAllWorkspaces = () =>
   request<WorkspaceOption[]>("/admin/workspaces/all");
@@ -71,7 +95,7 @@ export const getUsers = (page = 1, pageSize = 20, search?: string) => {
 export const getUserDetail = (id: string) =>
   request<UserDetail>(`/admin/users/${id}`);
 
-export const updateUser = (id: string, body: { name?: string; is_active?: boolean }) =>
+export const updateUser = (id: string, body: { name?: string; is_active?: boolean; is_admin?: boolean }) =>
   request<UserDetail>(`/admin/users/${id}`, {
     method: "PATCH",
     body: JSON.stringify(body),
@@ -202,6 +226,54 @@ export const adminRevokeShare = (
     { method: "DELETE" },
   );
 
+// ── Roles (RBAC) ────────────────────────────────────────────────────
+
+export const getServiceActions = (serviceName?: string) => {
+  const params = new URLSearchParams();
+  if (serviceName) params.set("service_name", serviceName);
+  const qs = params.toString();
+  return request<ServiceAction[]>(`/admin/service-actions${qs ? `?${qs}` : ""}`);
+};
+
+export const getWorkspaceRoles = (workspaceId: string) =>
+  request<CustomRole[]>(`/admin/workspaces/${workspaceId}/roles`);
+
+export const createRole = (workspaceId: string, body: { name: string; description?: string }) =>
+  request<CustomRole>(`/admin/workspaces/${workspaceId}/roles`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateRole = (roleId: string, body: { name?: string; description?: string }) =>
+  request<CustomRole>(`/admin/roles/${roleId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+export const deleteRole = (roleId: string) =>
+  request(`/admin/roles/${roleId}`, { method: "DELETE" });
+
+export const getRoleActions = (roleId: string) =>
+  request<ServiceAction[]>(`/admin/roles/${roleId}/actions`);
+
+export const addRoleActions = (roleId: string, serviceActionIds: string[]) =>
+  request(`/admin/roles/${roleId}/actions`, {
+    method: "POST",
+    body: JSON.stringify({ service_action_ids: serviceActionIds }),
+  });
+
+export const removeRoleAction = (roleId: string, serviceActionId: string) =>
+  request(`/admin/roles/${roleId}/actions/${serviceActionId}`, { method: "DELETE" });
+
+export const getRoleMembers = (roleId: string) =>
+  request<RoleMember[]>(`/admin/roles/${roleId}/members`);
+
+export const addRoleMember = (roleId: string, userId: string) =>
+  request(`/admin/roles/${roleId}/members/${userId}`, { method: "POST" });
+
+export const removeRoleMember = (roleId: string, userId: string) =>
+  request(`/admin/roles/${roleId}/members/${userId}`, { method: "DELETE" });
+
 // ── CSV Import ───────────────────────────────────────────────────────
 
 export const csvPreview = (file: File) =>
@@ -209,3 +281,44 @@ export const csvPreview = (file: File) =>
 
 export const csvExecute = (file: File) =>
   upload<CsvImportResult>("/admin/import/csv/execute", file);
+
+// ── System ──────────────────────────────────────────────────────────
+
+export const getSystemHealth = () =>
+  request<SystemHealth>("/admin/system/health");
+
+export const getSystemSettings = () =>
+  request<SystemSettings>("/admin/system/settings");
+
+// ── Token Management ────────────────────────────────────────────────
+
+export const revokeUserTokens = (userId: string) =>
+  request<{ status: string; tokens_revoked: number }>(
+    `/admin/users/${userId}/revoke-tokens`,
+    { method: "POST" },
+  );
+
+// ── Bulk Operations ─────────────────────────────────────────────────
+
+export const bulkUserStatus = (userIds: string[], isActive: boolean) =>
+  request<{ status: string; affected: number }>("/admin/users/bulk-status", {
+    method: "POST",
+    body: JSON.stringify({ user_ids: userIds, is_active: isActive }),
+  });
+
+// ── Data Export ─────────────────────────────────────────────────────
+
+async function downloadCsv(path: string, filename: string) {
+  const res = await fetch(`${BASE}${path}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export const exportUsers = () => downloadCsv("/admin/export/users", "users.csv");
+export const exportWorkspaces = () => downloadCsv("/admin/export/workspaces", "workspaces.csv");

@@ -6,7 +6,11 @@ import type { ActivityLog } from "../types/api";
 
 export function Dashboard() {
   const { data, isLoading, error } = useQuery({ queryKey: ["stats"], queryFn: getStats });
-  const { data: activity } = useQuery({ queryKey: ["activity"], queryFn: () => getActivity(15) });
+  const { data: activityData } = useQuery({
+    queryKey: ["activity-dashboard"],
+    queryFn: () => getActivity({ page: 1, page_size: 15 }),
+  });
+  const activity = activityData?.items;
 
   if (isLoading) return <Skeleton />;
   if (error) return <ErrorState message={(error as Error).message} />;
@@ -106,7 +110,12 @@ export function Dashboard() {
       {/* Recent activity */}
       {activity && activity.length > 0 && (
         <div>
-          <h2 className="text-sm font-medium text-zinc-400 mb-3">Recent Activity</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium text-zinc-400">Recent Activity</h2>
+            <Link to="/activity" className="text-xs text-zinc-500 hover:text-zinc-300">
+              View all &rarr;
+            </Link>
+          </div>
           <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800/50">
             {activity.map((a) => (
               <ActivityEntry key={a.id} entry={a} />

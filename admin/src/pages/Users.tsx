@@ -1,8 +1,9 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getUsers } from "../api/client";
+import { bulkUserStatus, exportUsers, getUsers } from "../api/client";
 import { StatusBadge } from "../components/Badge";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { CsvImportModal } from "../components/CsvImportModal";
 import { DataTable } from "../components/DataTable";
 import { SearchInput } from "../components/SearchInput";
@@ -14,13 +15,64 @@ export function Users() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [showImport, setShowImport] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState<"activate" | "deactivate" | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["users", page, search],
     queryFn: () => getUsers(page, 20, search || undefined),
   });
 
+  const bulkMutation = useMutation({
+    mutationFn: ({ ids, active }: { ids: string[]; active: boolean }) =>
+      bulkUserStatus(ids, active),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setSelectedIds(new Set());
+      setBulkAction(null);
+    },
+  });
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (!data) return;
+    if (selectedIds.size === data.items.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(data.items.map((u) => u.id)));
+    }
+  };
+
   const columns = [
+    {
+      key: "select",
+      header: (
+        <input
+          type="checkbox"
+          checked={!!data && data.items.length > 0 && selectedIds.size === data.items.length}
+          onChange={toggleAll}
+          className="rounded border-zinc-600 bg-zinc-800"
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) as unknown as string,
+      render: (u: User) => (
+        <input
+          type="checkbox"
+          checked={selectedIds.has(u.id)}
+          onChange={() => toggleSelect(u.id)}
+          onClick={(e) => e.stopPropagation()}
+          className="rounded border-zinc-600 bg-zinc-800"
+        />
+      ),
+      className: "w-10",
+    },
     {
       key: "name",
       header: "User",
@@ -65,6 +117,12 @@ export function Users() {
         <div className="flex items-center gap-3">
           <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search users..." />
           <button
+            onClick={() => exportUsers()}
+            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
+          >
+            Export CSV
+          </button>
+          <button
             onClick={() => setShowImport(true)}
             className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
           >
@@ -88,6 +146,47 @@ export function Users() {
           )}
         </>
       )}
+
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 flex items-center gap-3 shadow-xl z-50">
+          <span className="text-sm text-zinc-300">{selectedIds.size} selected</span>
+          <button
+            onClick={() => setBulkAction("activate")}
+            className="px-3 py-1.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+          >
+            Activate
+          </button>
+          <button
+            onClick={() => setBulkAction("deactivate")}
+            className="px-3 py-1.5 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20"
+          >
+            Deactivate
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="text-xs text-zinc-500 hover:text-zinc-300"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      <ConfirmModal
+        open={bulkAction !== null}
+        onClose={() => setBulkAction(null)}
+        onConfirm={() =>
+          bulkMutation.mutate({
+            ids: Array.from(selectedIds),
+            active: bulkAction === "activate",
+          })
+        }
+        title={bulkAction === "activate" ? "Activate Users" : "Deactivate Users"}
+        message={`Are you sure you want to ${bulkAction} ${selectedIds.size} user(s)?`}
+        confirmLabel={bulkAction === "activate" ? "Activate" : "Deactivate"}
+        danger={bulkAction === "deactivate"}
+        isPending={bulkMutation.isPending}
+      />
 
       <CsvImportModal
         open={showImport}

@@ -1,8 +1,8 @@
 # Permissions
 
-The Daikon Identity Service implements a Zanzibar-style permission system with two tiers: workspace roles (stateless, embedded in the JWT) and entity-level access control lists (resolved via service calls). This design keeps common authorization checks fast while supporting fine-grained sharing for individual resources.
+The Daikon Identity Service implements a three-tier authorization model: workspace roles (stateless, embedded in the JWT), custom RBAC roles (action-based, resolved via service calls), and entity-level access control lists (Zanzibar-style, resolved via service calls). This design keeps common authorization checks fast while supporting both action-based and resource-level fine-grained access control.
 
-## Two-Tier System
+## Three-Tier System
 
 ### Tier 1: Workspace Roles (from JWT)
 
@@ -14,7 +14,13 @@ Workspace roles (`owner`, `admin`, `editor`, `viewer`) are embedded in the acces
 
 No service call is needed. The consuming application reads the `wrole` claim from the JWT.
 
-### Tier 2: Entity ACLs (via service call)
+### Tier 2: Custom Roles / RBAC (via service call)
+
+For action-based authorization ("Can this user export reports?"), the consuming application calls the Identity Service's `/roles/check-action` endpoint. Custom roles allow services to define application-specific actions and organize them into named roles within a workspace.
+
+See the [Custom Roles guide](roles.md) for full documentation.
+
+### Tier 3: Entity ACLs (via service call)
 
 For resource-level authorization ("Can user X edit document Y?"), the consuming application calls the Identity Service's `/permissions/check` endpoint. The service resolves the permission by checking ownership, workspace role, resource visibility, direct user shares, and group shares.
 

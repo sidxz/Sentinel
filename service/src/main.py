@@ -1,3 +1,4 @@
+import time
 from contextlib import asynccontextmanager
 
 import structlog
@@ -10,6 +11,7 @@ from src.api.admin_routes import router as admin_router
 from src.api.auth_routes import router as auth_router
 from src.api.group_routes import router as group_router
 from src.api.permission_routes import router as permission_router
+from src.api.role_routes import router as role_router
 from src.api.user_routes import router as user_router
 from src.api.workspace_routes import router as workspace_router
 from slowapi.errors import RateLimitExceeded
@@ -42,6 +44,7 @@ async def lifespan(app: FastAPI):
     logger.info("daikon-identity-service starting", port=settings.service_port)
     await _run_migrations()
     logger.info("database migrations applied")
+    app.state.start_time = time.time()
     yield
     logger.info("daikon-identity-service shutting down")
 
@@ -83,6 +86,7 @@ app.include_router(user_router)
 app.include_router(workspace_router)
 app.include_router(group_router)
 app.include_router(permission_router)
+app.include_router(role_router)
 
 
 @app.get("/health")

@@ -82,8 +82,9 @@ identity-service/
 │   └── src/identity_sdk/
 │       ├── types.py        # AuthenticatedUser, WorkspaceContext
 │       ├── middleware.py   # JWTAuthMiddleware
-│       ├── dependencies.py # FastAPI deps (get_current_user, require_role)
-│       └── permissions.py  # PermissionClient (HTTP client)
+│       ├── dependencies.py # FastAPI deps (get_current_user, require_role, require_action)
+│       ├── permissions.py  # PermissionClient (entity ACL HTTP client)
+│       └── roles.py        # RoleClient (RBAC HTTP client)
 ├── demo/                   # Demo app for testing
 ├── docs/                   # Design documents
 │   └── PLAN.md
@@ -101,6 +102,7 @@ identity-service/
 | **Members** | `GET /workspaces/{id}/members`, `POST .../invite`, `PATCH/DELETE .../members/{uid}` | Membership management |
 | **Groups** | `POST/GET /workspaces/{id}/groups`, `PATCH/DELETE .../groups/{gid}`, member add/remove | Group management |
 | **Permissions** | `POST /permissions/check`, `POST /permissions/register`, share/revoke, get ACL | Entity-level ACLs |
+| **Roles (RBAC)** | `POST /roles/actions/register`, `POST /roles/check-action`, `GET /roles/user-actions` | Action-based authorization |
 
 Full interactive docs available at `/docs` when the service is running.
 
@@ -173,6 +175,29 @@ await perm_client.register_resource(
 )
 ```
 
+### Check action-based permissions (RBAC)
+
+```python
+from identity_sdk.roles import RoleClient
+from identity_sdk.dependencies import require_action
+
+role_client = RoleClient(
+    base_url="http://localhost:9003",
+    service_name="my-app",
+    service_key="sk_your_service_key",
+)
+
+# Register actions on startup
+await role_client.register_actions([
+    {"action": "reports:export", "description": "Export reports"},
+])
+
+# Use as a dependency
+@router.get("/reports/export")
+async def export(user = Depends(require_action(role_client, "reports:export"))):
+    ...
+```
+
 ## OAuth2 Provider Setup
 
 ### Google
@@ -196,14 +221,15 @@ await perm_client.register_resource(
 3. Set redirect URI: `http://localhost:9003/auth/callback/entra_id`
 4. Add `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, and `ENTRA_TENANT_ID` to `.env`
 
-## Permission Model
+## Authorization Model
 
-**Two-tier system:**
+**Three-tier system:**
 
 1. **Workspace roles** (from JWT, no service call): `viewer` < `editor` < `admin` < `owner`
-2. **Entity ACLs** (via permission service): per-resource visibility (`private`/`workspace`) + sharing grants
+2. **Custom roles / RBAC** (via role service): service-scoped actions organized into workspace roles (e.g., "can user export reports?")
+3. **Entity ACLs** (via permission service): per-resource visibility (`private`/`workspace`) + sharing grants
 
-**Resolution order:** workspace member? -> entity owner? -> workspace admin? -> workspace-visible? -> user share? -> group share? -> deny.
+**Entity ACL resolution order:** workspace member? -> entity owner? -> workspace admin? -> workspace-visible? -> user share? -> group share? -> deny.
 
 ## Architecture
 

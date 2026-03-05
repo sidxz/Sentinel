@@ -36,6 +36,7 @@ async def get_stats(db: AsyncSession) -> dict:
             "name": user.name,
             "avatar_url": user.avatar_url,
             "is_active": user.is_active,
+            "is_admin": user.is_admin,
             "created_at": user.created_at,
             "workspace_count": count,
         }
@@ -104,6 +105,7 @@ async def list_users(
             "name": user.name,
             "avatar_url": user.avatar_url,
             "is_active": user.is_active,
+            "is_admin": user.is_admin,
             "created_at": user.created_at,
             "workspace_count": count,
         }
@@ -150,6 +152,7 @@ async def get_user_detail(db: AsyncSession, user_id: uuid.UUID) -> dict | None:
         "name": user.name,
         "avatar_url": user.avatar_url,
         "is_active": user.is_active,
+        "is_admin": user.is_admin,
         "created_at": user.created_at,
         "updated_at": user.updated_at,
         "social_accounts": [
@@ -165,6 +168,7 @@ async def update_user(
     user_id: uuid.UUID,
     name: str | None = None,
     is_active: bool | None = None,
+    is_admin: bool | None = None,
 ) -> User | None:
     user = await db.get(User, user_id)
     if not user:
@@ -173,6 +177,8 @@ async def update_user(
         user.name = name
     if is_active is not None:
         user.is_active = is_active
+    if is_admin is not None:
+        user.is_admin = is_admin
     await db.commit()
     return user
 
@@ -376,6 +382,19 @@ async def add_user_to_workspace(
     )
     await db.commit()
     return membership
+
+
+async def bulk_update_status(
+    db: AsyncSession,
+    user_ids: list[uuid.UUID],
+    is_active: bool,
+) -> int:
+    from sqlalchemy import update
+    result = await db.execute(
+        update(User).where(User.id.in_(user_ids)).values(is_active=is_active)
+    )
+    await db.commit()
+    return result.rowcount  # type: ignore[return-value]
 
 
 def parse_csv(content: str) -> dict:

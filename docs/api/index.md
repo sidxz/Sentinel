@@ -22,6 +22,7 @@ The API uses four authentication tiers depending on the endpoint group:
 | Workspaces | JWT (Bearer token) | `/workspaces` | Workspace CRUD and member management |
 | Groups | JWT (Bearer token) | `/workspaces/{id}/groups` | Group CRUD and membership |
 | Permissions | Service Key [+ JWT] | `/permissions` | Resource permission checks and ACL management |
+| Roles | Service Key [+ JWT] | `/roles` | RBAC action registration and checks |
 | Admin | Admin Cookie | `/admin` | Admin panel backend endpoints |
 
 ### JWT Bearer Token
@@ -87,4 +88,5 @@ Common HTTP status codes:
 - [Workspaces](workspaces.md) -- Workspace CRUD, member invitations, and role management
 - [Groups](groups.md) -- Group CRUD and group membership
 - [Permissions](permissions.md) -- Resource registration, permission checks, sharing, and ACLs
+- [Roles](roles.md) -- RBAC action registration, action checks, and user action queries
 - [Schemas](schemas.md) -- Consolidated reference for all request/response models

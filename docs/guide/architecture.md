@@ -157,13 +157,49 @@ erDiagram
         timestamptz granted_at
     }
 
+    service_actions {
+        uuid id PK
+        text service_name
+        text action
+        text description
+        timestamptz created_at
+    }
+
+    roles {
+        uuid id PK
+        uuid workspace_id FK
+        text name
+        text description
+        uuid created_by FK
+        timestamptz created_at
+    }
+
+    role_actions {
+        uuid id PK
+        uuid role_id FK
+        uuid service_action_id FK
+    }
+
+    user_roles {
+        uuid id PK
+        uuid user_id FK
+        uuid role_id FK
+        uuid assigned_by FK
+        timestamptz assigned_at
+    }
+
     users ||--o{ social_accounts : "has"
     users ||--o{ workspace_memberships : "belongs to"
     users ||--o{ group_memberships : "belongs to"
+    users ||--o{ user_roles : "assigned"
     workspaces ||--o{ workspace_memberships : "has members"
     workspaces ||--o{ groups : "contains"
+    workspaces ||--o{ roles : "defines"
     workspaces ||--o{ resource_permissions : "scopes"
     groups ||--o{ group_memberships : "has members"
+    roles ||--o{ role_actions : "grants"
+    roles ||--o{ user_roles : "assigned to"
+    service_actions ||--o{ role_actions : "used in"
     resource_permissions ||--o{ resource_shares : "grants"
     users ||--o{ resource_permissions : "owns"
 ```
@@ -175,3 +211,7 @@ erDiagram
 - `groups` has a unique constraint on `(workspace_id, name)` -- group names are unique within a workspace.
 - `resource_permissions` has a unique constraint on `(service_name, resource_type, resource_id)` -- each resource is registered exactly once.
 - `resource_shares` has a unique constraint on `(resource_permission_id, grantee_type, grantee_id)` -- a grantee gets at most one share per resource.
+- `service_actions` has a unique constraint on `(service_name, action)` -- each action is registered exactly once per service.
+- `roles` has a unique constraint on `(workspace_id, name)` -- role names are unique within a workspace.
+- `role_actions` has a unique constraint on `(role_id, service_action_id)` -- an action can only be added to a role once.
+- `user_roles` has a unique constraint on `(user_id, role_id)` -- a user can only be assigned to a role once.

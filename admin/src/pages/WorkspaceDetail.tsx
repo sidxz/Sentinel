@@ -3,25 +3,36 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addGroupMember,
+  addRoleActions,
+  addRoleMember,
   createGroup,
+  createRole,
   deleteGroup,
+  deleteRole,
   deleteWorkspace,
   getGroupMembers,
+  getRoleActions,
+  getRoleMembers,
+  getServiceActions,
   getWorkspace,
   getWorkspaceGroups,
   getWorkspaceMembers,
+  getWorkspaceRoles,
   inviteMember,
   removeMember,
   removeGroupMember,
+  removeRoleAction,
+  removeRoleMember,
   updateGroup,
   updateMemberRole,
+  updateRole,
   updateWorkspace,
 } from "../api/client";
 import { RoleBadge } from "../components/Badge";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
 
-const TABS = ["Members", "Groups"] as const;
+const TABS = ["Members", "Groups", "Roles"] as const;
 type Tab = (typeof TABS)[number];
 
 export function WorkspaceDetail() {
@@ -127,6 +138,7 @@ export function WorkspaceDetail() {
 
       {tab === "Members" && <MembersTab workspaceId={id!} />}
       {tab === "Groups" && <GroupsTab workspaceId={id!} />}
+      {tab === "Roles" && <RolesTab workspaceId={id!} />}
 
       {/* Edit modal */}
       <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Workspace">
@@ -504,6 +516,319 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
           />
           <div className="flex justify-end gap-2 pt-2">
             <button onClick={() => setEditingGroup(null)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
+            <button
+              onClick={() => edit.mutate()}
+              disabled={edit.isPending}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+function RolesTab({ workspaceId }: { workspaceId: string }) {
+  const queryClient = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingRole, setEditingRole] = useState<string | null>(null);
+  const [expandedRole, setExpandedRole] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "", description: "" });
+  const [selectedActionId, setSelectedActionId] = useState("");
+  const [addMemberEmail, setAddMemberEmail] = useState("");
+
+  const { data: roles = [], isLoading } = useQuery({
+    queryKey: ["workspace-roles", workspaceId],
+    queryFn: () => getWorkspaceRoles(workspaceId),
+  });
+
+  const { data: members = [] } = useQuery({
+    queryKey: ["workspace-members", workspaceId],
+    queryFn: () => getWorkspaceMembers(workspaceId),
+  });
+
+  const { data: allActions = [] } = useQuery({
+    queryKey: ["service-actions"],
+    queryFn: () => getServiceActions(),
+  });
+
+  const { data: roleActions = [] } = useQuery({
+    queryKey: ["role-actions", expandedRole],
+    queryFn: () => getRoleActions(expandedRole!),
+    enabled: !!expandedRole,
+  });
+
+  const { data: roleMembers = [] } = useQuery({
+    queryKey: ["role-members", expandedRole],
+    queryFn: () => getRoleMembers(expandedRole!),
+    enabled: !!expandedRole,
+  });
+
+  const create = useMutation({
+    mutationFn: () => createRole(workspaceId, { name: form.name, description: form.description || undefined }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+      setShowCreate(false);
+      setForm({ name: "", description: "" });
+    },
+  });
+
+  const edit = useMutation({
+    mutationFn: () => updateRole(editingRole!, { name: form.name, description: form.description }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+      setEditingRole(null);
+      setForm({ name: "", description: "" });
+    },
+  });
+
+  const del = useMutation({
+    mutationFn: (rid: string) => deleteRole(rid),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+      setExpandedRole(null);
+    },
+  });
+
+  const addAction = useMutation({
+    mutationFn: (actionId: string) => addRoleActions(expandedRole!, [actionId]),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["role-actions", expandedRole] });
+      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+      setSelectedActionId("");
+    },
+  });
+
+  const removeAction = useMutation({
+    mutationFn: (actionId: string) => removeRoleAction(expandedRole!, actionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["role-actions", expandedRole] });
+      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+    },
+  });
+
+  const addMember = useMutation({
+    mutationFn: (userId: string) => addRoleMember(expandedRole!, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["role-members", expandedRole] });
+      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+      setAddMemberEmail("");
+    },
+  });
+
+  const removeMemberMut = useMutation({
+    mutationFn: (userId: string) => removeRoleMember(expandedRole!, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["role-members", expandedRole] });
+      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+    },
+  });
+
+  if (isLoading) return <div className="h-32 bg-zinc-800/30 rounded-lg animate-pulse" />;
+
+  const availableActions = allActions.filter(
+    (a) => !roleActions.some((ra) => ra.id === a.id),
+  );
+  const selectedMember = members.find((m) => m.email === addMemberEmail);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <button
+          onClick={() => { setShowCreate(true); setForm({ name: "", description: "" }); }}
+          className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
+        >
+          + Create Role
+        </button>
+      </div>
+
+      <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800/50">
+        {roles.map((r) => (
+          <div key={r.id}>
+            <div
+              className="flex items-center justify-between px-4 py-3 hover:bg-zinc-800/40 cursor-pointer transition-colors"
+              onClick={() => setExpandedRole(expandedRole === r.id ? null : r.id)}
+            >
+              <div>
+                <div className="text-sm font-medium">{r.name}</div>
+                {r.description && <div className="text-xs text-zinc-500 mt-0.5">{r.description}</div>}
+                <div className="text-xs text-zinc-600 mt-0.5">
+                  {r.action_count} actions · {r.member_count} members
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingRole(r.id);
+                    setForm({ name: r.name, description: r.description ?? "" });
+                  }}
+                  className="text-xs text-zinc-500 hover:text-zinc-300"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); del.mutate(r.id); }}
+                  className="text-xs text-red-400 hover:text-red-300"
+                >
+                  Delete
+                </button>
+                <span className="text-xs text-zinc-600">{expandedRole === r.id ? "▲" : "▼"}</span>
+              </div>
+            </div>
+
+            {/* Expanded role detail */}
+            {expandedRole === r.id && (
+              <div className="px-4 pb-3 space-y-4 bg-zinc-800/20">
+                {/* Actions section */}
+                <div>
+                  <div className="text-xs font-medium text-zinc-400 pt-2 pb-1">Actions</div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedActionId}
+                      onChange={(e) => setSelectedActionId(e.target.value)}
+                      className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-300"
+                    >
+                      <option value="">Select action to add...</option>
+                      {availableActions.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.service_name}:{a.action}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => { if (selectedActionId) addAction.mutate(selectedActionId); }}
+                      disabled={!selectedActionId || addAction.isPending}
+                      className="px-2 py-1.5 rounded text-xs font-medium bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  <div className="divide-y divide-zinc-800/50 mt-1">
+                    {roleActions.map((a) => (
+                      <div key={a.id} className="flex items-center justify-between py-2">
+                        <div className="text-sm">
+                          <span className="text-zinc-300">{a.service_name}:{a.action}</span>
+                          {a.description && <span className="text-zinc-500 ml-2 text-xs">{a.description}</span>}
+                        </div>
+                        <button
+                          onClick={() => removeAction.mutate(a.id)}
+                          className="text-xs text-red-400 hover:text-red-300"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    {roleActions.length === 0 && (
+                      <div className="py-2 text-xs text-zinc-500">No actions assigned</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Members section */}
+                <div>
+                  <div className="text-xs font-medium text-zinc-400 pb-1">Members</div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={addMemberEmail}
+                      onChange={(e) => setAddMemberEmail(e.target.value)}
+                      className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-300"
+                    >
+                      <option value="">Select member to add...</option>
+                      {members
+                        .filter((m) => !roleMembers.some((rm) => rm.user_id === m.user_id))
+                        .map((m) => (
+                          <option key={m.user_id} value={m.email}>
+                            {m.name} ({m.email})
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={() => { if (selectedMember) addMember.mutate(selectedMember.user_id); }}
+                      disabled={!selectedMember || addMember.isPending}
+                      className="px-2 py-1.5 rounded text-xs font-medium bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  <div className="divide-y divide-zinc-800/50 mt-1">
+                    {roleMembers.map((rm) => (
+                      <div key={rm.user_id} className="flex items-center justify-between py-2">
+                        <div className="text-sm">
+                          <span className="text-zinc-300">{rm.name}</span>
+                          <span className="text-zinc-500 ml-2 text-xs">{rm.email}</span>
+                        </div>
+                        <button
+                          onClick={() => removeMemberMut.mutate(rm.user_id)}
+                          className="text-xs text-red-400 hover:text-red-300"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    {roleMembers.length === 0 && (
+                      <div className="py-2 text-xs text-zinc-500">No members in this role</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        {roles.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-zinc-500">No roles</div>
+        )}
+      </div>
+
+      {/* Create role modal */}
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Role">
+        <div className="space-y-3">
+          <input
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder="Role name"
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+          />
+          <input
+            value={form.description}
+            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            placeholder="Description (optional)"
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+          />
+          {create.isError && (
+            <div className="text-xs text-red-400">{(create.error as Error).message}</div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={() => setShowCreate(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
+            <button
+              onClick={() => create.mutate()}
+              disabled={!form.name || create.isPending}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
+            >
+              Create
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit role modal */}
+      <Modal open={!!editingRole} onClose={() => setEditingRole(null)} title="Edit Role">
+        <div className="space-y-3">
+          <input
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+          />
+          <input
+            value={form.description}
+            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            placeholder="Description"
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={() => setEditingRole(null)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
             <button
               onClick={() => edit.mutate()}
               disabled={edit.isPending}

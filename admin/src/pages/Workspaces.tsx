@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getWorkspaces, createWorkspace } from "../api/client";
+import { getWorkspaces, createWorkspace, exportWorkspaces } from "../api/client";
 import { DataTable } from "../components/DataTable";
 import { Modal } from "../components/Modal";
 import { SearchInput } from "../components/SearchInput";
@@ -83,6 +83,12 @@ export function Workspaces() {
         <h1 className="text-xl font-semibold">Workspaces</h1>
         <div className="flex items-center gap-3">
           <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search workspaces..." />
+          <button
+            onClick={() => exportWorkspaces()}
+            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
+          >
+            Export CSV
+          </button>
           <button
             onClick={() => setShowCreate(true)}
             className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"

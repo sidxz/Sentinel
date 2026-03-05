@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { addUserToWorkspace, getAllWorkspaces, getUserDetail, updateUser } from "../api/client";
+import { addUserToWorkspace, getAllWorkspaces, getUserDetail, revokeUserTokens, updateUser } from "../api/client";
 import { RoleBadge, StatusBadge } from "../components/Badge";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
@@ -12,6 +12,8 @@ export function UserDetail() {
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState("");
   const [showConfirmToggle, setShowConfirmToggle] = useState(false);
+  const [showConfirmAdmin, setShowConfirmAdmin] = useState(false);
+  const [showConfirmRevoke, setShowConfirmRevoke] = useState(false);
   const [showAddWorkspace, setShowAddWorkspace] = useState(false);
   const [addWsId, setAddWsId] = useState("");
   const [addWsRole, setAddWsRole] = useState("viewer");
@@ -41,6 +43,21 @@ export function UserDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user", id] });
       setShowConfirmToggle(false);
+    },
+  });
+
+  const toggleAdmin = useMutation({
+    mutationFn: () => updateUser(id!, { is_admin: !user?.is_admin }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", id] });
+      setShowConfirmAdmin(false);
+    },
+  });
+
+  const revokeTokens = useMutation({
+    mutationFn: () => revokeUserTokens(id!),
+    onSuccess: () => {
+      setShowConfirmRevoke(false);
     },
   });
 
@@ -116,21 +133,44 @@ export function UserDetail() {
             <div className="text-sm text-zinc-400 mt-0.5">{user.email}</div>
             <div className="flex items-center gap-3 mt-2">
               <StatusBadge active={user.is_active} />
+              {user.is_admin && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 ring-1 ring-purple-500/20">
+                  Admin
+                </span>
+              )}
               <span className="text-xs text-zinc-500">
                 Joined {new Date(user.created_at).toLocaleDateString()}
               </span>
             </div>
           </div>
-          <button
-            onClick={() => setShowConfirmToggle(true)}
-            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-              user.is_active
-                ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 ring-1 ring-red-500/20"
-                : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 ring-1 ring-emerald-500/20"
-            }`}
-          >
-            {user.is_active ? "Deactivate" : "Activate"}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowConfirmAdmin(true)}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                user.is_admin
+                  ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                  : "bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 ring-1 ring-purple-500/20"
+              }`}
+            >
+              {user.is_admin ? "Demote Admin" : "Promote Admin"}
+            </button>
+            <button
+              onClick={() => setShowConfirmRevoke(true)}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 ring-1 ring-amber-500/20 transition-colors"
+            >
+              Revoke Tokens
+            </button>
+            <button
+              onClick={() => setShowConfirmToggle(true)}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                user.is_active
+                  ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 ring-1 ring-red-500/20"
+                  : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 ring-1 ring-emerald-500/20"
+              }`}
+            >
+              {user.is_active ? "Deactivate" : "Activate"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -205,6 +245,34 @@ export function UserDetail() {
         confirmLabel={user.is_active ? "Deactivate" : "Activate"}
         danger={user.is_active}
         isPending={toggleActive.isPending}
+      />
+
+      {/* Confirm promote/demote admin */}
+      <ConfirmModal
+        open={showConfirmAdmin}
+        onClose={() => setShowConfirmAdmin(false)}
+        onConfirm={() => toggleAdmin.mutate()}
+        title={user.is_admin ? "Demote Admin" : "Promote to Admin"}
+        message={
+          user.is_admin
+            ? `Remove admin privileges from ${user.name}?`
+            : `Grant admin privileges to ${user.name}? They will have full access to the admin panel.`
+        }
+        confirmLabel={user.is_admin ? "Demote" : "Promote"}
+        danger={user.is_admin}
+        isPending={toggleAdmin.isPending}
+      />
+
+      {/* Confirm revoke tokens */}
+      <ConfirmModal
+        open={showConfirmRevoke}
+        onClose={() => setShowConfirmRevoke(false)}
+        onConfirm={() => revokeTokens.mutate()}
+        title="Revoke All Tokens"
+        message={`This will invalidate all active sessions for ${user.name}. They will need to log in again.`}
+        confirmLabel="Revoke All"
+        danger
+        isPending={revokeTokens.isPending}
       />
 
       {/* Add to workspace modal */}

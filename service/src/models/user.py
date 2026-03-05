@@ -30,6 +30,9 @@ class User(Base):
     group_memberships: Mapped[list["GroupMembership"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"
     )
+    user_roles: Mapped[list["UserRole"]] = relationship(  # noqa: F821
+        back_populates="user", cascade="all, delete-orphan", foreign_keys="[UserRole.user_id]"
+    )
 
 
 class SocialAccount(Base):

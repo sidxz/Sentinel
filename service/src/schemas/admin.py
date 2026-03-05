@@ -10,6 +10,7 @@ class AdminUserResponse(BaseModel):
     name: str
     avatar_url: str | None
     is_active: bool
+    is_admin: bool
     created_at: datetime
     workspace_count: int
 
@@ -22,6 +23,7 @@ class AdminUserDetailResponse(BaseModel):
     name: str
     avatar_url: str | None
     is_active: bool
+    is_admin: bool
     created_at: datetime
     updated_at: datetime
     social_accounts: list["SocialAccountResponse"]
@@ -49,6 +51,7 @@ class UserMembershipResponse(BaseModel):
 class AdminUserUpdateRequest(BaseModel):
     name: str | None = None
     is_active: bool | None = None
+    is_admin: bool | None = None
 
 
 class AdminWorkspaceResponse(BaseModel):
@@ -172,3 +175,73 @@ class AdminStatsResponse(BaseModel):
     inactive_users: int
     recent_users: list[AdminUserResponse]
     top_workspaces: list[TopWorkspace]
+
+
+# ── Health ───────────────────────────────────────────────────────────
+
+class HealthCheckDetail(BaseModel):
+    status: str
+    latency_ms: float
+    error: str | None = None
+
+
+class SystemHealthResponse(BaseModel):
+    status: str  # "healthy" | "degraded"
+    checks: dict[str, HealthCheckDetail]
+    uptime_seconds: float
+    version: str
+
+
+# ── Settings ─────────────────────────────────────────────────────────
+
+class OAuthProviderInfo(BaseModel):
+    name: str
+    configured: bool
+
+
+class JwtInfo(BaseModel):
+    algorithm: str
+    access_token_expire_minutes: int
+    refresh_token_expire_days: int
+    public_key_preview: str
+    denylist_count: int
+
+
+class SecurityInfo(BaseModel):
+    cookie_secure: bool
+    allowed_hosts: list[str]
+    cors_origins: list[str]
+    session_secret_configured: bool
+    admin_emails: list[str]
+
+
+class RateLimitInfo(BaseModel):
+    endpoint: str
+    limit: str
+
+
+class ServiceKeyInfo(BaseModel):
+    name: str
+    preview: str
+
+
+class ServiceInfo(BaseModel):
+    base_url: str
+    frontend_url: str
+    admin_url: str
+
+
+class SystemSettingsResponse(BaseModel):
+    oauth_providers: list[OAuthProviderInfo]
+    jwt: JwtInfo
+    security: SecurityInfo
+    rate_limits: list[RateLimitInfo]
+    service_keys: list[ServiceKeyInfo]
+    service: ServiceInfo
+
+
+# ── Bulk Operations ──────────────────────────────────────────────────
+
+class BulkUserStatusRequest(BaseModel):
+    user_ids: list[uuid.UUID]
+    is_active: bool

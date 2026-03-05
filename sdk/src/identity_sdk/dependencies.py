@@ -1,12 +1,17 @@
 """FastAPI dependency helpers for extracting auth context from requests."""
 
+from __future__ import annotations
+
 import uuid
 from collections.abc import Callable
-from functools import wraps
+from typing import TYPE_CHECKING
 
 from fastapi import Depends, HTTPException, Request
 
 from identity_sdk.types import AuthenticatedUser, WorkspaceContext
+
+if TYPE_CHECKING:
+    from identity_sdk.roles import RoleClient
 
 
 def get_current_user(request: Request) -> AuthenticatedUser:
@@ -47,6 +52,25 @@ def require_role(minimum_role: str) -> Callable:
                 status_code=403,
                 detail=f"Requires at least '{minimum_role}' role, you have '{user.workspace_role}'",
             )
+        return user
+
+    return dependency
+
+
+def require_action(role_client: "RoleClient", action: str) -> Callable:
+    """Dependency factory that enforces an RBAC action via the identity service.
+
+    Usage:
+        @router.get("/reports/export")
+        async def export(user: AuthenticatedUser = Depends(require_action(roles, "reports:export"))):
+            ...
+    """
+
+    async def dependency(request: Request, user: AuthenticatedUser = Depends(get_current_user)) -> AuthenticatedUser:
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        allowed = await role_client.check_action(token, action, user.workspace_id)
+        if not allowed:
+            raise HTTPException(status_code=403, detail=f"Action '{action}' not permitted")
         return user
 
     return dependency

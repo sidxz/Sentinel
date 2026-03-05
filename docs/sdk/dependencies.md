@@ -10,6 +10,7 @@ The SDK provides a set of FastAPI dependency functions that extract authenticati
 | `get_workspace_id` | `UUID` | Extract just the workspace ID |
 | `get_workspace_context` | `WorkspaceContext` | Extract workspace-scoped context |
 | `require_role(minimum_role)` | `AuthenticatedUser` | Enforce a minimum workspace role |
+| `require_action(role_client, action)` | `AuthenticatedUser` | Enforce an RBAC action |
 
 All dependencies are importable from `identity_sdk.dependencies`:
 
@@ -18,6 +19,7 @@ from identity_sdk.dependencies import (
     get_current_user,
     get_workspace_id,
     get_workspace_context,
+    require_action,
     require_role,
 )
 ```
@@ -274,7 +276,71 @@ async def create_document(
 
 FastAPI resolves shared sub-dependencies (like `get_current_user`) only once per request, so there is no performance overhead from combining them.
 
+## `require_action`
+
+A dependency factory that enforces an RBAC action using the `RoleClient`. If the user does not have the required action in their current workspace, a 403 Forbidden response is returned.
+
+**Signature:**
+
+```python
+def require_action(role_client: "RoleClient", action: str) -> Callable
+```
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `role_client` | `RoleClient` | An initialized `RoleClient` instance |
+| `action` | `str` | The action identifier to enforce (e.g., `"reports:export"`) |
+
+**Usage:**
+
+```python
+from identity_sdk.dependencies import require_action
+from identity_sdk.roles import RoleClient
+from identity_sdk.types import AuthenticatedUser
+
+roles = RoleClient(
+    base_url="http://identity-service:8000",
+    service_name="analytics",
+    service_key="sk_my_service_key",
+)
+
+
+# Only users with the "reports:export" action can access this endpoint
+@router.get("/reports/export")
+async def export_report(
+    user: AuthenticatedUser = Depends(require_action(roles, "reports:export")),
+):
+    return generate_report(user.workspace_id)
+
+
+# Combine with workspace role checks
+@router.delete("/reports/{report_id}")
+async def delete_report(
+    report_id: UUID,
+    user: AuthenticatedUser = Depends(require_action(roles, "reports:delete")),
+):
+    ...
+```
+
+**Error response** when action is not permitted:
+
+```json
+{"detail": "Action 'reports:export' not permitted"}
+```
+
+Status code: 403.
+
+**How it works:**
+
+1. Extracts the user's JWT from the `Authorization` header
+2. Calls `role_client.check_action(token, action, user.workspace_id)`
+3. If the check returns `False`, raises HTTP 403
+4. If allowed, returns the `AuthenticatedUser` for use in the route handler
+
 ## Next Steps
 
 - [Permission Client](permission-client.md) -- add entity-level ACL checks beyond workspace roles
+- [Role Client](role-client.md) -- RBAC action registration and checks
 - [Examples](examples.md) -- common patterns using these dependencies

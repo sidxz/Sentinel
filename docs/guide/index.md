@@ -34,9 +34,15 @@ Named collections of users within a workspace. Groups simplify permission grants
 
 ## Permissions
 
-The Zanzibar-style permission system with its two-tier architecture: workspace roles (stateless, from JWT) and entity-level ACLs (service call). Covers the 7-step `check_permission` resolution algorithm, visibility modes, and share types.
+The Zanzibar-style permission system with its three-tier architecture: workspace roles (stateless, from JWT), custom RBAC roles (action-based, service call), and entity-level ACLs (service call). Covers the 7-step `check_permission` resolution algorithm, visibility modes, and share types.
 
 [Read more](permissions.md)
+
+## Custom Roles (RBAC)
+
+NIST Core RBAC as a third authorization layer between workspace roles and entity ACLs. Services register actions, admins organize them into named roles within workspaces, and users are assigned to roles. Action checks are real-time database queries -- revoking a role takes effect immediately.
+
+[Read more](roles.md)
 
 ## Service-to-Service Auth
 
