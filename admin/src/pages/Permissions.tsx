@@ -10,12 +10,17 @@ import {
 } from "../api/client";
 import { VisibilityBadge } from "../components/Badge";
 import { Modal } from "../components/Modal";
+import { SearchInput } from "../components/SearchInput";
 import type { AdminResourcePermission } from "../types/api";
 
 export function Permissions() {
   const [page, setPage] = useState(1);
   const [workspaceFilter, setWorkspaceFilter] = useState("");
   const [serviceFilter, setServiceFilter] = useState("");
+  const [resourceIdFilter, setResourceIdFilter] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("");
+  const [sortBy, setSortBy] = useState<string | undefined>();
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const { data: workspaces = [] } = useQuery({
@@ -24,22 +29,35 @@ export function Permissions() {
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-permissions", page, workspaceFilter, serviceFilter],
+    queryKey: ["admin-permissions", page, workspaceFilter, serviceFilter, resourceIdFilter, ownerFilter, sortBy, sortOrder],
     queryFn: () =>
-      adminListPermissions(
+      adminListPermissions({
         page,
-        20,
-        workspaceFilter || undefined,
-        serviceFilter || undefined,
-      ),
+        workspaceId: workspaceFilter || undefined,
+        serviceName: serviceFilter || undefined,
+        resourceId: resourceIdFilter || undefined,
+        owner: ownerFilter || undefined,
+        sortBy,
+        sortOrder,
+      }),
   });
+
+  const toggleSort = (col: string) => {
+    if (sortBy === col) {
+      setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(col);
+      setSortOrder("desc");
+    }
+    setPage(1);
+  };
 
   return (
     <div className="space-y-5">
       <h1 className="text-xl font-semibold">Permissions</h1>
 
       {/* Filters */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <select
           value={workspaceFilter}
           onChange={(e) => { setWorkspaceFilter(e.target.value); setPage(1); }}
@@ -52,12 +70,9 @@ export function Permissions() {
             </option>
           ))}
         </select>
-        <input
-          value={serviceFilter}
-          onChange={(e) => { setServiceFilter(e.target.value); setPage(1); }}
-          placeholder="Filter by service_name..."
-          className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
-        />
+        <SearchInput value={serviceFilter} onChange={(v) => { setServiceFilter(v); setPage(1); }} placeholder="Service name..." />
+        <SearchInput value={resourceIdFilter} onChange={(v) => { setResourceIdFilter(v); setPage(1); }} placeholder="Resource ID..." />
+        <SearchInput value={ownerFilter} onChange={(v) => { setOwnerFilter(v); setPage(1); }} placeholder="Owner email..." />
       </div>
 
       {isLoading ? (
@@ -74,7 +89,12 @@ export function Permissions() {
                   <th className="text-left px-4 py-2 font-medium">Resource ID</th>
                   <th className="text-left px-4 py-2 font-medium">Owner</th>
                   <th className="text-left px-4 py-2 font-medium">Visibility</th>
-                  <th className="text-left px-4 py-2 font-medium w-20">Shares</th>
+                  <th
+                    className="text-left px-4 py-2 font-medium w-20 cursor-pointer select-none hover:text-zinc-300 transition-colors"
+                    onClick={() => toggleSort("shares")}
+                  >
+                    Shares{sortBy === "shares" ? (sortOrder === "asc" ? " \u2191" : " \u2193") : ""}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/50">

@@ -19,7 +19,7 @@ export function Modal({ open, onClose, title, children }: Props) {
     <dialog
       ref={ref}
       onClose={onClose}
-      className="backdrop:bg-black/60 bg-zinc-900 border border-zinc-700 rounded-lg p-0 text-zinc-100 w-full max-w-md shadow-2xl"
+      className="backdrop:bg-black/60 bg-zinc-900 border border-zinc-700 rounded-lg p-0 text-zinc-100 w-full max-w-md shadow-2xl m-auto"
     >
       <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
         <h3 className="text-sm font-semibold">{title}</h3>

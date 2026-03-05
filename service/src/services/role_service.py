@@ -102,6 +102,18 @@ async def list_service_actions(
     return list(result.scalars().all())
 
 
+async def delete_service_action(
+    db: AsyncSession,
+    service_action_id: uuid.UUID,
+) -> bool:
+    action = await db.get(ServiceAction, service_action_id)
+    if not action:
+        return False
+    await db.delete(action)
+    await db.flush()
+    return True
+
+
 async def create_role(
     db: AsyncSession,
     workspace_id: uuid.UUID,

@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy import select, union
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.models.permission import ResourcePermission, ResourceShare
 
@@ -34,10 +35,14 @@ async def get_resource_permission(
     resource_type: str,
     resource_id: uuid.UUID,
 ) -> ResourcePermission | None:
-    stmt = select(ResourcePermission).where(
-        ResourcePermission.service_name == service_name,
-        ResourcePermission.resource_type == resource_type,
-        ResourcePermission.resource_id == resource_id,
+    stmt = (
+        select(ResourcePermission)
+        .options(selectinload(ResourcePermission.shares))
+        .where(
+            ResourcePermission.service_name == service_name,
+            ResourcePermission.resource_type == resource_type,
+            ResourcePermission.resource_id == resource_id,
+        )
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
@@ -48,7 +53,13 @@ async def update_visibility(
     permission_id: uuid.UUID,
     visibility: str,
 ) -> ResourcePermission:
-    perm = await db.get(ResourcePermission, permission_id)
+    stmt = (
+        select(ResourcePermission)
+        .options(selectinload(ResourcePermission.shares))
+        .where(ResourcePermission.id == permission_id)
+    )
+    result = await db.execute(stmt)
+    perm = result.scalar_one_or_none()
     if not perm:
         raise ValueError("Resource permission not found")
     perm.visibility = visibility

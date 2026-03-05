@@ -71,6 +71,7 @@ async def issue_tokens(
     user: User,
     workspace_id: uuid.UUID,
     workspace_slug: str,
+    client_app_id: uuid.UUID | None = None,
 ) -> dict[str, str]:
     """Issue access + refresh tokens for a user in a workspace context."""
     # Get workspace role
@@ -113,6 +114,7 @@ async def issue_tokens(
         jti=rt_payload["jti"],
         user_id=user.id,
         family_id=family_id,
+        client_app_id=client_app_id,
     )
 
     return {
@@ -149,7 +151,7 @@ async def rotate_refresh_token(
         # Since we can't recover the family_id, this is a hard fail.
         raise ValueError("Refresh token already used or expired")
 
-    user_id, family_id = result
+    user_id, family_id, client_app_id = result
     user = await db.get(User, user_id)
     if not user or not user.is_active:
         await token_service.revoke_token_family(family_id)
@@ -203,6 +205,7 @@ async def rotate_refresh_token(
         jti=new_rt_payload["jti"],
         user_id=user.id,
         family_id=family_id,
+        client_app_id=client_app_id,
     )
 
     return {

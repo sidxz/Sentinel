@@ -54,6 +54,8 @@ The following rate limits are enforced per client IP:
 |---|---|
 | `GET /auth/login/{provider}` | 10 requests/minute |
 | `GET /auth/callback/{provider}` | 10 requests/minute |
+| `GET /auth/workspaces` | 10 requests/minute |
+| `POST /auth/token` | 10 requests/minute |
 | `POST /auth/refresh` | 10 requests/minute |
 | `GET /auth/admin/login/{provider}` | 5 requests/minute |
 | `GET /auth/admin/callback/{provider}` | 5 requests/minute |

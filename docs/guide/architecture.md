@@ -35,7 +35,7 @@ graph TB
     API -->|OAuth2| GitHub
     API -->|OIDC| Entra
     API -->|Async queries| PG
-    API -->|Token denylist<br/>Refresh families| Redis
+    API -->|Token denylist<br/>Refresh families<br/>Auth codes| Redis
 ```
 
 ## Design Decisions
@@ -188,6 +188,17 @@ erDiagram
         timestamptz assigned_at
     }
 
+    client_apps {
+        uuid id PK
+        text name
+        text[] redirect_uris
+        bool is_active
+        uuid created_by FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    users ||--o{ client_apps : "created"
     users ||--o{ social_accounts : "has"
     users ||--o{ workspace_memberships : "belongs to"
     users ||--o{ group_memberships : "belongs to"

@@ -196,6 +196,18 @@ export interface CsvImportResult {
   errors: string[];
 }
 
+// ── Client Apps ─────────────────────────────────────────────────────
+
+export interface ClientApp {
+  id: string;
+  name: string;
+  redirect_uris: string[];
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── System Health ───────────────────────────────────────────────────
 
 export interface HealthCheckDetail {

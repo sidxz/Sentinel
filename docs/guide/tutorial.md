@@ -281,11 +281,14 @@ The demo frontend is a React SPA that handles OAuth login through the identity s
 
 ### Auth Flow
 
-1. User clicks "Sign in with Google" → navigates to `http://localhost:9003/auth/login/google`
-2. After OAuth, identity service redirects to `http://localhost:9101/auth/callback?user_id=X`
-3. Frontend fetches the user's workspaces: `GET /auth/workspaces?user_id=X`
-4. User selects a workspace → `POST /auth/token` exchanges for JWT tokens
+1. User clicks "Sign in with Google" → navigates to `http://localhost:9003/auth/login/google?redirect_uri=http://localhost:9101/auth/callback`
+2. After OAuth, identity service redirects to `http://localhost:9101/auth/callback?code=X`
+3. Frontend fetches the user's workspaces: `GET /auth/workspaces?code=X`
+4. User selects a workspace → `POST /auth/token` with `{code, workspace_id}` exchanges for JWT tokens (code is single-use)
 5. Tokens stored in localStorage, attached to all API calls
+
+!!! note "Client app registration"
+    The demo app must be registered as a client app in the identity service before login will work. Create one via the admin API (`POST /admin/client-apps`) with `redirect_uris: ["http://localhost:9101/auth/callback"]`.
 
 ### Token Management
 
@@ -306,7 +309,7 @@ if (res.status === 401) {
 
 ### Identity Service Config
 
-Set `FRONTEND_URL=http://localhost:9101` in `service/.env` so the OAuth callback redirects to the demo app.
+Register the demo app as a client app with `redirect_uris: ["http://localhost:9101/auth/callback"]`. This adds the demo app's redirect URI to the allowlist, permitting it to initiate OAuth flows through Sentinel.
 
 ## Step 11: Run Everything
 

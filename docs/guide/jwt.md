@@ -83,8 +83,9 @@ sequenceDiagram
     participant IS as Identity Service
     participant Redis
 
-    Note over Client,Redis: Initial token issuance
-    Client->>IS: POST /auth/select-workspace
+    Note over Client,Redis: Initial token issuance (after OAuth)
+    Client->>IS: POST /auth/token<br/>{code, workspace_id}
+    IS->>Redis: Consume auth code (single-use GETDEL)
     IS->>IS: Create access token (15 min)
     IS->>IS: Create refresh token (7 days)
     IS->>Redis: Store refresh token jti + family_id
@@ -133,6 +134,7 @@ If a consumed refresh token is presented again (meaning it was already used), th
 ### Redis Data Model
 
 ```
+ac:{code}         -> JSON {user_id}                           # TTL = 5 minutes (auth codes)
 rt:{jti}          -> "{user_id}:{family_id}"    # TTL = refresh_token_expire_days
 rtf:{family_id}   -> SET of jtis                # TTL = refresh_token_expire_days
 bl:{jti}          -> "1"                        # TTL = remaining access token lifetime

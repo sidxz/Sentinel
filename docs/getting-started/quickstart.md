@@ -64,11 +64,26 @@ This documents every endpoint, including auth flows, user management, workspace 
 
 ## 6. Try the Auth Flow
 
-Navigate to the Google login endpoint in your browser:
+First, register a client app via the admin API (requires an admin user — see "Optional" section below):
 
-> [http://localhost:9003/auth/login/google](http://localhost:9003/auth/login/google)
+```bash
+curl -X POST http://localhost:9003/admin/client-apps \
+  -H "Content-Type: application/json" \
+  -H "Cookie: admin_token=YOUR_ADMIN_TOKEN" \
+  -d '{"name": "dev-test", "redirect_uris": ["http://localhost:9003/docs"]}'
+```
 
-This will redirect you to Google's consent screen. After you authorize, the service creates a user record (if it's your first login) and returns JWT tokens.
+Then navigate to the login endpoint with the registered redirect URI:
+
+> `http://localhost:9003/auth/login/google?redirect_uri=http://localhost:9003/docs`
+
+This will redirect you to Google's consent screen. After you authorize, the service creates a user record (if it's your first login) and redirects to your `redirect_uri` with an authorization code (`?code=X`). Exchange it for JWT tokens:
+
+```bash
+curl -X POST http://localhost:9003/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"code": "CODE_FROM_REDIRECT", "workspace_id": "YOUR_WS_ID"}'
+```
 
 ## Optional: Seed Data and Admin UI
 

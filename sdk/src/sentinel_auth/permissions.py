@@ -113,6 +113,40 @@ class PermissionClient:
         response.raise_for_status()
         return response.json()
 
+    async def share(
+        self,
+        token: str,
+        resource_type: str,
+        resource_id: uuid.UUID,
+        grantee_type: str,
+        grantee_id: uuid.UUID,
+        permission: str = "view",
+    ) -> dict:
+        """Share a resource with a user or group.
+
+        Looks up the permission record by resource coordinates, then shares.
+        """
+        # Resolve resource coordinates → permission_id
+        lookup = await self._client.get(
+            f"/permissions/resource/{self.service_name}/{resource_type}/{resource_id}",
+            headers=self._headers(),
+        )
+        lookup.raise_for_status()
+        permission_id = lookup.json()["id"]
+
+        # Share
+        response = await self._client.post(
+            f"/permissions/{permission_id}/share",
+            headers=self._headers(token),
+            json={
+                "grantee_type": grantee_type,
+                "grantee_id": str(grantee_id),
+                "permission": permission,
+            },
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def accessible(
         self,
         token: str,

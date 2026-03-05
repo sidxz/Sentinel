@@ -90,7 +90,8 @@ class TestJWTMiddleware:
     def test_allowed_workspaces_rejects_non_matching(self, rsa_keypair, valid_token):
         _, pub = rsa_keypair
         app = Starlette(routes=[Route("/protected", _make_app(pub).routes[0].endpoint)])
-        app.add_middleware(JWTAuthMiddleware, public_key=pub, allowed_workspaces={"00000000-0000-0000-0000-000000000000"})
+        allowed = {"00000000-0000-0000-0000-000000000000"}
+        app.add_middleware(JWTAuthMiddleware, public_key=pub, allowed_workspaces=allowed)
         client = TestClient(app)
         resp = client.get("/protected", headers={"Authorization": f"Bearer {valid_token}"})
         assert resp.status_code == 403

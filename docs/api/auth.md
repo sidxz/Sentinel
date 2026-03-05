@@ -11,6 +11,8 @@ The auth endpoints handle OAuth2/OIDC login flows, token refresh, logout, and ad
 | `GET` | `/auth/providers` | None | -- | List configured OAuth providers |
 | `GET` | `/auth/login/{provider}` | None | 10/min | Redirect to OAuth provider login |
 | `GET` | `/auth/callback/{provider}` | None | 10/min | Handle OAuth callback |
+| `GET` | `/auth/workspaces` | None | 10/min | List workspaces for auth code |
+| `POST` | `/auth/token` | None | 10/min | Exchange auth code for JWT tokens |
 | `POST` | `/auth/refresh` | None | 10/min | Refresh access token |
 | `POST` | `/auth/logout` | JWT | -- | Logout and blacklist access token |
 | `GET` | `/auth/admin/login/{provider}` | None | 5/min | Redirect to OAuth provider for admin login |
@@ -44,15 +46,16 @@ GET /auth/providers
 
 ### Login
 
-Initiates the OAuth2 authorization flow by redirecting the user to the selected provider's consent screen.
+Initiates the OAuth2 authorization flow by redirecting the user to the selected provider's consent screen. The `redirect_uri` must be registered on an active client app in the allowlist.
 
 ```
-GET /auth/login/{provider}
+GET /auth/login/{provider}?redirect_uri=Y
 ```
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
 | `provider` | path | string | Yes | OAuth provider name (e.g., `google`, `github`) |
+| `redirect_uri` | query | string | Yes | Redirect URI (must be registered on an active client app) |
 
 **Response** `302 Found` -- Redirects to the provider's authorization URL.
 
@@ -61,13 +64,14 @@ GET /auth/login/{provider}
 | Code | Detail |
 |---|---|
 | `400` | `Provider '{provider}' is not configured` |
+| `400` | `redirect_uri is not registered for any active app` |
 | `429` | Rate limit exceeded |
 
 ---
 
 ### Callback
 
-Handles the OAuth callback after the user authorizes with the provider. Extracts user profile information, creates or updates the user record, and redirects to the frontend.
+Handles the OAuth callback after the user authorizes with the provider. Extracts user profile information, creates or updates the user record, generates a single-use authorization code, and redirects to the client's registered redirect URI.
 
 ```
 GET /auth/callback/{provider}
@@ -77,14 +81,100 @@ GET /auth/callback/{provider}
 |---|---|---|---|---|
 | `provider` | path | string | Yes | OAuth provider name |
 
-**Response** `302 Found` -- Redirects to `{FRONTEND_URL}/auth/callback?user_id={user_id}`.
+**Response** `302 Found` -- Redirects to `{redirect_uri}?code={authorization_code}`.
+
+The authorization code is a short-lived (5 minute), single-use token stored in Redis. The client uses it to fetch workspaces and exchange for JWT tokens.
 
 **Errors:**
 
 | Code | Detail |
 |---|---|
 | `400` | `Provider '{provider}' is not configured` |
+| `400` | `Missing redirect_uri in session` |
+| `400` | `redirect_uri is no longer registered for any active app` |
 | `429` | Rate limit exceeded |
+
+---
+
+### List Workspaces (Auth Code)
+
+Lists the workspaces a user belongs to, resolved from an authorization code. Used during the login flow for workspace selection.
+
+```
+GET /auth/workspaces?code=X
+```
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `code` | query | string | Yes | Authorization code from the OAuth callback |
+
+**Response** `200 OK`
+
+```json
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "My Workspace",
+    "slug": "my-workspace",
+    "role": "admin"
+  }
+]
+```
+
+**Errors:**
+
+| Code | Detail |
+|---|---|
+| `400` | `Invalid or expired authorization code` |
+| `404` | `User not found` |
+| `429` | Rate limit exceeded |
+
+---
+
+### Exchange Token
+
+Exchanges a single-use authorization code and workspace selection for JWT tokens. The authorization code is consumed atomically and cannot be reused.
+
+```
+POST /auth/token
+```
+
+**Request Body:**
+
+```json
+{
+  "code": "authorization_code_from_callback",
+  "workspace_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Response** `200 OK` -- [TokenResponse](schemas.md#tokenresponse)
+
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIs...",
+  "refresh_token": "refresh_token_value...",
+  "token_type": "bearer",
+  "expires_in": 900
+}
+```
+
+**Errors:**
+
+| Code | Detail |
+|---|---|
+| `400` | `Invalid or expired authorization code` |
+| `403` | User is not a member of the workspace |
+| `404` | `User not found` / `Workspace not found` |
+| `429` | Rate limit exceeded |
+
+**curl example:**
+
+```bash
+curl -X POST http://localhost:9003/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"code": "your_auth_code", "workspace_id": "your_workspace_id"}'
+```
 
 ---
 

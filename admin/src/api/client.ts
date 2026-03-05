@@ -1,6 +1,7 @@
 import type {
   ActivityLog,
   AdminResourcePermission,
+  ClientApp,
   CsvImportPreview,
   CsvImportResult,
   CustomRole,
@@ -29,8 +30,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `HTTP ${res.status}`);
+    const detail = body.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join("; ")
+          : `HTTP ${res.status}`;
+    throw new Error(message);
   }
+  if (res.status === 204) return undefined as T;
   return res.json();
 }
 
@@ -40,7 +49,14 @@ async function upload<T>(path: string, file: File): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { method: "POST", body: form });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `HTTP ${res.status}`);
+    const detail = body.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join("; ")
+          : `HTTP ${res.status}`;
+    throw new Error(message);
   }
   return res.json();
 }
@@ -184,17 +200,28 @@ export const removeGroupMember = (groupId: string, userId: string) =>
 
 // ── Permissions ──────────────────────────────────────────────────────
 
-export const adminListPermissions = (
-  page = 1,
-  pageSize = 20,
-  workspaceId?: string,
-  serviceName?: string,
-) => {
-  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-  if (workspaceId) params.set("workspace_id", workspaceId);
-  if (serviceName) params.set("service_name", serviceName);
+export const adminListPermissions = (params: {
+  page?: number;
+  pageSize?: number;
+  workspaceId?: string;
+  serviceName?: string;
+  resourceId?: string;
+  owner?: string;
+  sortBy?: string;
+  sortOrder?: string;
+} = {}) => {
+  const p = new URLSearchParams({
+    page: String(params.page ?? 1),
+    page_size: String(params.pageSize ?? 20),
+  });
+  if (params.workspaceId) p.set("workspace_id", params.workspaceId);
+  if (params.serviceName) p.set("service_name", params.serviceName);
+  if (params.resourceId) p.set("resource_id", params.resourceId);
+  if (params.owner) p.set("owner", params.owner);
+  if (params.sortBy) p.set("sort_by", params.sortBy);
+  if (params.sortOrder) p.set("sort_order", params.sortOrder);
   return request<PaginatedResponse<AdminResourcePermission>>(
-    `/admin/permissions?${params}`
+    `/admin/permissions?${p}`
   );
 };
 
@@ -235,6 +262,9 @@ export const getServiceActions = (serviceName?: string) => {
   return request<ServiceAction[]>(`/admin/service-actions${qs ? `?${qs}` : ""}`);
 };
 
+export const deleteServiceAction = (id: string) =>
+  request(`/admin/service-actions/${id}`, { method: "DELETE" });
+
 export const getWorkspaceRoles = (workspaceId: string) =>
   request<CustomRole[]>(`/admin/workspaces/${workspaceId}/roles`);
 
@@ -273,6 +303,32 @@ export const addRoleMember = (roleId: string, userId: string) =>
 
 export const removeRoleMember = (roleId: string, userId: string) =>
   request(`/admin/roles/${roleId}/members/${userId}`, { method: "DELETE" });
+
+// ── Client Apps ─────────────────────────────────────────────────────
+
+export const getClientApps = () =>
+  request<ClientApp[]>("/admin/client-apps");
+
+export const createClientApp = (body: { name: string; redirect_uris: string[] }) =>
+  request<ClientApp>("/admin/client-apps", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getClientApp = (id: string) =>
+  request<ClientApp>(`/admin/client-apps/${id}`);
+
+export const updateClientApp = (
+  id: string,
+  body: { name?: string; redirect_uris?: string[]; is_active?: boolean; revoke_sessions?: boolean },
+) =>
+  request<ClientApp>(`/admin/client-apps/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+export const deleteClientApp = (id: string) =>
+  request(`/admin/client-apps/${id}`, { method: "DELETE" });
 
 // ── CSV Import ───────────────────────────────────────────────────────
 

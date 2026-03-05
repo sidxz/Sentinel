@@ -10,20 +10,20 @@ import { RoleBadge } from "../components/RoleBadge";
 export function AuthCallback() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const userId = searchParams.get("user_id");
+  const code = searchParams.get("code");
 
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!userId) {
-      setError("Missing user_id in callback URL");
+    if (!code) {
+      setError("Missing authorization code in callback URL");
       setLoading(false);
       return;
     }
 
-    fetchWorkspaces(userId)
+    fetchWorkspaces(code)
       .then(async (ws) => {
         if (ws.length === 0) {
           setError("No workspaces found. Ask an admin to invite you.");
@@ -32,7 +32,7 @@ export function AuthCallback() {
         }
         if (ws.length === 1) {
           // Auto-select single workspace
-          await exchangeToken(userId, ws[0].id);
+          await exchangeToken(code, ws[0].id);
           navigate("/notes", { replace: true });
           return;
         }
@@ -43,13 +43,13 @@ export function AuthCallback() {
         setError(e instanceof Error ? e.message : "Failed to load workspaces");
         setLoading(false);
       });
-  }, [userId, navigate]);
+  }, [code, navigate]);
 
   async function selectWorkspace(workspaceId: string) {
-    if (!userId) return;
+    if (!code) return;
     setLoading(true);
     try {
-      await exchangeToken(userId, workspaceId);
+      await exchangeToken(code, workspaceId);
       navigate("/notes", { replace: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Token exchange failed");

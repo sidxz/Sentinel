@@ -1,11 +1,27 @@
-import { useQuery } from "@tanstack/react-query";
-import { getServiceActions } from "../api/client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { deleteServiceAction, getServiceActions } from "../api/client";
+import { ConfirmModal } from "../components/ConfirmModal";
+import { useState } from "react";
 import type { ServiceAction } from "../types/api";
 
 export function ServiceActions() {
+  const queryClient = useQueryClient();
+  const [deleteTarget, setDeleteTarget] = useState<ServiceAction | null>(null);
+
   const { data: actions = [], isLoading } = useQuery({
     queryKey: ["service-actions"],
     queryFn: () => getServiceActions(),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteServiceAction(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["service-actions"] });
+      setDeleteTarget(null);
+      toast.success("Action deleted");
+    },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   if (isLoading) return <div className="animate-pulse h-64 bg-zinc-800/30 rounded-lg" />;
@@ -45,15 +61,24 @@ export function ServiceActions() {
                 <th className="px-4 py-2 font-medium">Action</th>
                 <th className="px-4 py-2 font-medium">Description</th>
                 <th className="px-4 py-2 font-medium">Registered</th>
+                <th className="px-4 py-2 font-medium w-16" />
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/50">
               {grouped[svc].map((a) => (
-                <tr key={a.id} className="hover:bg-zinc-800/30">
+                <tr key={a.id} className="hover:bg-zinc-800/30 group">
                   <td className="px-4 py-2 font-mono text-xs text-zinc-300">{a.action}</td>
                   <td className="px-4 py-2 text-zinc-500">{a.description || "—"}</td>
                   <td className="px-4 py-2 text-xs text-zinc-600">
                     {new Date(a.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-2">
+                    <button
+                      onClick={() => setDeleteTarget(a)}
+                      className="text-xs text-red-400/60 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -61,6 +86,17 @@ export function ServiceActions() {
           </table>
         </div>
       ))}
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && remove.mutate(deleteTarget.id)}
+        title="Delete Service Action"
+        message={`Delete "${deleteTarget?.action}" from ${deleteTarget?.service_name}? This will also remove it from any roles using it.`}
+        confirmLabel="Delete"
+        danger
+        isPending={remove.isPending}
+      />
     </div>
   );
 }

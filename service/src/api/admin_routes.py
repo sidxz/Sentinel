@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.dependencies import require_admin
 from src.config import settings
 from src.database import get_db
+from src.models.client_app import ClientApp
 from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.schemas.admin import (
@@ -42,6 +43,11 @@ from src.schemas.group import (
     GroupUpdateRequest,
     GroupResponse,
     GroupMemberResponse,
+)
+from src.schemas.client_app import (
+    ClientAppCreateRequest,
+    ClientAppResponse,
+    ClientAppUpdateRequest,
 )
 from src.schemas.permission import ShareRequest, UpdateVisibilityRequest
 from src.schemas.role import (
@@ -698,6 +704,10 @@ async def list_permissions(
     page_size: int = Query(20, ge=1, le=100),
     workspace_id: uuid.UUID | None = Query(None),
     service_name: str | None = Query(None),
+    resource_id: str | None = Query(None),
+    owner: str | None = Query(None),
+    sort_by: str | None = Query(None, pattern=r"^(shares|created_at)$"),
+    sort_order: str = Query("desc", pattern=r"^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
 ):
     return await admin_service.list_permissions(
@@ -706,6 +716,10 @@ async def list_permissions(
         page_size=page_size,
         workspace_id=workspace_id,
         service_name=service_name,
+        resource_id=resource_id,
+        owner=owner,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
 
 
@@ -815,6 +829,25 @@ async def list_service_actions(
     db: AsyncSession = Depends(get_db),
 ):
     return await role_service.list_service_actions(db, service_name=service_name)
+
+
+@router.delete("/service-actions/{action_id}", status_code=204)
+async def delete_service_action(
+    action_id: uuid.UUID,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    deleted = await role_service.delete_service_action(db, action_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Service action not found")
+    await activity_service.log_activity(
+        db,
+        action="service_action_deleted",
+        target_type="service_action",
+        target_id=action_id,
+        actor_id=uuid.UUID(admin["sub"]),
+    )
+    await db.commit()
 
 
 @router.get("/workspaces/{workspace_id}/roles", response_model=list[RoleResponse])
@@ -1013,6 +1046,105 @@ async def remove_role_member(
         actor_id=uuid.UUID(admin["sub"]),
         detail={"role_id": str(role_id)},
     )
+    await db.commit()
+
+
+# ── Client Apps ───────────────────────────────────────────────────────
+
+
+@router.get("/client-apps", response_model=list[ClientAppResponse])
+async def list_client_apps(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ClientApp).order_by(ClientApp.created_at.desc()))
+    return result.scalars().all()
+
+
+@router.post("/client-apps", response_model=ClientAppResponse, status_code=201)
+async def create_client_app(
+    body: ClientAppCreateRequest,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    app = ClientApp(
+        id=uuid.uuid4(),
+        name=body.name,
+        redirect_uris=body.redirect_uris,
+        created_by=uuid.UUID(admin["sub"]),
+    )
+    db.add(app)
+    await activity_service.log_activity(
+        db,
+        action="client_app_created",
+        target_type="client_app",
+        target_id=app.id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={"name": app.name},
+    )
+    await db.commit()
+    await db.refresh(app)
+    return app
+
+
+@router.get("/client-apps/{app_id}", response_model=ClientAppResponse)
+async def get_client_app(
+    app_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    app = await db.get(ClientApp, app_id)
+    if not app:
+        raise HTTPException(status_code=404, detail="Client app not found")
+    return app
+
+
+@router.patch("/client-apps/{app_id}", response_model=ClientAppResponse)
+async def update_client_app(
+    app_id: uuid.UUID,
+    body: ClientAppUpdateRequest,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    app = await db.get(ClientApp, app_id)
+    if not app:
+        raise HTTPException(status_code=404, detail="Client app not found")
+    if body.name is not None:
+        app.name = body.name
+    if body.redirect_uris is not None:
+        app.redirect_uris = body.redirect_uris
+    if body.is_active is not None:
+        app.is_active = body.is_active
+    tokens_revoked = 0
+    if body.is_active is False and body.revoke_sessions:
+        tokens_revoked = await token_service.revoke_app_tokens(str(app_id))
+    await activity_service.log_activity(
+        db,
+        action="client_app_updated",
+        target_type="client_app",
+        target_id=app_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={"name": app.name, "tokens_revoked": tokens_revoked},
+    )
+    await db.commit()
+    await db.refresh(app)
+    return app
+
+
+@router.delete("/client-apps/{app_id}", status_code=204)
+async def delete_client_app(
+    app_id: uuid.UUID,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    app = await db.get(ClientApp, app_id)
+    if not app:
+        raise HTTPException(status_code=404, detail="Client app not found")
+    await activity_service.log_activity(
+        db,
+        action="client_app_deleted",
+        target_type="client_app",
+        target_id=app_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={"name": app.name},
+    )
+    await db.delete(app)
     await db.commit()
 
 

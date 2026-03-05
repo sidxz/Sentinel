@@ -228,19 +228,16 @@ async def share_note(
     if not permissions:
         raise HTTPException(status_code=501, detail="Permission service not configured")
 
-    # Use the SDK's internal client to share via identity service
-    result = await permissions._client.post(
-        f"/permissions/{note_id}/share",
-        json={
-            "service_name": permissions.service_name,
-            "resource_type": "note",
-            "grantee_type": "user",
-            "grantee_id": str(body.user_id),
-            "permission": body.permission,
-        },
-        headers=permissions._headers(token),
-    )
-    if result.status_code >= 400:
-        raise HTTPException(status_code=result.status_code, detail=result.json().get("detail", "Share failed"))
+    try:
+        await permissions.share(
+            token=token,
+            resource_type="note",
+            resource_id=note_id,
+            grantee_type="user",
+            grantee_id=body.user_id,
+            permission=body.permission,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     return {"ok": True, "shared_with": str(body.user_id), "permission": body.permission}

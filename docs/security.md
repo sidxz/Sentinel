@@ -199,6 +199,21 @@ The service implements refresh token rotation with **reuse detection**, modeled 
 | `rt:{jti}` | `{user_id}:{family_id}` | `REFRESH_TOKEN_EXPIRE_DAYS` |
 | `rtf:{family_id}` | Set of `jti` values | `REFRESH_TOKEN_EXPIRE_DAYS` |
 
+### Authorization Codes
+
+After a successful OAuth callback, the service issues a short-lived authorization code instead of passing the raw `user_id` in the redirect URL. This prevents token theft by anyone who knows a user's UUID.
+
+1. The callback generates a cryptographically random code and stores it in Redis with a 5-minute TTL
+2. The client uses the code to fetch workspaces (`GET /auth/workspaces?code=X`) — this **peeks** at the code without consuming it
+3. The client exchanges the code for tokens (`POST /auth/token` with `{code, workspace_id}`) — this **consumes** the code atomically via `GETDEL`
+4. A consumed code cannot be reused; a second exchange attempt returns `400`
+
+**Redis key structure:**
+
+| Key Pattern | Value | TTL |
+|-------------|-------|-----|
+| `ac:{code}` | JSON `{user_id}` | 5 minutes |
+
 ### Access Token Revocation
 
 Access tokens can be revoked before expiration (e.g., on logout) using a Redis denylist:
@@ -310,6 +325,8 @@ When a client exceeds either limit, the service responds with `429 Too Many Requ
 | All endpoints | 30/minute (global) | Baseline abuse prevention |
 | `GET /auth/login/{provider}` | 10/minute | Prevents OAuth redirect abuse |
 | `GET /auth/callback/{provider}` | 10/minute | Limits callback processing |
+| `GET /auth/workspaces` | 10/minute | Limits workspace listing during auth |
+| `POST /auth/token` | 10/minute | Prevents auth code brute-force |
 | `POST /auth/refresh` | 10/minute | Prevents refresh token brute-force |
 | `GET /auth/admin/login/{provider}` | 5/minute | Stricter limit on admin login |
 | `GET /auth/admin/callback/{provider}` | 5/minute | Stricter limit on admin callback |
@@ -331,6 +348,20 @@ PKCE prevents authorization code interception attacks. The service uses **S256**
 | GitHub | No | N/A | GitHub does not support PKCE as of 2025; relies on `state` parameter |
 
 PKCE is configured at the Authlib client registration level via `code_challenge_method="S256"`. Authlib automatically generates the `code_verifier` and `code_challenge`, storing the verifier in the session for validation during the callback.
+
+### Client App Allowlist
+
+Applications must be registered as **client apps** before they can use Sentinel. Each client app defines a set of allowed redirect URIs. Sentinel proxies authentication from external IdPs and validates that the `redirect_uri` belongs to an active registered app.
+
+- `GET /auth/login/{provider}` requires a `redirect_uri` that is registered on an active client app
+- Only pre-approved redirect URIs can receive authorization codes
+
+This prevents:
+
+- **Unauthorized usage** — unregistered applications cannot initiate login flows or obtain tokens
+- **Open redirector attacks** — the callback can only redirect to pre-approved URIs
+
+Client apps can be deactivated without deletion to temporarily block an application.
 
 ### State Parameter
 

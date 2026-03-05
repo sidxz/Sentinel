@@ -19,9 +19,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = (
             "camera=(), microphone=(), geolocation=()"
         )
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; frame-ancestors 'none'"
-        )
+        _HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'"
+        csp_override = response.headers.get("X-CSP-Override")
+        if csp_override == "html-page":
+            response.headers["Content-Security-Policy"] = _HTML_CSP
+            del response.headers["X-CSP-Override"]
+        else:
+            if csp_override is not None:
+                del response.headers["X-CSP-Override"]
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'none'; frame-ancestors 'none'"
+            )
         response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"

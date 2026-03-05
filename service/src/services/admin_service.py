@@ -2,7 +2,7 @@ import csv
 import io
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import Text, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -286,12 +286,17 @@ async def list_permissions(
     page_size: int = 20,
     workspace_id: uuid.UUID | None = None,
     service_name: str | None = None,
+    resource_id: str | None = None,
+    owner: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
 ) -> dict:
+    share_count_col = func.count(ResourceShare.id).label("share_count")
     base_query = (
         select(
             ResourcePermission,
             User.email.label("owner_email"),
-            func.count(ResourceShare.id).label("share_count"),
+            share_count_col,
         )
         .outerjoin(User, ResourcePermission.owner_id == User.id)
         .outerjoin(
@@ -300,21 +305,39 @@ async def list_permissions(
         .group_by(ResourcePermission.id, User.email)
     )
 
-    count_query = select(func.count()).select_from(ResourcePermission)
+    count_query = (
+        select(func.count())
+        .select_from(ResourcePermission)
+        .outerjoin(User, ResourcePermission.owner_id == User.id)
+    )
 
+    filters = []
     if workspace_id:
-        base_query = base_query.where(ResourcePermission.workspace_id == workspace_id)
-        count_query = count_query.where(ResourcePermission.workspace_id == workspace_id)
+        filters.append(ResourcePermission.workspace_id == workspace_id)
     if service_name:
-        base_query = base_query.where(ResourcePermission.service_name == service_name)
-        count_query = count_query.where(ResourcePermission.service_name == service_name)
+        filters.append(ResourcePermission.service_name == service_name)
+    if resource_id:
+        filters.append(
+            cast(ResourcePermission.resource_id, Text).ilike(f"{resource_id}%")
+        )
+    if owner:
+        filters.append(User.email.ilike(f"%{owner}%"))
+
+    for f in filters:
+        base_query = base_query.where(f)
+        count_query = count_query.where(f)
 
     total = await db.scalar(count_query) or 0
 
+    if sort_by == "shares":
+        order_col = share_count_col
+    else:
+        order_col = ResourcePermission.created_at
+
+    order_expr = order_col.asc() if sort_order == "asc" else order_col.desc()
+
     stmt = (
-        base_query.order_by(ResourcePermission.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        base_query.order_by(order_expr).offset((page - 1) * page_size).limit(page_size)
     )
     result = await db.execute(stmt)
 

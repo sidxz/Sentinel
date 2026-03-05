@@ -1,16 +1,18 @@
 import uuid
+from urllib.parse import urlencode
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.responses import JSONResponse, RedirectResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from src.api.dependencies import CurrentUser, get_current_user, require_admin
 from src.auth.jwt import create_admin_token, decode_token
 from src.auth.providers import get_configured_providers, oauth
 from src.config import settings
 from src.database import get_db
+from src.models.client_app import ClientApp
 from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.schemas.auth import (
@@ -23,6 +25,7 @@ from src.schemas.auth import (
 from src.middleware.rate_limit import limiter
 from src.services import (
     activity_service,
+    auth_code_service,
     auth_service,
     token_service,
     workspace_service,
@@ -33,6 +36,56 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _error_page(status_code: int, title: str, message: str) -> HTMLResponse:
+    # Base64-encoded splash.png is too large — use an inline SVG shield instead.
+    # The response overrides the global CSP to allow inline styles and the SVG.
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} — Sentinel Auth</title>
+<style>
+  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #09090b; color: #e4e4e7; font-family: system-ui, -apple-system, sans-serif; }}
+  .card {{ max-width: 420px; width: 100%; border: 1px solid #27272a;
+           border-radius: 0.75rem; background: #18181b; overflow: hidden; }}
+  .header {{ background: #f43737; padding: 1.5rem; text-align: center; }}
+  .shield {{ width: 40px; height: 40px; margin: 0 auto 0.5rem; }}
+  .brand {{ font-size: 0.625rem; font-weight: 700; letter-spacing: 0.15em;
+            text-transform: uppercase; color: rgba(255,255,255,0.85); }}
+  .body {{ padding: 2rem 2rem 1.75rem; text-align: center; }}
+  h1 {{ font-size: 1.125rem; font-weight: 600; margin-bottom: 0.75rem; }}
+  p {{ font-size: 0.875rem; color: #a1a1aa; line-height: 1.6; }}
+  .meta {{ font-size: 0.75rem; color: #3f3f46; margin-top: 1.5rem;
+           padding-top: 1rem; border-top: 1px solid #27272a; }}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <svg class="shield" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V7l-9-5z"
+              fill="rgba(0,0,0,0.2)" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+        <rect x="10" y="9" width="4" height="5" rx="0.5" fill="white" opacity="0.9"/>
+        <circle cx="12" cy="8.5" r="2" fill="none" stroke="white" stroke-width="1.5" opacity="0.9"/>
+      </svg>
+      <div class="brand">Sentinel Auth</div>
+    </div>
+    <div class="body">
+      <h1>{title}</h1>
+      <p>{message}</p>
+      <div class="meta">Error {status_code}</div>
+    </div>
+  </div>
+</body>
+</html>"""
+    resp = HTMLResponse(content=html, status_code=status_code)
+    resp.headers["X-CSP-Override"] = "html-page"
+    return resp
+
+
 @router.get("/providers", response_model=ProviderListResponse)
 async def list_providers():
     return ProviderListResponse(providers=get_configured_providers())
@@ -40,15 +93,39 @@ async def list_providers():
 
 @router.get("/login/{provider}")
 @limiter.limit("10/minute")
-async def login(provider: str, request: Request):
+async def login(
+    provider: str,
+    request: Request,
+    redirect_uri: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
     configured = get_configured_providers()
     if provider not in configured:
-        raise HTTPException(
-            status_code=400, detail=f"Provider '{provider}' is not configured"
+        return _error_page(
+            400,
+            "Provider Not Available",
+            f"The login provider \u201c{provider}\u201d is not configured on this server.",
         )
+
+    # Validate redirect_uri against any active allowed app
+    stmt = select(ClientApp).where(
+        ClientApp.is_active.is_(True),
+        ClientApp.redirect_uris.any(redirect_uri),
+    )
+    result = await db.execute(stmt)
+    if not result.scalar_one_or_none():
+        return _error_page(
+            400,
+            "App Not Allowed",
+            "The redirect URI is not registered for any active app. Check that the app is registered and enabled in the admin panel.",
+        )
+
+    # Store in session for callback
+    request.session["redirect_uri"] = redirect_uri
+
     client = oauth.create_client(provider)
-    redirect_uri = f"{settings.base_url}/auth/callback/{provider}"
-    return await client.authorize_redirect(request, redirect_uri)
+    oauth_redirect_uri = f"{settings.base_url}/auth/callback/{provider}"
+    return await client.authorize_redirect(request, oauth_redirect_uri)
 
 
 @router.get("/callback/{provider}")
@@ -61,8 +138,10 @@ async def callback(
     try:
         configured = get_configured_providers()
         if provider not in configured:
-            raise HTTPException(
-                status_code=400, detail=f"Provider '{provider}' is not configured"
+            return _error_page(
+                400,
+                "Provider Not Available",
+                f"The login provider \u201c{provider}\u201d is not configured on this server.",
             )
 
         client = oauth.create_client(provider)
@@ -114,16 +193,43 @@ async def callback(
         )
         await db.commit()
 
-        # Redirect to frontend with user ID for workspace selection
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/auth/callback?user_id={user.id}"
+        # Retrieve redirect_uri from session
+        redirect_uri = request.session.get("redirect_uri")
+        if not redirect_uri:
+            return _error_page(
+                400,
+                "Session Expired",
+                "Your login session has expired. Please go back and try again.",
+            )
+
+        # Re-validate redirect_uri still belongs to an active allowed app
+        stmt = select(ClientApp).where(
+            ClientApp.is_active.is_(True),
+            ClientApp.redirect_uris.any(redirect_uri),
         )
-    except HTTPException:
-        raise
+        result = await db.execute(stmt)
+        client_app = result.scalar_one_or_none()
+        if not client_app:
+            return _error_page(
+                400,
+                "App Not Allowed",
+                "The app you are trying to sign into has been disabled. Contact your administrator.",
+            )
+
+        # Generate auth code and redirect
+        code = await auth_code_service.create_auth_code(
+            user.id, client_app_id=client_app.id
+        )
+        separator = "&" if "?" in redirect_uri else "?"
+        return RedirectResponse(
+            url=f"{redirect_uri}{separator}{urlencode({'code': code})}"
+        )
     except Exception as e:
         logger.error("auth callback error", error=str(e), exc_info=True)
-        return JSONResponse(
-            status_code=500, content={"detail": f"Authentication failed: {e}"}
+        return _error_page(
+            500,
+            "Authentication Failed",
+            "Something went wrong during sign-in. Please try again.",
         )
 
 
@@ -131,10 +237,17 @@ async def callback(
 @limiter.limit("10/minute")
 async def list_workspaces_for_login(
     request: Request,
-    user_id: uuid.UUID,
+    code: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
     """List workspaces a user belongs to (for workspace selection after OAuth)."""
+    code_data = await auth_code_service.peek_auth_code(code)
+    if not code_data:
+        raise HTTPException(
+            status_code=400, detail="Invalid or expired authorization code"
+        )
+
+    user_id = uuid.UUID(code_data["user_id"])
     user = await db.get(User, user_id)
     if not user or not user.is_active:
         raise HTTPException(status_code=404, detail="User not found")
@@ -162,8 +275,20 @@ async def select_workspace_and_issue_tokens(
     body: SelectWorkspaceRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Exchange user_id + workspace_id for JWT tokens after OAuth login."""
-    user = await db.get(User, body.user_id)
+    """Exchange authorization code + workspace_id for JWT tokens."""
+    code_data = await auth_code_service.consume_auth_code(body.code)
+    if not code_data:
+        raise HTTPException(
+            status_code=400, detail="Invalid or expired authorization code"
+        )
+
+    user_id = uuid.UUID(code_data["user_id"])
+    client_app_id = (
+        uuid.UUID(code_data["client_app_id"])
+        if code_data.get("client_app_id")
+        else None
+    )
+    user = await db.get(User, user_id)
     if not user or not user.is_active:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -172,7 +297,9 @@ async def select_workspace_and_issue_tokens(
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     try:
-        tokens = await auth_service.issue_tokens(db, user, workspace.id, workspace.slug)
+        tokens = await auth_service.issue_tokens(
+            db, user, workspace.id, workspace.slug, client_app_id=client_app_id
+        )
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
 

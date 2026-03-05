@@ -1,7 +1,10 @@
 import { Route, Routes } from "react-router-dom";
+import { Toaster } from "sonner";
 import { AuthGuard } from "./components/AuthGuard";
 import { Layout } from "./components/Layout";
 import { Activity } from "./pages/Activity";
+import { ClientAppDetail } from "./pages/ClientAppDetail";
+import { ClientApps } from "./pages/ClientApps";
 import { Dashboard } from "./pages/Dashboard";
 import { Permissions } from "./pages/Permissions";
 import { ServiceActions } from "./pages/ServiceActions";
@@ -15,6 +18,7 @@ import { Workspaces } from "./pages/Workspaces";
 export default function App() {
   return (
     <AuthGuard>
+      <Toaster theme="dark" position="bottom-right" richColors />
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -24,6 +28,8 @@ export default function App() {
           <Route path="/workspaces/:id" element={<WorkspaceDetail />} />
           <Route path="/permissions" element={<Permissions />} />
           <Route path="/service-actions" element={<ServiceActions />} />
+          <Route path="/client-apps" element={<ClientApps />} />
+          <Route path="/client-apps/:id" element={<ClientAppDetail />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/system" element={<SystemHealth />} />
           <Route path="/settings" element={<Settings />} />

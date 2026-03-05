@@ -29,7 +29,7 @@ class ProviderListResponse(BaseModel):
 
 
 class SelectWorkspaceRequest(BaseModel):
-    user_id: uuid.UUID
+    code: str
     workspace_id: uuid.UUID
 
 
