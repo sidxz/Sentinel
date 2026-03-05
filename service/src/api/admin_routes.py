@@ -66,6 +66,7 @@ from src.services import (
     permission_service,
     role_service,
 )
+from src.middleware.cors import refresh_origins
 from src.services import token_service
 
 _ADMIN_RATE_LIMIT = "30/minute"
@@ -1081,6 +1082,7 @@ async def create_client_app(
     )
     await db.commit()
     await db.refresh(app)
+    await refresh_origins(db)
     return app
 
 
@@ -1124,6 +1126,7 @@ async def update_client_app(
     )
     await db.commit()
     await db.refresh(app)
+    await refresh_origins(db)
     return app
 
 
@@ -1146,6 +1149,7 @@ async def delete_client_app(
     )
     await db.delete(app)
     await db.commit()
+    await refresh_origins(db)
 
 
 # ── CSV Import ────────────────────────────────────────────────────────

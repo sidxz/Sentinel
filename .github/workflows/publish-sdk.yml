@@ -34,7 +34,7 @@ jobs:
         run: cd sdk && uv run pytest -q
 
       - name: Build
-        run: cd sdk && uv build
+        run: cd sdk && uv build --out-dir dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.12.4

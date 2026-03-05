@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -22,6 +21,7 @@ from src.middleware.rate_limit import (
     limiter,
     rate_limit_exceeded_handler,
 )
+from src.middleware.cors import DynamicCORSMiddleware, refresh_origins
 from src.middleware.security_headers import SecurityHeadersMiddleware
 
 logger = structlog.get_logger()
@@ -48,6 +48,14 @@ async def lifespan(app: FastAPI):
     logger.info("daikon-sentinel starting", port=settings.service_port)
     await _run_migrations()
     logger.info("database migrations applied")
+
+    # Warm CORS origin cache from active client apps
+    from src.database import engine as db_engine
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    async with AsyncSession(db_engine) as db:
+        await refresh_origins(db)
 
     # Security warnings
     if settings.session_secret_key == "dev-only-change-me-in-production":
@@ -88,16 +96,10 @@ app.add_middleware(SecurityHeadersMiddleware, hsts=settings.cookie_secure)
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
 
 # Trusted host validation (prevents Host header attacks)
-if settings.allowed_hosts != "*":
+if "*" not in settings.allowed_hosts_list:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Service-Key"],
-)
+app.add_middleware(DynamicCORSMiddleware)
 
 # Rate limiting
 app.state.limiter = limiter
