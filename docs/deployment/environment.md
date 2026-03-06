@@ -27,7 +27,19 @@ The connection string must use the `postgresql+asyncpg://` scheme. The service u
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REDIS_URL` | Redis connection string. Used for token denylist and rate limiting. | `redis://localhost:9002/0` |
+| `REDIS_URL` | Redis connection string. Used for auth codes, refresh tokens, access token denylist, and rate limiting. | `redis://localhost:9002/0` |
+
+In production, Redis must be authenticated and encrypted. Use the `rediss://` scheme (double s) for TLS and include a password:
+
+```ini
+# Development (default)
+REDIS_URL=redis://localhost:9002/0
+
+# Production (password + TLS)
+REDIS_URL=rediss://:your-strong-password@redis-host:6380/0
+```
+
+The service validates Redis connectivity, authentication, and TLS at startup. With `DEBUG=false`, it refuses to start if any check fails. See the [production checklist](production.md#8-secure-redis) for details.
 
 ## JWT
 

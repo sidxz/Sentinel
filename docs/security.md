@@ -17,6 +17,9 @@ The service applies middleware in a specific order (outermost first):
 Request
   |
   v
+MaxBodySizeMiddleware        -- reject requests > 10 MB
+  |
+  v
 GlobalRateLimitMiddleware    -- 30 req/min per IP (all endpoints)
   |
   v
@@ -61,10 +64,10 @@ Every response includes the following headers, set by `SecurityHeadersMiddleware
 When `COOKIE_SECURE=true` (production with HTTPS), the service adds:
 
 ```
-Strict-Transport-Security: max-age=63072000; includeSubDomains
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
 ```
 
-This enforces HTTPS for two years and covers all subdomains. Only enable this when your deployment is fully behind TLS.
+This enforces HTTPS for two years, covers all subdomains, and is eligible for the [HSTS preload list](https://hstspreload.org/). Only enable this when your deployment is fully behind TLS.
 
 ### Session Middleware
 
@@ -220,7 +223,7 @@ After a successful OAuth callback, the service issues a short-lived authorizatio
 
 | Key Pattern | Value | TTL |
 |-------------|-------|-----|
-| `ac:{code}` | JSON `{user_id, code_challenge, code_challenge_method}` | 5 minutes |
+| `ac:{code}` | JSON `{user_id, provider, code_challenge, code_challenge_method}` | 5 minutes |
 
 ### Access Token Revocation
 
@@ -316,6 +319,15 @@ COOKIE_SECURE=true
 
 When `COOKIE_SECURE=true`, the `Secure` flag ensures the cookie is only sent over HTTPS connections. Additionally, this flag enables HSTS headers on all responses.
 
+### CSRF Protection
+
+The admin panel uses two layers of CSRF defense:
+
+1. **SameSite=Strict cookie** -- the `admin_token` cookie is never sent on cross-site requests
+2. **Custom header requirement** -- all state-changing requests (POST, PATCH, PUT, DELETE) to `/admin/*` must include an `X-Requested-With` header. This header cannot be set by cross-origin HTML forms or image tags, and CORS preflight blocks cross-origin JavaScript from adding it.
+
+The admin SPA automatically includes `X-Requested-With: XMLHttpRequest` on all requests. Requests without this header on mutation endpoints receive a `403 Forbidden`.
+
 ---
 
 ## Rate Limiting
@@ -390,9 +402,11 @@ All request bodies are validated with Pydantic models. Invalid input is rejected
 - Enum value constraints (e.g., workspace roles, permission actions)
 - Required vs. optional field enforcement
 
-### CSV Upload Limits
+### Request Body Size Limit
 
-CSV import endpoints (used by the admin panel) enforce a **5 MB file size limit** to prevent denial-of-service via large uploads.
+A global `MaxBodySizeMiddleware` rejects any request with a `Content-Length` exceeding **10 MB**, returning `413 Request Entity Too Large`. This prevents memory exhaustion from oversized payloads.
+
+Additionally, CSV import endpoints (admin panel) enforce a stricter **5 MB file size limit** at the application level.
 
 ---
 
@@ -413,6 +427,25 @@ All security-related environment variables:
 | `ADMIN_TOKEN_EXPIRE_MINUTES` | `60` | Admin token lifetime in minutes |
 | `DEBUG` | `true` | Set `false` in production to disable `/docs`, `/redoc`, `/openapi.json` |
 | `ADMIN_EMAILS` | (empty) | Comma-separated emails auto-promoted to admin on login |
+| `REDIS_URL` | `redis://localhost:9002/0` | Redis connection string. Use `rediss://` for TLS and include password: `rediss://:password@host:6379/0` |
+
+---
+
+## Startup Validation
+
+When `DEBUG=false`, the service performs fail-closed validation at startup and **refuses to start** if any check fails:
+
+| Check | Condition | Error |
+|-------|-----------|-------|
+| Session secret | Default value unchanged | `SESSION_SECRET_KEY is using the default dev value` |
+| Service apps | No active service apps in DB | `No active service apps registered` |
+| Cookie security | `COOKIE_SECURE=false` | `COOKIE_SECURE is False` |
+| Redis connectivity | Cannot ping Redis | `Redis is unreachable` |
+| Redis authentication | No `@` in `REDIS_URL` | `Redis URL has no authentication` |
+| Redis TLS | URL does not start with `rediss://` | `Redis URL is not using TLS` |
+| Allowed hosts | Resolved to wildcard `*` | `ALLOWED_HOSTS is wildcard` |
+
+In development (`DEBUG=true`), these are logged as warnings instead of blocking startup.
 
 ---
 
@@ -485,5 +518,6 @@ Before deploying to production, verify the following:
 - [ ] `DEBUG=false` to disable OpenAPI docs (`/docs`, `/redoc`, `/openapi.json`)
 - [ ] `ADMIN_EMAILS` is set if you want auto-promotion for specific users
 - [ ] A reverse proxy (nginx, Caddy, or cloud LB) handles TLS termination and sets `X-Forwarded-For`
-- [ ] Redis is password-protected and not exposed to the public internet
+- [ ] Redis uses TLS (`rediss://`), has a strong password, and is not exposed to the public internet
 - [ ] PostgreSQL uses strong credentials and is not exposed to the public internet
+- [ ] Startup validation passes with `DEBUG=false` (all checks green)

@@ -91,11 +91,28 @@ The identity service uses [slowapi](https://github.com/laurentS/slowapi) for rat
 
 For multi-worker deployments, configure slowapi to use Redis as its backend so all workers share the same counters. Ensure `REDIS_URL` is set and reachable from all instances.
 
-## 8. Rotate any credentials that were in git history
+## 8. Secure Redis
+
+Redis stores auth codes, refresh tokens, and the access token denylist. In production, it must be authenticated and encrypted:
+
+```ini
+# With password and TLS
+REDIS_URL=rediss://:your-strong-password@redis-host:6380/0
+```
+
+| Requirement | How |
+|-------------|-----|
+| Authentication | Include password in URL: `redis://:password@host:port/db` |
+| TLS encryption | Use the `rediss://` scheme (double s) |
+| Network isolation | Bind Redis to private network, not `0.0.0.0` |
+
+The service validates Redis connectivity, authentication, and TLS at startup. With `DEBUG=false`, it refuses to start if any check fails.
+
+## 9. Rotate any credentials that were in git history
 
 If you previously committed secrets (API keys, session secrets, database passwords) to the repository, those values are still in git history even after deletion. Generate new values for all such credentials.
 
-## 9. Use separate database credentials per environment
+## 10. Use separate database credentials per environment
 
 Do not reuse the development database credentials (`identity` / `identity_dev`) in production. Create a dedicated PostgreSQL user with a strong password:
 
@@ -108,7 +125,7 @@ CREATE DATABASE identity_prod OWNER identity_prod;
 DATABASE_URL=postgresql+asyncpg://identity_prod:strong-random-password@db-host:5432/identity_prod
 ```
 
-## 10. Generate production JWT keys
+## 11. Generate production JWT keys
 
 Generate a fresh RSA key pair for production. Do not reuse development keys:
 
@@ -133,6 +150,7 @@ JWT_PUBLIC_KEY_PATH=/run/secrets/jwt_public.pem
 - [ ] `CORS_ORIGINS` set to your frontend origin(s)
 - [ ] Service deployed behind TLS-terminating reverse proxy
 - [ ] Rate limiting configured for multi-worker (Redis backend)
+- [ ] Redis authenticated (password in URL) and encrypted (`rediss://` scheme)
 - [ ] Fresh JWT RSA key pair generated for production
 - [ ] All previously-committed secrets rotated
 - [ ] Separate database credentials per environment

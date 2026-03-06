@@ -127,19 +127,24 @@ const unsubscribe = auth.onAuthStateChange((user) => {
 
 ## Token Storage
 
-The SDK provides two storage backends:
+The SDK provides three storage backends:
 
-| Backend | Use Case |
-|---------|----------|
-| `LocalStorageStore` (default) | Browser apps -- persists across tabs and sessions |
-| `MemoryStore` | SSR, testing, or when localStorage is unavailable |
+| Backend | Use Case | XSS Exposure |
+|---------|----------|--------------|
+| `LocalStorageStore` (default) | Browser apps -- persists across tabs and sessions | Tokens accessible until explicitly cleared |
+| `SessionStorageStore` | Browser apps -- cleared when the tab closes | Limited to current tab lifetime |
+| `MemoryStore` | SSR, testing, or when localStorage is unavailable | Tokens lost on page refresh |
+
+!!! warning "XSS and token storage"
+    All browser-side storage is accessible to JavaScript. If your app is vulnerable to XSS, an attacker can steal tokens regardless of which store you use. `SessionStorageStore` limits the blast radius (tokens are cleared when the tab closes), while `LocalStorageStore` persists tokens across sessions. Choose based on your security posture vs. user experience needs.
 
 ```typescript
-import { SentinelAuth, MemoryStore } from '@sentinel-auth/js'
+import { SentinelAuth, SessionStorageStore } from '@sentinel-auth/js'
 
+// Use sessionStorage for reduced XSS exposure
 const auth = new SentinelAuth({
   sentinelUrl: 'http://localhost:9003',
-  storage: new MemoryStore(),
+  storage: new SessionStorageStore(),
 })
 ```
 
