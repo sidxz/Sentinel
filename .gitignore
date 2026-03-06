@@ -22,5 +22,10 @@ node_modules/
 # Archive
 _archive/
 
+# Coverage reports
+.coverage
+coverage.xml
+htmlcov/
+
 # MkDocs build output
 site/
