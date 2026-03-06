@@ -135,10 +135,10 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             payload = jwt.decode(token, public_key, algorithms=[self.algorithm], audience=self.audience)
         except jwt.ExpiredSignatureError:
             return JSONResponse(status_code=401, content={"detail": "Token has expired"})
-        except jwt.InvalidTokenError as e:
-            return JSONResponse(status_code=401, content={"detail": f"Invalid token: {e}"})
-        except Exception as e:
-            return JSONResponse(status_code=500, content={"detail": f"Key fetch error: {e}"})
+        except jwt.InvalidTokenError:
+            return JSONResponse(status_code=401, content={"detail": "Invalid token"})
+        except Exception:
+            return JSONResponse(status_code=500, content={"detail": "Authentication service unavailable"})
 
         if self.allowed_workspaces is not None and payload["wid"] not in self.allowed_workspaces:
             return JSONResponse(
