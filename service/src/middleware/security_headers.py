@@ -37,6 +37,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Server"] = "daikon"
         if self.hsts:
             response.headers["Strict-Transport-Security"] = (
-                "max-age=63072000; includeSubDomains"
+                "max-age=63072000; includeSubDomains; preload"
             )
         return response

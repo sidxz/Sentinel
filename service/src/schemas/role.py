@@ -21,7 +21,7 @@ class RegisterActionsRequest(BaseModel):
 
 class CheckActionRequest(BaseModel):
     service_name: str = Field(max_length=255, pattern=_SVC_NAME_PATTERN)
-    action: str
+    action: str = Field(pattern=r"^[a-z][a-z0-9_.:-]*$")
     workspace_id: uuid.UUID
 
 
