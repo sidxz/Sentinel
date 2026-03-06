@@ -77,6 +77,16 @@ async def add_member(
     user_id: uuid.UUID,
 ) -> GroupMembership:
     await _get_group_in_workspace(db, group_id, workspace_id)
+    # Verify user is a member of this workspace
+    from src.models.workspace import WorkspaceMembership
+
+    ws_stmt = select(WorkspaceMembership).where(
+        WorkspaceMembership.workspace_id == workspace_id,
+        WorkspaceMembership.user_id == user_id,
+    )
+    ws_result = await db.execute(ws_stmt)
+    if not ws_result.scalar_one_or_none():
+        raise ValueError("User is not a member of this workspace")
     membership = GroupMembership(group_id=group_id, user_id=user_id)
     db.add(membership)
     await db.commit()

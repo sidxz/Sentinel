@@ -3,9 +3,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, field_validator
 
+from src.schemas.validators import SafeStr
+
 
 class ClientAppCreateRequest(BaseModel):
-    name: str
+    name: SafeStr
     redirect_uris: list[str]
 
     @field_validator("redirect_uris", mode="before")
@@ -18,7 +20,7 @@ class ClientAppCreateRequest(BaseModel):
 
 
 class ClientAppUpdateRequest(BaseModel):
-    name: str | None = None
+    name: SafeStr | None = None
     redirect_uris: list[str] | None = None
     is_active: bool | None = None
     revoke_sessions: bool = False

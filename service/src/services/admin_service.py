@@ -10,7 +10,8 @@ from src.models.group import Group
 from src.models.permission import ResourcePermission, ResourceShare
 from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
-from src.services import activity_service
+from src.schemas.validators import strip_html
+from src.services import activity_service, token_service
 
 
 async def get_stats(db: AsyncSession) -> dict:
@@ -185,13 +186,20 @@ async def update_user(
     user = await db.get(User, user_id)
     if not user:
         return None
+    revoke = False
     if name is not None:
         user.name = name
-    if is_active is not None:
+    if is_active is not None and is_active != user.is_active:
         user.is_active = is_active
-    if is_admin is not None:
+        if not is_active:
+            revoke = True
+    if is_admin is not None and is_admin != user.is_admin:
         user.is_admin = is_admin
+        if not is_admin:
+            revoke = True
     await db.commit()
+    if revoke:
+        await token_service.revoke_all_user_tokens(str(user_id))
     return user
 
 
@@ -442,6 +450,10 @@ async def bulk_update_status(
         update(User).where(User.id.in_(user_ids)).values(is_active=is_active)
     )
     await db.commit()
+    # Revoke tokens for deactivated users so access is cut immediately
+    if not is_active:
+        for uid in user_ids:
+            await token_service.revoke_all_user_tokens(str(uid))
     return result.rowcount  # type: ignore[return-value]
 
 
@@ -509,12 +521,13 @@ async def execute_import(
             continue
 
         email = row["email"]
-        name = row["name"]
+        name = strip_html(row["name"])
         workspace_slug = row["workspace_slug"]
         role = row["role"]
 
         try:
-            # Find or create user
+            # Find or create pre-provisioned user (no SocialAccount — user must
+            # still authenticate through an external IdP before they can get tokens).
             user_result = await db.execute(select(User).where(User.email == email))
             user = user_result.scalar_one_or_none()
             if not user:

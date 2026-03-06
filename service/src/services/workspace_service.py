@@ -116,9 +116,14 @@ async def invite_member(
 
 
 async def _count_owners(db: AsyncSession, workspace_id: uuid.UUID) -> int:
-    stmt = select(func.count()).where(
-        WorkspaceMembership.workspace_id == workspace_id,
-        WorkspaceMembership.role == "owner",
+    # FOR UPDATE locks owner rows to prevent concurrent demotion/removal races
+    stmt = (
+        select(func.count())
+        .where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.role == "owner",
+        )
+        .with_for_update()
     )
     result = await db.execute(stmt)
     return result.scalar_one()
@@ -131,9 +136,13 @@ async def update_member_role(
     role: str,
     actor_role: str = "admin",
 ) -> WorkspaceMembership:
-    stmt = select(WorkspaceMembership).where(
-        WorkspaceMembership.workspace_id == workspace_id,
-        WorkspaceMembership.user_id == user_id,
+    stmt = (
+        select(WorkspaceMembership)
+        .where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.user_id == user_id,
+        )
+        .with_for_update()
     )
     result = await db.execute(stmt)
     membership = result.scalar_one_or_none()
@@ -168,9 +177,13 @@ async def remove_member(
     user_id: uuid.UUID,
     actor_role: str = "admin",
 ) -> None:
-    stmt = select(WorkspaceMembership).where(
-        WorkspaceMembership.workspace_id == workspace_id,
-        WorkspaceMembership.user_id == user_id,
+    stmt = (
+        select(WorkspaceMembership)
+        .where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.user_id == user_id,
+        )
+        .with_for_update()
     )
     result = await db.execute(stmt)
     membership = result.scalar_one_or_none()

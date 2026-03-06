@@ -4,15 +4,18 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+_SVC_NAME_PATTERN = r"^[a-z][a-z0-9_.-]*$"
+
+
 class PermissionCheckItem(BaseModel):
-    service_name: str
-    resource_type: str
+    service_name: str = Field(max_length=255, pattern=_SVC_NAME_PATTERN)
+    resource_type: str = Field(max_length=255, pattern=_SVC_NAME_PATTERN)
     resource_id: uuid.UUID
     action: str = Field(pattern=r"^(view|edit)$")
 
 
 class PermissionCheckRequest(BaseModel):
-    checks: list[PermissionCheckItem]
+    checks: list[PermissionCheckItem] = Field(max_length=100)
 
 
 class PermissionCheckResult(BaseModel):
@@ -28,8 +31,8 @@ class PermissionCheckResponse(BaseModel):
 
 
 class RegisterResourceRequest(BaseModel):
-    service_name: str
-    resource_type: str
+    service_name: str = Field(max_length=255, pattern=_SVC_NAME_PATTERN)
+    resource_type: str = Field(max_length=255, pattern=_SVC_NAME_PATTERN)
     resource_id: uuid.UUID
     workspace_id: uuid.UUID
     owner_id: uuid.UUID
@@ -72,8 +75,8 @@ class ResourceShareResponse(BaseModel):
 
 
 class AccessibleResourcesRequest(BaseModel):
-    service_name: str
-    resource_type: str
+    service_name: str = Field(max_length=255, pattern=_SVC_NAME_PATTERN)
+    resource_type: str = Field(max_length=255, pattern=_SVC_NAME_PATTERN)
     action: str = Field(pattern=r"^(view|edit)$")
     workspace_id: uuid.UUID
     limit: int | None = Field(default=None, ge=1, le=10000)

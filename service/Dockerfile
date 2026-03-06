@@ -11,6 +11,9 @@ COPY src/ src/
 COPY migrations/ migrations/
 COPY alembic.ini .
 
+RUN adduser -D -u 1000 sentinel
+USER sentinel
+
 EXPOSE 9003
 
 CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "9003"]

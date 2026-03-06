@@ -11,13 +11,16 @@ class ActionDefinition(BaseModel):
     description: SafeStrOptional = None
 
 
+_SVC_NAME_PATTERN = r"^[a-z][a-z0-9_.-]*$"
+
+
 class RegisterActionsRequest(BaseModel):
-    service_name: str
+    service_name: str = Field(max_length=255, pattern=_SVC_NAME_PATTERN)
     actions: list[ActionDefinition]
 
 
 class CheckActionRequest(BaseModel):
-    service_name: str
+    service_name: str = Field(max_length=255, pattern=_SVC_NAME_PATTERN)
     action: str
     workspace_id: uuid.UUID
 

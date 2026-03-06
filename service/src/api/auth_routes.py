@@ -1,3 +1,4 @@
+import html
 import uuid
 from urllib.parse import urlencode
 
@@ -39,12 +40,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def _error_page(status_code: int, title: str, message: str) -> HTMLResponse:
     # Base64-encoded splash.png is too large — use an inline SVG shield instead.
     # The response overrides the global CSP to allow inline styles and the SVG.
-    html = f"""<!DOCTYPE html>
+    safe_title = html.escape(title)
+    safe_message = html.escape(message)
+    page = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} — Sentinel Auth</title>
+<title>{safe_title} — Sentinel Auth</title>
 <style>
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{ min-height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -74,14 +77,14 @@ def _error_page(status_code: int, title: str, message: str) -> HTMLResponse:
       <div class="brand">Sentinel Auth</div>
     </div>
     <div class="body">
-      <h1>{title}</h1>
-      <p>{message}</p>
+      <h1>{safe_title}</h1>
+      <p>{safe_message}</p>
       <div class="meta">Error {status_code}</div>
     </div>
   </div>
 </body>
 </html>"""
-    resp = HTMLResponse(content=html, status_code=status_code)
+    resp = HTMLResponse(content=page, status_code=status_code)
     resp.headers["X-CSP-Override"] = "html-page"
     return resp
 
@@ -210,8 +213,9 @@ async def callback(
         )
         await db.commit()
 
-        # Retrieve redirect_uri from session
-        redirect_uri = request.session.get("redirect_uri")
+        # Retrieve redirect_uri from session and clear it
+        redirect_uri = request.session.pop("redirect_uri", None)
+        request.session.clear()
         if not redirect_uri:
             return _error_page(
                 400,

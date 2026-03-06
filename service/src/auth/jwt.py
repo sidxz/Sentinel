@@ -30,6 +30,7 @@ def get_public_key() -> str:
 _AUD_ACCESS = "sentinel:access"
 _AUD_ADMIN = "sentinel:admin"
 _AUD_REFRESH = "sentinel:refresh"
+_ISSUER = settings.base_url
 
 
 def create_access_token(
@@ -43,6 +44,7 @@ def create_access_token(
 ) -> str:
     now = datetime.now(UTC)
     payload = {
+        "iss": _ISSUER,
         "sub": str(user_id),
         "jti": str(uuid.uuid4()),
         "aud": _AUD_ACCESS,
@@ -62,6 +64,7 @@ def create_access_token(
 def create_admin_token(user_id: uuid.UUID, email: str, name: str) -> str:
     now = datetime.now(UTC)
     payload = {
+        "iss": _ISSUER,
         "sub": str(user_id),
         "jti": str(uuid.uuid4()),
         "aud": _AUD_ADMIN,
@@ -78,6 +81,7 @@ def create_admin_token(user_id: uuid.UUID, email: str, name: str) -> str:
 def create_refresh_token(user_id: uuid.UUID) -> str:
     now = datetime.now(UTC)
     payload = {
+        "iss": _ISSUER,
         "sub": str(user_id),
         "jti": str(uuid.uuid4()),
         "aud": _AUD_REFRESH,
@@ -98,4 +102,5 @@ def decode_token(token: str, audience: str | None = None) -> dict:
         _get_public_key(),
         algorithms=[settings.jwt_algorithm],
         audience=audience,
+        issuer=_ISSUER,
     )
