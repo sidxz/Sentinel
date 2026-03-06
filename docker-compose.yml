@@ -35,6 +35,8 @@ services:
       - "9003:9003"
     env_file:
       - .env
+    environment:
+      DEBUG: "true"
     depends_on:
       identity-postgres:
         condition: service_healthy

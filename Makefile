@@ -3,7 +3,7 @@
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-setup: ## First-time setup: generates keys, installs deps, starts DB
+setup: ## First-time setup: generates keys, env, installs deps, starts DB
 	@mkdir -p keys
 	@if [ ! -f keys/private.pem ]; then \
 		openssl genrsa -out keys/private.pem 2048 2>/dev/null && \
@@ -11,6 +11,16 @@ setup: ## First-time setup: generates keys, installs deps, starts DB
 		echo "Generated JWT keys"; \
 	else \
 		echo "JWT keys already exist"; \
+	fi
+	@if [ ! -f service/.env ]; then \
+		SESSION_KEY=$$(python3 -c "import secrets; print(secrets.token_urlsafe(32))"); \
+		sed "s|^JWT_PRIVATE_KEY_PATH=.*|JWT_PRIVATE_KEY_PATH=../keys/private.pem|; \
+		     s|^JWT_PUBLIC_KEY_PATH=.*|JWT_PUBLIC_KEY_PATH=../keys/public.pem|; \
+		     s|^SESSION_SECRET_KEY=.*|SESSION_SECRET_KEY=$$SESSION_KEY|" \
+		  .env.example > service/.env && \
+		echo "Created service/.env (session secret auto-generated)"; \
+	else \
+		echo "service/.env already exists"; \
 	fi
 	uv sync && cd service && uv sync
 	cd admin && npm install
