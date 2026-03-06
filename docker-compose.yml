@@ -5,10 +5,24 @@ services:
       POSTGRES_DB: identity
       POSTGRES_USER: identity
       POSTGRES_PASSWORD: identity_dev
+    # Copy TLS certs with correct ownership/permissions, then start with SSL
+    entrypoint:
+      - sh
+      - -c
+      - |
+        cp /tls/server.crt /tmp/server.crt
+        cp /tls/server.key /tmp/server.key
+        chown postgres:postgres /tmp/server.crt /tmp/server.key
+        chmod 600 /tmp/server.key
+        exec docker-entrypoint.sh postgres \
+          -c ssl=on \
+          -c ssl_cert_file=/tmp/server.crt \
+          -c ssl_key_file=/tmp/server.key
     ports:
       - "9001:5432"
     volumes:
       - identity_pg_data:/var/lib/postgresql/data
+      - ./keys/tls:/tls:ro
     networks:
       - sentinel-network
     healthcheck:
@@ -19,12 +33,23 @@ services:
 
   identity-redis:
     image: redis:7-alpine
+    command: >
+      redis-server
+      --requirepass sentinel_dev
+      --tls-port 6379
+      --port 0
+      --tls-cert-file /tls/server.crt
+      --tls-key-file /tls/server.key
+      --tls-ca-cert-file /tls/ca.crt
+      --tls-auth-clients no
     ports:
       - "9002:6379"
+    volumes:
+      - ./keys/tls:/tls:ro
     networks:
       - sentinel-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "--tls", "--cacert", "/tls/ca.crt", "-a", "sentinel_dev", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5

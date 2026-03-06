@@ -20,7 +20,9 @@ _USER_FAMILIES_PREFIX = "uf:"  # uf:{user_id} → set of family_ids
 async def get_redis() -> redis.Redis:
     global _redis
     if _redis is None:
-        _redis = redis.from_url(settings.redis_url, decode_responses=True)
+        _redis = redis.from_url(
+            settings.redis_url, decode_responses=True, **settings.redis_ssl_kwargs
+        )
     return _redis
 
 

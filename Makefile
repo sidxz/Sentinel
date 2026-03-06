@@ -4,7 +4,8 @@ help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 setup: ## First-time setup: generates keys, env, installs deps, starts DB
-	@mkdir -p keys
+	@mkdir -p keys/tls
+	@# JWT signing keys
 	@if [ ! -f keys/private.pem ]; then \
 		openssl genrsa -out keys/private.pem 2048 2>/dev/null && \
 		openssl rsa -in keys/private.pem -pubout -out keys/public.pem 2>/dev/null && \
@@ -12,11 +13,31 @@ setup: ## First-time setup: generates keys, env, installs deps, starts DB
 	else \
 		echo "JWT keys already exist"; \
 	fi
+	@# TLS certs for Postgres + Redis (dev CA + server cert)
+	@if [ ! -f keys/tls/ca.crt ]; then \
+		openssl req -x509 -newkey rsa:2048 \
+			-keyout keys/tls/ca.key -out keys/tls/ca.crt \
+			-days 3650 -nodes -subj "/CN=Sentinel Dev CA" 2>/dev/null && \
+		openssl req -newkey rsa:2048 \
+			-keyout keys/tls/server.key -out /tmp/sentinel-server.csr \
+			-nodes -subj "/CN=localhost" 2>/dev/null && \
+		openssl x509 -req -in /tmp/sentinel-server.csr \
+			-CA keys/tls/ca.crt -CAkey keys/tls/ca.key -CAcreateserial \
+			-out keys/tls/server.crt -days 3650 \
+			-extfile <(printf "subjectAltName=DNS:localhost,IP:127.0.0.1") 2>/dev/null && \
+		rm -f /tmp/sentinel-server.csr keys/tls/ca.srl && \
+		chmod 600 keys/tls/server.key keys/tls/ca.key && \
+		echo "Generated TLS certs (keys/tls/)"; \
+	else \
+		echo "TLS certs already exist"; \
+	fi
+	@# Generate service/.env from template
 	@if [ ! -f service/.env ]; then \
 		SESSION_KEY=$$(python3 -c "import secrets; print(secrets.token_urlsafe(32))"); \
 		sed "s|^JWT_PRIVATE_KEY_PATH=.*|JWT_PRIVATE_KEY_PATH=../keys/private.pem|; \
 		     s|^JWT_PUBLIC_KEY_PATH=.*|JWT_PUBLIC_KEY_PATH=../keys/public.pem|; \
-		     s|^SESSION_SECRET_KEY=.*|SESSION_SECRET_KEY=$$SESSION_KEY|" \
+		     s|^SESSION_SECRET_KEY=.*|SESSION_SECRET_KEY=$$SESSION_KEY|; \
+		     s|^REDIS_TLS_CA_CERT=.*|REDIS_TLS_CA_CERT=../keys/tls/ca.crt|" \
 		  .env.example > service/.env && \
 		echo "Created service/.env (session secret auto-generated)"; \
 	else \

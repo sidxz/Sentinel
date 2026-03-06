@@ -11,11 +11,12 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = (
-        "postgresql+asyncpg://identity:identity_dev@localhost:9001/identity"
+        "postgresql+asyncpg://identity:identity_dev@localhost:9001/identity?ssl=require"
     )
 
     # Redis
-    redis_url: str = "redis://localhost:9002/0"
+    redis_url: str = "rediss://:sentinel_dev@localhost:9002/0"
+    redis_tls_ca_cert: str = ""  # Path to CA cert for Redis TLS (e.g. keys/tls/ca.crt)
 
     # JWT
     jwt_private_key_path: Path = Path("keys/private.pem")
@@ -55,6 +56,20 @@ class Settings(BaseSettings):
     # Admin
     admin_emails: str = ""
     admin_url: str = "http://localhost:9004"
+
+    @property
+    def redis_ssl_kwargs(self) -> dict:
+        """Extra kwargs for redis.from_url() when using rediss:// scheme."""
+        if not self.redis_url.startswith("rediss://"):
+            return {}
+        kwargs: dict = {}
+        if self.redis_tls_ca_cert:
+            kwargs["ssl_ca_certs"] = self.redis_tls_ca_cert
+        else:
+            # No CA cert provided — disable cert verification (still encrypted)
+            import ssl as _ssl
+            kwargs["ssl_cert_reqs"] = _ssl.CERT_NONE
+        return kwargs
 
     @property
     def cors_origin_list(self) -> list[str]:

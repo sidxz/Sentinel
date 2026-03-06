@@ -24,6 +24,7 @@ def _proxy_aware_key_func(request: Request) -> str:
 limiter = Limiter(
     key_func=_proxy_aware_key_func,
     storage_uri=settings.redis_url,
+    storage_options=settings.redis_ssl_kwargs,
 )
 
 
@@ -43,7 +44,9 @@ _redis: aioredis.Redis | None = None
 async def _get_redis() -> aioredis.Redis:
     global _redis
     if _redis is None:
-        _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+        _redis = aioredis.from_url(
+            settings.redis_url, decode_responses=True, **settings.redis_ssl_kwargs
+        )
     return _redis
 
 
