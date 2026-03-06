@@ -78,12 +78,13 @@ def create_admin_token(user_id: uuid.UUID, email: str, name: str) -> str:
     return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(user_id: uuid.UUID) -> str:
+def create_refresh_token(user_id: uuid.UUID, family_id: str | None = None) -> str:
     now = datetime.now(UTC)
     payload = {
         "iss": _ISSUER,
         "sub": str(user_id),
         "jti": str(uuid.uuid4()),
+        "fid": family_id or str(uuid.uuid4()),
         "aud": _AUD_REFRESH,
         "iat": now,
         "exp": now + timedelta(days=settings.refresh_token_expire_days),

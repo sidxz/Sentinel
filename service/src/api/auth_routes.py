@@ -100,6 +100,8 @@ async def login(
     provider: str,
     request: Request,
     redirect_uri: str = Query(...),
+    code_challenge: str = Query(...),
+    code_challenge_method: str = Query("S256"),
     db: AsyncSession = Depends(get_db),
 ):
     configured = get_configured_providers()
@@ -108,6 +110,13 @@ async def login(
             400,
             "Provider Not Available",
             f"The login provider \u201c{provider}\u201d is not configured on this server.",
+        )
+
+    if code_challenge_method != "S256":
+        return _error_page(
+            400,
+            "Unsupported Challenge Method",
+            "Only S256 code_challenge_method is supported.",
         )
 
     # Validate redirect_uri against any active allowed app
@@ -123,8 +132,10 @@ async def login(
             "The redirect URI is not registered for any active app. Check that the app is registered and enabled in the admin panel.",
         )
 
-    # Store in session for callback
+    # Store in session for callback (survives the OAuth round-trip)
     request.session["redirect_uri"] = redirect_uri
+    request.session["code_challenge"] = code_challenge
+    request.session["code_challenge_method"] = code_challenge_method
 
     client = oauth.create_client(provider)
     oauth_redirect_uri = f"{settings.base_url}/auth/callback/{provider}"
@@ -213,8 +224,10 @@ async def callback(
         )
         await db.commit()
 
-        # Retrieve redirect_uri from session and clear it
+        # Retrieve redirect_uri and PKCE challenge from session and clear it
         redirect_uri = request.session.pop("redirect_uri", None)
+        code_challenge = request.session.pop("code_challenge", None)
+        code_challenge_method = request.session.pop("code_challenge_method", None)
         request.session.clear()
         if not redirect_uri:
             return _error_page(
@@ -237,9 +250,12 @@ async def callback(
                 "The app you are trying to sign into has been disabled. Contact your administrator.",
             )
 
-        # Generate auth code and redirect
+        # Generate auth code and redirect (with PKCE challenge bound to code)
         code = await auth_code_service.create_auth_code(
-            user.id, client_app_id=client_app.id
+            user.id,
+            client_app_id=client_app.id,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
         )
         separator = "&" if "?" in redirect_uri else "?"
         return RedirectResponse(
@@ -296,12 +312,24 @@ async def select_workspace_and_issue_tokens(
     body: SelectWorkspaceRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Exchange authorization code + workspace_id for JWT tokens."""
+    """Exchange authorization code + workspace_id + PKCE verifier for JWT tokens."""
     code_data = await auth_code_service.consume_auth_code(body.code)
     if not code_data:
         raise HTTPException(
             status_code=400, detail="Invalid or expired authorization code"
         )
+
+    # PKCE verification — code_challenge is always present (mandatory)
+    stored_challenge = code_data.get("code_challenge")
+    challenge_method = code_data.get("code_challenge_method", "S256")
+    if not stored_challenge:
+        raise HTTPException(
+            status_code=400, detail="Authorization code missing PKCE challenge"
+        )
+    if not auth_code_service.verify_code_challenge(
+        body.code_verifier, stored_challenge, challenge_method
+    ):
+        raise HTTPException(status_code=400, detail="PKCE verification failed")
 
     user_id = uuid.UUID(code_data["user_id"])
     client_app_id = (

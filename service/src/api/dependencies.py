@@ -1,10 +1,12 @@
 import uuid
 from dataclasses import dataclass
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.jwt import _AUD_ACCESS, _AUD_ADMIN, decode_token
 from src.config import settings
+from src.database import get_db
 
 
 async def require_admin(request: Request) -> dict:
@@ -63,18 +65,49 @@ async def get_current_user(request: Request) -> CurrentUser:
     )
 
 
-async def require_service_key(request: Request) -> str:
-    """FastAPI dependency: validate X-Service-Key header.
+@dataclass(frozen=True)
+class ServiceKeyContext:
+    """Resolved service identity from X-Service-Key header."""
+    service_name: str  # bound service name, or "" in dev mode
 
-    When SERVICE_API_KEYS is empty (dev mode), all requests pass through.
+
+async def require_service_key(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> ServiceKeyContext:
+    """FastAPI dependency: validate X-Service-Key header against DB.
+
+    In dev mode (DEBUG=True with no active service apps), all requests pass through.
     In production, requests without a valid key get 401.
+    Returns a ServiceKeyContext with the bound service_name.
     """
-    allowed = settings.service_api_key_set
-    if not allowed:
-        return ""
+    from src.services import service_app_service
+
     key = request.headers.get("X-Service-Key")
-    if not key or key not in allowed:
+    if not key:
+        # Dev mode passthrough: no key and no active apps
+        if settings.debug and not await service_app_service.has_active_apps(db):
+            return ServiceKeyContext(service_name="")
         raise HTTPException(
             status_code=401, detail="Invalid or missing service API key"
         )
-    return key
+    result = await service_app_service.validate_key(key, db)
+    if not result:
+        raise HTTPException(
+            status_code=401, detail="Invalid or missing service API key"
+        )
+    service_name, _app_id = result
+    return ServiceKeyContext(service_name=service_name)
+
+
+def verify_service_scope(ctx: ServiceKeyContext, service_name: str) -> None:
+    """Verify the service key is scoped to the requested service_name.
+
+    In dev mode (empty service_name on ctx), all services are allowed.
+    """
+    if not ctx.service_name:
+        return  # dev mode — no enforcement
+    if ctx.service_name != service_name:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Service key is not authorized for service '{service_name}'",
+        )

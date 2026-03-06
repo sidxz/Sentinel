@@ -31,6 +31,7 @@ class ProviderListResponse(BaseModel):
 class SelectWorkspaceRequest(BaseModel):
     code: str
     workspace_id: uuid.UUID
+    code_verifier: str
 
 
 class WorkspaceOptionResponse(BaseModel):

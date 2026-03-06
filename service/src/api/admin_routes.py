@@ -50,6 +50,12 @@ from src.schemas.client_app import (
     ClientAppResponse,
     ClientAppUpdateRequest,
 )
+from src.schemas.service_app import (
+    ServiceAppCreateRequest,
+    ServiceAppCreateResponse,
+    ServiceAppResponse,
+    ServiceAppUpdateRequest,
+)
 from src.schemas.permission import ShareRequest, UpdateVisibilityRequest
 from src.schemas.role import (
     AddRoleActionsRequest,
@@ -66,6 +72,7 @@ from src.services import (
     group_service,
     permission_service,
     role_service,
+    service_app_service,
 )
 from src.middleware.cors import refresh_origins
 from src.services import token_service
@@ -159,7 +166,7 @@ async def system_health(
 
 
 @router.get("/system/settings", response_model=SystemSettingsResponse)
-async def system_settings():
+async def system_settings(db: AsyncSession = Depends(get_db)):
     # OAuth providers
     providers = [
         {"name": "google", "configured": bool(settings.google_client_id)},
@@ -207,13 +214,14 @@ async def system_settings():
         {"endpoint": "POST /auth/logout", "limit": "5/minute"},
     ]
 
-    # Service keys
+    # Service keys (from DB)
     service_keys = []
-    for i, key in enumerate(settings.service_api_key_set):
+    apps = await service_app_service.list_service_apps(db)
+    for svc_app in apps:
         service_keys.append(
             {
-                "name": f"key-{i + 1}",
-                "preview": f"****{key[-4:]}" if len(key) >= 4 else "****",
+                "name": svc_app.service_name,
+                "preview": svc_app.key_prefix,
             }
         )
 
@@ -1167,6 +1175,146 @@ async def delete_client_app(
     await db.delete(app)
     await db.commit()
     await refresh_origins(db)
+
+
+# ── Service Apps ──────────────────────────────────────────────────────
+
+
+@router.get("/service-apps", response_model=list[ServiceAppResponse])
+async def list_service_apps(db: AsyncSession = Depends(get_db)):
+    return await service_app_service.list_service_apps(db)
+
+
+@router.post("/service-apps", response_model=ServiceAppCreateResponse, status_code=201)
+async def create_service_app(
+    body: ServiceAppCreateRequest,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    actor_id = uuid.UUID(admin["sub"])
+    try:
+        app, plaintext_key = await service_app_service.create_service_app(
+            db, name=body.name, service_name=body.service_name, created_by=actor_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await activity_service.log_activity(
+        db,
+        action="service_app_created",
+        target_type="service_app",
+        target_id=app.id,
+        actor_id=actor_id,
+        detail={"name": app.name, "service_name": app.service_name},
+    )
+    await db.commit()
+    await db.refresh(app)
+    return ServiceAppCreateResponse(
+        id=app.id,
+        name=app.name,
+        service_name=app.service_name,
+        key_prefix=app.key_prefix,
+        is_active=app.is_active,
+        last_used_at=app.last_used_at,
+        created_by=app.created_by,
+        created_at=app.created_at,
+        updated_at=app.updated_at,
+        api_key=plaintext_key,
+    )
+
+
+@router.get("/service-apps/{app_id}", response_model=ServiceAppResponse)
+async def get_service_app(
+    app_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    app = await service_app_service.get_service_app(db, app_id)
+    if not app:
+        raise HTTPException(status_code=404, detail="Service app not found")
+    return app
+
+
+@router.patch("/service-apps/{app_id}", response_model=ServiceAppResponse)
+async def update_service_app(
+    app_id: uuid.UUID,
+    body: ServiceAppUpdateRequest,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        app = await service_app_service.update_service_app(
+            db, app_id, name=body.name, is_active=body.is_active
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    await activity_service.log_activity(
+        db,
+        action="service_app_updated",
+        target_type="service_app",
+        target_id=app_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={"name": app.name, "is_active": app.is_active},
+    )
+    await db.commit()
+    await db.refresh(app)
+    return app
+
+
+@router.post("/service-apps/{app_id}/rotate-key", response_model=ServiceAppCreateResponse)
+async def rotate_service_app_key(
+    app_id: uuid.UUID,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        app, plaintext_key = await service_app_service.rotate_key(db, app_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    await activity_service.log_activity(
+        db,
+        action="service_app_key_rotated",
+        target_type="service_app",
+        target_id=app_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={"name": app.name},
+    )
+    await db.commit()
+    await db.refresh(app)
+    return ServiceAppCreateResponse(
+        id=app.id,
+        name=app.name,
+        service_name=app.service_name,
+        key_prefix=app.key_prefix,
+        is_active=app.is_active,
+        last_used_at=app.last_used_at,
+        created_by=app.created_by,
+        created_at=app.created_at,
+        updated_at=app.updated_at,
+        api_key=plaintext_key,
+    )
+
+
+@router.delete("/service-apps/{app_id}", status_code=204)
+async def delete_service_app(
+    app_id: uuid.UUID,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    app = await service_app_service.get_service_app(db, app_id)
+    if not app:
+        raise HTTPException(status_code=404, detail="Service app not found")
+    await activity_service.log_activity(
+        db,
+        action="service_app_deleted",
+        target_type="service_app",
+        target_id=app_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={"name": app.name, "service_name": app.service_name},
+    )
+    await service_app_service.delete_service_app(db, app_id)
+    await db.commit()
 
 
 # ── CSV Import ────────────────────────────────────────────────────────

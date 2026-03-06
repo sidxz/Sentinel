@@ -49,7 +49,6 @@ class Settings(BaseSettings):
     # Security
     cookie_secure: bool = False  # Set True in production (requires HTTPS)
     allowed_hosts: str = ""  # comma-separated override; empty = derived from BASE_URL
-    service_api_keys: str = ""  # comma-separated; empty = no enforcement (dev)
     debug: bool = True  # Set False in production (disables /docs, /redoc)
 
     # Admin
@@ -78,9 +77,6 @@ class Settings(BaseSettings):
                 hosts.add(parsed.hostname)
         return list(hosts) if hosts else ["*"]
 
-    @property
-    def service_api_key_set(self) -> set[str]:
-        return {k.strip() for k in self.service_api_keys.split(",") if k.strip()}
 
 
 settings = Settings()

@@ -3,7 +3,13 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies import CurrentUser, get_current_user, require_service_key
+from src.api.dependencies import (
+    CurrentUser,
+    ServiceKeyContext,
+    get_current_user,
+    require_service_key,
+    verify_service_scope,
+)
 from src.database import get_db
 from src.schemas.role import (
     CheckActionRequest,
@@ -25,9 +31,10 @@ router = APIRouter(prefix="/roles", tags=["roles"])
 )
 async def register_actions(
     body: RegisterActionsRequest,
-    _key: str = Depends(require_service_key),
+    svc: ServiceKeyContext = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
+    verify_service_scope(svc, body.service_name)
     actions = await role_service.register_actions(
         db,
         service_name=body.service_name,
@@ -44,10 +51,11 @@ async def register_actions(
 @router.post("/check-action", response_model=CheckActionResponse)
 async def check_action(
     body: CheckActionRequest,
-    _key: str = Depends(require_service_key),
+    svc: ServiceKeyContext = Depends(require_service_key),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    verify_service_scope(svc, body.service_name)
     if body.workspace_id != user.workspace_id:
         raise HTTPException(status_code=403, detail="Cross-workspace check not allowed")
 
@@ -65,10 +73,11 @@ async def check_action(
 async def get_user_actions(
     workspace_id: uuid.UUID = Query(...),
     service_name: str = Query(...),
-    _key: str = Depends(require_service_key),
+    svc: ServiceKeyContext = Depends(require_service_key),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    verify_service_scope(svc, service_name)
     if workspace_id != user.workspace_id:
         raise HTTPException(
             status_code=403, detail="Cross-workspace lookup not allowed"

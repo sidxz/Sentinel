@@ -11,7 +11,11 @@ _AUTH_CODE_TTL = 300  # 5 minutes
 
 
 async def create_auth_code(
-    user_id: uuid.UUID, *, client_app_id: uuid.UUID | None = None
+    user_id: uuid.UUID,
+    *,
+    client_app_id: uuid.UUID | None = None,
+    code_challenge: str | None = None,
+    code_challenge_method: str | None = None,
 ) -> str:
     """Generate a single-use authorization code and store in Redis."""
     code = secrets.token_urlsafe(32)
@@ -19,6 +23,9 @@ async def create_auth_code(
     data: dict = {"user_id": str(user_id)}
     if client_app_id:
         data["client_app_id"] = str(client_app_id)
+    if code_challenge:
+        data["code_challenge"] = code_challenge
+        data["code_challenge_method"] = code_challenge_method or "S256"
     payload = json.dumps(data)
     await r.set(f"{_AUTH_CODE_PREFIX}{code}", payload, ex=_AUTH_CODE_TTL)
     return code
@@ -40,3 +47,15 @@ async def consume_auth_code(code: str) -> dict | None:
     if not val:
         return None
     return json.loads(val)
+
+
+def verify_code_challenge(code_verifier: str, code_challenge: str, method: str) -> bool:
+    """Verify PKCE code_verifier against stored code_challenge."""
+    import base64
+    import hashlib
+
+    if method != "S256":
+        return False
+    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+    computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return computed == code_challenge

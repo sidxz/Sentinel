@@ -58,16 +58,23 @@ async def lifespan(app: FastAPI):
         await refresh_origins(db)
 
     # Security checks — fail-closed in production, warn in dev
-    _insecure_session = settings.session_secret_key == "dev-only-change-me-in-production"
-    _no_service_keys = not settings.service_api_key_set
+    _insecure_session = (
+        settings.session_secret_key == "dev-only-change-me-in-production"
+    )
     _insecure_cookie = not settings.cookie_secure
+
+    # Check service apps in DB
+    from src.services import service_app_service
+
+    async with AsyncSession(db_engine) as db:
+        _no_service_apps = not await service_app_service.has_active_apps(db)
 
     if not settings.debug:
         errors = []
         if _insecure_session:
             errors.append("SESSION_SECRET_KEY is using the default dev value")
-        if _no_service_keys:
-            errors.append("SERVICE_API_KEYS is empty — service auth is disabled")
+        if _no_service_apps:
+            errors.append("No active service apps registered — service auth is disabled")
         if _insecure_cookie:
             errors.append("COOKIE_SECURE is False — cookies will be sent over HTTP")
         if errors:
@@ -82,12 +89,14 @@ async def lifespan(app: FastAPI):
             logger.warning(
                 "SESSION_SECRET_KEY is using the default dev value — set a random secret in production"
             )
-        if _no_service_keys:
+        if _no_service_apps:
             logger.warning(
-                "SERVICE_API_KEYS is empty — all service-key checks are bypassed"
+                "No active service apps registered — all service-key checks are bypassed"
             )
         if _insecure_cookie:
-            logger.warning("COOKIE_SECURE is False — admin cookies will be sent over HTTP")
+            logger.warning(
+                "COOKIE_SECURE is False — admin cookies will be sent over HTTP"
+            )
 
     app.state.start_time = time.time()
     yield
@@ -137,3 +146,10 @@ app.include_router(role_router)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/.well-known/jwks.json", tags=["auth"])
+async def jwks():
+    from src.auth.jwks import build_jwks
+
+    return build_jwks()

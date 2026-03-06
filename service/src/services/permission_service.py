@@ -29,6 +29,13 @@ async def register_resource(
     return perm
 
 
+async def get_permission_by_id(
+    db: AsyncSession,
+    permission_id: uuid.UUID,
+) -> ResourcePermission | None:
+    return await db.get(ResourcePermission, permission_id)
+
+
 async def get_resource_permission(
     db: AsyncSession,
     service_name: str,

@@ -1,8 +1,8 @@
 site_name: Sentinel Auth
 site_description: Authentication, workspace management, and permissions microservice
-site_url: https://daikon-sentinel.dev
+site_url: https://github.com/sidxz/Sentinel
 
-repo_name: daikon-sentinel
+repo_name: sentinel
 repo_url: https://github.com/sidxz/Sentinel
 
 theme:

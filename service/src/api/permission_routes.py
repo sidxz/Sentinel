@@ -3,7 +3,13 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies import CurrentUser, get_current_user, require_service_key
+from src.api.dependencies import (
+    CurrentUser,
+    ServiceKeyContext,
+    get_current_user,
+    require_service_key,
+    verify_service_scope,
+)
 from src.database import get_db
 from src.schemas.permission import (
     AccessibleResourcesRequest,
@@ -27,10 +33,12 @@ router = APIRouter(prefix="/permissions", tags=["permissions"])
 @router.post("/check", response_model=PermissionCheckResponse)
 async def check_permissions(
     body: PermissionCheckRequest,
-    _key: str = Depends(require_service_key),
+    svc: ServiceKeyContext = Depends(require_service_key),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    for item in body.checks:
+        verify_service_scope(svc, item.service_name)
     results = []
     for item in body.checks:
         allowed = await permission_service.check_permission(
@@ -59,10 +67,11 @@ async def check_permissions(
 @router.post("/accessible", response_model=AccessibleResourcesResponse)
 async def accessible_resources(
     body: AccessibleResourcesRequest,
-    _key: str = Depends(require_service_key),
+    svc: ServiceKeyContext = Depends(require_service_key),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    verify_service_scope(svc, body.service_name)
     if body.workspace_id != user.workspace_id:
         raise HTTPException(
             status_code=403, detail="Cross-workspace lookup not allowed"
@@ -91,10 +100,16 @@ async def accessible_resources(
 async def share_resource(
     permission_id: uuid.UUID,
     body: ShareRequest,
-    _key: str = Depends(require_service_key),
+    svc: ServiceKeyContext = Depends(require_service_key),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Verify service scope via the permission's service_name
+    perm = await permission_service.get_permission_by_id(db, permission_id)
+    if not perm:
+        raise HTTPException(status_code=404, detail="Permission not found")
+    verify_service_scope(svc, perm.service_name)
+
     await permission_service.share_resource(
         db,
         permission_id=permission_id,
@@ -112,9 +127,10 @@ async def share_resource(
 @router.post("/register", response_model=ResourcePermissionResponse, status_code=201)
 async def register_resource(
     body: RegisterResourceRequest,
-    _key: str = Depends(require_service_key),
+    svc: ServiceKeyContext = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
+    verify_service_scope(svc, body.service_name)
     perm = await permission_service.register_resource(
         db,
         service_name=body.service_name,
@@ -131,9 +147,13 @@ async def register_resource(
 async def update_visibility(
     permission_id: uuid.UUID,
     body: UpdateVisibilityRequest,
-    _key: str = Depends(require_service_key),
+    svc: ServiceKeyContext = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
+    perm = await permission_service.get_permission_by_id(db, permission_id)
+    if not perm:
+        raise HTTPException(status_code=404, detail="Permission not found")
+    verify_service_scope(svc, perm.service_name)
     return await permission_service.update_visibility(
         db, permission_id, body.visibility
     )
@@ -143,9 +163,13 @@ async def update_visibility(
 async def revoke_share(
     permission_id: uuid.UUID,
     body: ShareRequest,
-    _key: str = Depends(require_service_key),
+    svc: ServiceKeyContext = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
+    perm = await permission_service.get_permission_by_id(db, permission_id)
+    if not perm:
+        raise HTTPException(status_code=404, detail="Permission not found")
+    verify_service_scope(svc, perm.service_name)
     await permission_service.revoke_share(
         db,
         permission_id=permission_id,
@@ -163,9 +187,10 @@ async def get_resource_acl(
     service_name: str,
     resource_type: str,
     resource_id: uuid.UUID,
-    _key: str = Depends(require_service_key),
+    svc: ServiceKeyContext = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
+    verify_service_scope(svc, service_name)
     perm = await permission_service.get_resource_permission(
         db, service_name, resource_type, resource_id
     )

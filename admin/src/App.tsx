@@ -6,6 +6,8 @@ import { Activity } from "./pages/Activity";
 import { ClientAppDetail } from "./pages/ClientAppDetail";
 import { ClientApps } from "./pages/ClientApps";
 import { Dashboard } from "./pages/Dashboard";
+import { ServiceAppDetail } from "./pages/ServiceAppDetail";
+import { ServiceApps } from "./pages/ServiceApps";
 import { Permissions } from "./pages/Permissions";
 import { ServiceActions } from "./pages/ServiceActions";
 import { Settings } from "./pages/Settings";
@@ -30,6 +32,8 @@ export default function App() {
           <Route path="/service-actions" element={<ServiceActions />} />
           <Route path="/client-apps" element={<ClientApps />} />
           <Route path="/client-apps/:id" element={<ClientAppDetail />} />
+          <Route path="/service-apps" element={<ServiceApps />} />
+          <Route path="/service-apps/:id" element={<ServiceAppDetail />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/system" element={<SystemHealth />} />
           <Route path="/settings" element={<Settings />} />

@@ -120,7 +120,10 @@ async def invite_member(
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
     membership = await workspace_service.invite_member(
-        db, workspace_id, email=body.email, role=body.role,
+        db,
+        workspace_id,
+        email=body.email,
+        role=body.role,
         actor_role=user.workspace_role,
     )
     return membership

@@ -111,11 +111,12 @@ async def issue_tokens(
         workspace_role=membership.role,
         groups=group_ids,
     )
+    # family_id is generated inside create_refresh_token and embedded in the JWT
     refresh_token = create_refresh_token(user_id=user.id)
 
     # Store refresh token in Redis for rotation tracking
     rt_payload = decode_token(refresh_token)
-    family_id = str(uuid.uuid4())
+    family_id = rt_payload["fid"]
     await token_service.store_refresh_token(
         jti=rt_payload["jti"],
         user_id=user.id,
@@ -151,8 +152,11 @@ async def rotate_refresh_token(
     result = await token_service.consume_refresh_token(jti)
 
     if result is None:
-        # Already consumed or expired — possible theft. Try to find family via jti pattern.
-        # Since we can't recover the family_id, this is a hard fail.
+        # Already consumed or expired — possible theft.
+        # Extract family_id from the JWT and revoke the entire family.
+        family_id = payload.get("fid")
+        if family_id:
+            await token_service.revoke_token_family(family_id)
         raise ValueError("Refresh token already used or expired")
 
     user_id, family_id, workspace_id, client_app_id = result
@@ -199,7 +203,7 @@ async def rotate_refresh_token(
         workspace_role=membership.role,
         groups=group_ids,
     )
-    new_refresh = create_refresh_token(user_id=user.id)
+    new_refresh = create_refresh_token(user_id=user.id, family_id=family_id)
 
     # Store new refresh token in same family
     new_rt_payload = decode_token(new_refresh)

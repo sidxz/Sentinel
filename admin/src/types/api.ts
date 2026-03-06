@@ -208,6 +208,24 @@ export interface ClientApp {
   updated_at: string;
 }
 
+// ── Service Apps ────────────────────────────────────────────────────
+
+export interface ServiceApp {
+  id: string;
+  name: string;
+  service_name: string;
+  key_prefix: string;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceAppCreateResponse extends ServiceApp {
+  api_key: string;
+}
+
 // ── System Health ───────────────────────────────────────────────────
 
 export interface HealthCheckDetail {

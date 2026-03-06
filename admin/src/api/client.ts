@@ -10,6 +10,8 @@ import type {
   PaginatedResponse,
   RoleMember,
   ServiceAction,
+  ServiceApp,
+  ServiceAppCreateResponse,
   Stats,
   SystemHealth,
   SystemSettings,
@@ -329,6 +331,37 @@ export const updateClientApp = (
 
 export const deleteClientApp = (id: string) =>
   request(`/admin/client-apps/${id}`, { method: "DELETE" });
+
+// ── Service Apps ────────────────────────────────────────────────────
+
+export const getServiceApps = () =>
+  request<ServiceApp[]>("/admin/service-apps");
+
+export const createServiceApp = (body: { name: string; service_name: string }) =>
+  request<ServiceAppCreateResponse>("/admin/service-apps", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getServiceApp = (id: string) =>
+  request<ServiceApp>(`/admin/service-apps/${id}`);
+
+export const updateServiceApp = (
+  id: string,
+  body: { name?: string; is_active?: boolean },
+) =>
+  request<ServiceApp>(`/admin/service-apps/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+export const rotateServiceAppKey = (id: string) =>
+  request<ServiceAppCreateResponse>(`/admin/service-apps/${id}/rotate-key`, {
+    method: "POST",
+  });
+
+export const deleteServiceApp = (id: string) =>
+  request(`/admin/service-apps/${id}`, { method: "DELETE" });
 
 // ── CSV Import ───────────────────────────────────────────────────────
 
