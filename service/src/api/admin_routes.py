@@ -75,6 +75,7 @@ from src.services import (
     service_app_service,
 )
 from src.middleware.cors import refresh_origins
+from src.middleware.rate_limit import limiter
 from src.services import token_service
 
 router = APIRouter(
@@ -255,7 +256,9 @@ async def system_settings(
 
 
 @router.post("/users/bulk-status")
+@limiter.limit("5/minute")
 async def bulk_user_status(
+    request: Request,
     body: BulkUserStatusRequest,
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -362,7 +365,9 @@ async def add_user_to_workspace(
 
 
 @router.post("/users/{user_id}/revoke-tokens")
+@limiter.limit("10/minute")
 async def revoke_user_tokens(
+    request: Request,
     user_id: uuid.UUID,
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -833,7 +838,7 @@ async def share_permission(
 @router.delete("/permissions/{permission_id}/share")
 async def revoke_permission_share(
     permission_id: uuid.UUID,
-    grantee_type: str = Query(...),
+    grantee_type: str = Query(..., pattern=r"^(user|group)$"),
     grantee_id: uuid.UUID = Query(...),
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -1196,7 +1201,9 @@ async def list_service_apps(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/service-apps", response_model=ServiceAppCreateResponse, status_code=201)
+@limiter.limit("5/minute")
 async def create_service_app(
+    request: Request,
     body: ServiceAppCreateRequest,
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -1274,7 +1281,9 @@ async def update_service_app(
 @router.post(
     "/service-apps/{app_id}/rotate-key", response_model=ServiceAppCreateResponse
 )
+@limiter.limit("3/minute")
 async def rotate_service_app_key(
+    request: Request,
     app_id: uuid.UUID,
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -1348,7 +1357,9 @@ async def csv_preview(file: UploadFile = File(...)):
 
 
 @router.post("/import/csv/execute", response_model=CsvImportResult)
+@limiter.limit("5/minute")
 async def csv_execute(
+    request: Request,
     file: UploadFile = File(...),
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),

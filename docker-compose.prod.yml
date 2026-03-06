@@ -57,7 +57,7 @@ services:
     image: ghcr.io/sidxz/sentinel:latest
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0  # TLS not needed for Docker-internal bridge network
       BASE_URL: ${BASE_URL}
       ADMIN_URL: ${ADMIN_URL}
       CORS_ORIGINS: ${CORS_ORIGINS:-}  # base origins only; client app origins are loaded from DB

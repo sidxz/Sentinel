@@ -104,8 +104,8 @@ async def lifespan(app: FastAPI):
                 "Redis URL has no authentication — set a password in REDIS_URL (redis://:password@host:port/db)"
             )
         if _redis_no_tls:
-            errors.append(
-                "Redis URL is not using TLS — use rediss:// scheme for encrypted connections"
+            logger.warning(
+                "Redis URL is not using TLS — use rediss:// if Redis is outside a trusted network"
             )
         if "*" in settings.allowed_hosts_list:
             errors.append(

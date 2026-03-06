@@ -62,3 +62,8 @@ def sanitize_url(value: str | None) -> str | None:
 
 
 SafeUrl = Annotated[str | None, AfterValidator(sanitize_url)]
+
+
+def escape_like(value: str) -> str:
+    """Escape SQL LIKE/ILIKE wildcard characters so they match literally."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

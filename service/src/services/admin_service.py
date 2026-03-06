@@ -10,7 +10,7 @@ from src.models.group import Group
 from src.models.permission import ResourcePermission, ResourceShare
 from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
-from src.schemas.validators import strip_html
+from src.schemas.validators import escape_like, strip_html
 from src.services import activity_service, token_service
 
 
@@ -87,15 +87,17 @@ async def list_users(
     )
 
     if search:
+        safe = escape_like(search)
         base_query = base_query.where(
-            User.email.ilike(f"%{search}%") | User.name.ilike(f"%{search}%")
+            User.email.ilike(f"%{safe}%") | User.name.ilike(f"%{safe}%")
         )
 
     # Count total
     count_query = select(func.count()).select_from(User)
     if search:
+        safe = escape_like(search)
         count_query = count_query.where(
-            User.email.ilike(f"%{search}%") | User.name.ilike(f"%{search}%")
+            User.email.ilike(f"%{safe}%") | User.name.ilike(f"%{safe}%")
         )
     total = await db.scalar(count_query) or 0
 
@@ -218,14 +220,16 @@ async def list_workspaces(
     )
 
     if search:
+        safe = escape_like(search)
         base_query = base_query.where(
-            Workspace.name.ilike(f"%{search}%") | Workspace.slug.ilike(f"%{search}%")
+            Workspace.name.ilike(f"%{safe}%") | Workspace.slug.ilike(f"%{safe}%")
         )
 
     count_query = select(func.count()).select_from(Workspace)
     if search:
+        safe = escape_like(search)
         count_query = count_query.where(
-            Workspace.name.ilike(f"%{search}%") | Workspace.slug.ilike(f"%{search}%")
+            Workspace.name.ilike(f"%{safe}%") | Workspace.slug.ilike(f"%{safe}%")
         )
     total = await db.scalar(count_query) or 0
 
@@ -326,10 +330,10 @@ async def list_permissions(
         filters.append(ResourcePermission.service_name == service_name)
     if resource_id:
         filters.append(
-            cast(ResourcePermission.resource_id, Text).ilike(f"{resource_id}%")
+            cast(ResourcePermission.resource_id, Text).ilike(f"{escape_like(resource_id)}%")
         )
     if owner:
-        filters.append(User.email.ilike(f"%{owner}%"))
+        filters.append(User.email.ilike(f"%{escape_like(owner)}%"))
 
     for f in filters:
         base_query = base_query.where(f)
