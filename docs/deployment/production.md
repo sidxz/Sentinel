@@ -36,7 +36,7 @@ Service API keys are managed via the admin panel (`/admin/service-apps`), not en
 3. Create a service app for each consuming service (e.g., "docu-store", "analytics")
 4. Copy the plaintext key shown at creation -- it cannot be retrieved again
 
-When no active service apps exist in the database, service-key authentication is disabled entirely (acceptable only in development).
+When no active service apps exist in the database, all service-key endpoints return 401. The service logs a warning at startup as a reminder.
 
 ## 4. Enable secure cookies
 

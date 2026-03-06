@@ -3,25 +3,13 @@
 import uuid
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sentinel_auth.dependencies import require_action
-from sentinel_auth.permissions import PermissionClient
-from sentinel_auth.roles import RoleClient
+from fastapi import APIRouter, Depends, HTTPException
 from sentinel_auth.types import AuthenticatedUser
 from pydantic import BaseModel
 
-from src.config import settings
-from src.deps import get_current_user, get_permissions, get_roles, get_token, get_workspace_id, require_role
+from src.deps import get_current_user, get_token, get_workspace_id, require_role
+from src.main import sentinel
 from src.models import notes
-
-# ---------------------------------------------------------------------------
-# Module-level RoleClient for require_action() factory
-# ---------------------------------------------------------------------------
-role_client = RoleClient(
-    base_url=settings.sentinel_url,
-    service_name=settings.service_name,
-    service_key=settings.service_api_key or None,
-)
 
 router = APIRouter()
 
@@ -45,7 +33,7 @@ class ShareNoteRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# User info
+# User info — uses get_current_user from JWTAuthMiddleware (Tier 1)
 # ---------------------------------------------------------------------------
 @router.get("/me")
 async def whoami(user: AuthenticatedUser = Depends(get_current_user)):
@@ -61,14 +49,16 @@ async def whoami(user: AuthenticatedUser = Depends(get_current_user)):
     }
 
 
+# ---------------------------------------------------------------------------
+# RBAC actions — uses RoleClient to list available actions (Tier 2)
+# ---------------------------------------------------------------------------
 @router.get("/me/actions")
 async def my_actions(
     user: AuthenticatedUser = Depends(get_current_user),
     token: str = Depends(get_token),
-    roles: RoleClient = Depends(get_roles),
 ):
     """List all RBAC actions available to the current user."""
-    actions = await roles.get_user_actions(token, user.workspace_id)
+    actions = await sentinel.roles.get_user_actions(token, user.workspace_id)
     return {"actions": actions}
 
 
@@ -87,7 +77,7 @@ async def list_notes(workspace_id: uuid.UUID = Depends(get_workspace_id)):
 # ---------------------------------------------------------------------------
 @router.get("/notes/export")
 async def export_notes(
-    user: AuthenticatedUser = Depends(require_action(role_client, "notes:export")),
+    user: AuthenticatedUser = Depends(sentinel.require_action("notes:export")),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
 ):
     """Export all workspace notes. Requires 'notes:export' RBAC action."""
@@ -101,13 +91,12 @@ async def export_notes(
 
 # ---------------------------------------------------------------------------
 # Tier 1: Workspace role — create note (editor+)
+# Tier 3: Entity ACL — registers resource with PermissionClient
 # ---------------------------------------------------------------------------
 @router.post("/notes", status_code=201)
 async def create_note(
     body: CreateNoteRequest,
-    request: Request,
     user: AuthenticatedUser = Depends(require_role("editor")),
-    permissions: PermissionClient = Depends(get_permissions),
 ):
     """Create a note. Requires at least 'editor' workspace role."""
     note = notes.create(
@@ -119,30 +108,25 @@ async def create_note(
     )
 
     # Register with the identity service permission system
-    if permissions:
-        try:
-            await permissions.register_resource(
-                resource_type="note",
-                resource_id=note.id,
-                workspace_id=user.workspace_id,
-                owner_id=user.user_id,
-                visibility="workspace",
-            )
-        except Exception:
-            pass  # Don't fail note creation if permission registration fails
+    await sentinel.permissions.register_resource(
+        resource_type="note",
+        resource_id=note.id,
+        workspace_id=user.workspace_id,
+        owner_id=user.user_id,
+        visibility="workspace",
+    )
 
     return asdict(note)
 
 
 # ---------------------------------------------------------------------------
-# Tier 3: Entity ACL — view a single note
+# Tier 3: Entity ACL — view a single note (checks 'view' permission)
 # ---------------------------------------------------------------------------
 @router.get("/notes/{note_id}")
 async def get_note(
     note_id: uuid.UUID,
     user: AuthenticatedUser = Depends(get_current_user),
     token: str = Depends(get_token),
-    permissions: PermissionClient = Depends(get_permissions),
 ):
     """View a note. Checks entity-level 'view' permission."""
     note = notes.get(note_id)
@@ -150,21 +134,20 @@ async def get_note(
         raise HTTPException(status_code=404, detail="Note not found")
 
     # Entity ACL check via identity service
-    if permissions:
-        allowed = await permissions.can(
-            token=token,
-            resource_type="note",
-            resource_id=note_id,
-            action="view",
-        )
-        if not allowed:
-            raise HTTPException(status_code=403, detail="Access denied")
+    allowed = await sentinel.permissions.can(
+        token=token,
+        resource_type="note",
+        resource_id=note_id,
+        action="view",
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     return asdict(note)
 
 
 # ---------------------------------------------------------------------------
-# Tier 3: Entity ACL — update a note
+# Tier 3: Entity ACL — update a note (checks 'edit' permission)
 # ---------------------------------------------------------------------------
 @router.patch("/notes/{note_id}")
 async def update_note(
@@ -172,22 +155,20 @@ async def update_note(
     body: UpdateNoteRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     token: str = Depends(get_token),
-    permissions: PermissionClient = Depends(get_permissions),
 ):
     """Update a note. Checks entity-level 'edit' permission."""
     note = notes.get(note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
 
-    if permissions:
-        allowed = await permissions.can(
-            token=token,
-            resource_type="note",
-            resource_id=note_id,
-            action="edit",
-        )
-        if not allowed:
-            raise HTTPException(status_code=403, detail="Access denied")
+    allowed = await sentinel.permissions.can(
+        token=token,
+        resource_type="note",
+        resource_id=note_id,
+        action="edit",
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     updated = notes.update(note_id, title=body.title, content=body.content)
     return asdict(updated)
@@ -208,7 +189,7 @@ async def delete_note(
 
 
 # ---------------------------------------------------------------------------
-# Share — owner can share a note with another user
+# Tier 3: Entity ACL — share a note (owner grants permission to another user)
 # ---------------------------------------------------------------------------
 @router.post("/notes/{note_id}/share")
 async def share_note(
@@ -216,7 +197,6 @@ async def share_note(
     body: ShareNoteRequest,
     user: AuthenticatedUser = Depends(get_current_user),
     token: str = Depends(get_token),
-    permissions: PermissionClient = Depends(get_permissions),
 ):
     """Share a note with another user. Only the note owner can share."""
     note = notes.get(note_id)
@@ -225,11 +205,8 @@ async def share_note(
     if note.owner_id != user.user_id:
         raise HTTPException(status_code=403, detail="Only the owner can share")
 
-    if not permissions:
-        raise HTTPException(status_code=501, detail="Permission service not configured")
-
     try:
-        await permissions.share(
+        await sentinel.permissions.share(
             token=token,
             resource_type="note",
             resource_id=note_id,

@@ -278,12 +278,13 @@ Keys are validated by `service_app_service.validate_key()`, which checks the SHA
 
 ### Behavior
 
-| Service Apps in DB | Request Without Key | Request With Invalid Key | Request With Valid Key |
-|--------------------|--------------------|--------------------------|-----------------------|
-| None active (dev mode) | Allowed | Allowed | Allowed |
-| At least one active (production) | 401 Unauthorized | 401 Unauthorized | Allowed |
+| Request | Result |
+|---------|--------|
+| No `X-Service-Key` header | 401 Unauthorized |
+| Invalid key | 401 Unauthorized |
+| Valid key (active service app) | Allowed — `ServiceKeyContext.service_name` is set |
 
-**Dev mode** is intentionally permissive: when no active service apps exist in the database, the `require_service_key` dependency passes through all requests. This allows local development without configuring keys. In production, register at least one service app via the admin panel.
+Service keys are always enforced, regardless of `DEBUG` mode. Register at least one service app via the admin panel (`/admin/service-apps`) before consuming service-key-protected endpoints.
 
 ### Dual Auth (Service Key + User JWT)
 
@@ -506,7 +507,7 @@ Ten test suites covering ~110 individual tests:
 | JWT Attacks | Algorithm confusion, token forgery, claim tampering, JWK/KID injection |
 | Admin Bypass | Cookie theft/replay, privilege escalation, token revocation |
 | IDOR & AuthZ | Cross-workspace access, resource ID enumeration, role bypass |
-| Service Key | Dev-mode bypass, key brute-force, missing enforcement |
+| Service Key | Key brute-force, missing enforcement, scope escalation |
 | Rate Limiting | Header spoofing, endpoint flooding, evasion techniques |
 | Injection & XSS | SQL injection, stored XSS, CSV injection, path traversal |
 | Session & OAuth | Session fixation, state tampering, CSRF, redirect manipulation |

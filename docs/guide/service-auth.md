@@ -103,13 +103,16 @@ curl -X POST https://identity.example.com/permissions/register \
   }'
 ```
 
-## Dev Mode
+## Dev Setup
 
-When no active service apps exist in the database (the default for a fresh installation), the service key requirement is disabled entirely. All requests pass through the `require_service_key` dependency without validation.
+Service keys are always enforced — even in development. Before calling any service-key-protected endpoint, create a service app via the admin panel:
 
-This makes local development easier -- you do not need to create service apps to test permission endpoints.
+1. Start the service (`make start`) and admin panel (`make admin`)
+2. Sign in at [http://localhost:9004](http://localhost:9004)
+3. Navigate to **Service Apps** → **Add Service App**
+4. Copy the generated `sk_...` key into your consuming service's `.env`
 
-**Important**: In production, always register at least one service app via the admin panel. Having zero active service apps means no enforcement, which effectively disables service authentication.
+If no active service apps exist, the service logs a warning at startup and all service-key endpoints return 401.
 
 ## Production Configuration
 

@@ -173,7 +173,7 @@ def service_headers():
     return {"X-Service-Key": "test-service-key"}
 ```
 
-In development (no active service apps in the database), all service key values are accepted. For integration tests that require a specific key, create a service app via the admin API or test fixtures.
+Service keys are always validated against the database. For integration tests, create a service app via the admin API or use test fixtures that seed a service app into the database.
 
 ## Security / Penetration Testing
 

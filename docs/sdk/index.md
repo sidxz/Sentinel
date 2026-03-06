@@ -36,6 +36,10 @@ A set of injectable dependencies for FastAPI routes:
 - User action queries (`get_user_actions`)
 - Async context manager support for clean resource management
 
+### Autoconfig (Sentinel Class)
+
+`Sentinel` is a single entry point that replaces ~30 lines of setup boilerplate. It creates SDK clients lazily, wires JWT middleware, registers RBAC actions on startup, and cleans up on shutdown — all from one object. This is the recommended approach for most services.
+
 ### Type Definitions
 
 Immutable dataclasses representing auth context:
@@ -69,7 +73,8 @@ The SDK depends on:
 
 ```
 sentinel_auth/
-    __init__.py          # Re-exports AuthenticatedUser, JWTAuthMiddleware, PermissionClient, RoleClient, WorkspaceContext
+    __init__.py          # Re-exports AuthenticatedUser, JWTAuthMiddleware, PermissionClient, RoleClient, Sentinel, WorkspaceContext
+    sentinel.py          # Sentinel autoconfig class (recommended entry point)
     types.py             # AuthenticatedUser, WorkspaceContext dataclasses
     middleware.py         # JWTAuthMiddleware
     dependencies.py      # get_current_user, get_workspace_id, get_workspace_context, require_role, require_action
@@ -79,53 +84,88 @@ sentinel_auth/
 
 ## Quick Start
 
-```python
-from pathlib import Path
+=== "Autoconfig (Recommended)"
 
-from fastapi import Depends, FastAPI
+    ```python
+    from fastapi import Depends, FastAPI
+    from sentinel_auth import Sentinel
+    from sentinel_auth.dependencies import get_current_user
+    from sentinel_auth.types import AuthenticatedUser
 
-from sentinel_auth.dependencies import get_current_user, require_role
-from sentinel_auth.middleware import JWTAuthMiddleware
-from sentinel_auth.permissions import PermissionClient
-from sentinel_auth.types import AuthenticatedUser
-
-app = FastAPI()
-
-# 1. Add JWT middleware
-public_key = Path("keys/public.pem").read_text()
-app.add_middleware(
-    JWTAuthMiddleware,
-    public_key=public_key,
-    exclude_paths=["/health", "/docs", "/openapi.json"],
-)
-
-# 2. Create permission client
-permissions = PermissionClient(
-    base_url="http://identity-service:9003",
-    service_name="my-service",
-    service_key="sk_my_service_key",
-)
-
-# 3. Use dependencies in routes
-@app.get("/documents/{doc_id}")
-async def get_document(
-    doc_id: str,
-    user: AuthenticatedUser = Depends(get_current_user),
-):
-    allowed = await permissions.can(
-        token=user_token,
-        resource_type="document",
-        resource_id=doc_id,
-        action="view",
+    sentinel = Sentinel(
+        base_url="http://identity-service:9003",
+        service_name="my-service",
+        service_key="sk_my_service_key",
     )
-    if not allowed:
-        raise HTTPException(status_code=403, detail="Access denied")
-    return await fetch_document(doc_id)
-```
+
+    app = FastAPI(lifespan=sentinel.lifespan)
+    sentinel.protect(app)
+
+    @app.get("/documents/{doc_id}")
+    async def get_document(
+        doc_id: str,
+        user: AuthenticatedUser = Depends(get_current_user),
+    ):
+        allowed = await sentinel.permissions.can(
+            token=request.headers["Authorization"].removeprefix("Bearer "),
+            resource_type="document",
+            resource_id=doc_id,
+            action="view",
+        )
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Access denied")
+        return await fetch_document(doc_id)
+    ```
+
+=== "Manual Setup"
+
+    ```python
+    from pathlib import Path
+
+    from fastapi import Depends, FastAPI
+    from sentinel_auth.dependencies import get_current_user
+    from sentinel_auth.middleware import JWTAuthMiddleware
+    from sentinel_auth.permissions import PermissionClient
+    from sentinel_auth.types import AuthenticatedUser
+
+    app = FastAPI()
+
+    # 1. Add JWT middleware
+    public_key = Path("keys/public.pem").read_text()
+    app.add_middleware(
+        JWTAuthMiddleware,
+        public_key=public_key,
+        exclude_paths=["/health", "/docs", "/openapi.json"],
+    )
+
+    # 2. Create permission client
+    permissions = PermissionClient(
+        base_url="http://identity-service:9003",
+        service_name="my-service",
+        service_key="sk_my_service_key",
+    )
+
+    # 3. Use dependencies in routes
+    @app.get("/documents/{doc_id}")
+    async def get_document(
+        doc_id: str,
+        user: AuthenticatedUser = Depends(get_current_user),
+    ):
+        allowed = await permissions.can(
+            token=user_token,
+            resource_type="document",
+            resource_id=doc_id,
+            action="view",
+        )
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Access denied")
+        return await fetch_document(doc_id)
+    ```
 
 ## Next Steps
 
 - [Installation](installation.md) -- install the SDK and configure your public key
+- [Autoconfig](autoconfig.md) -- get started quickly with the `Sentinel` class (recommended)
 - [Middleware](middleware.md) -- configure JWT validation
 - [Dependencies](dependencies.md) -- use FastAPI dependency injection for auth
 - [Permission Client](permission-client.md) -- check and manage entity-level permissions

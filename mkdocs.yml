@@ -111,6 +111,7 @@ nav:
     - Dependencies: sdk/dependencies.md
     - Permission Client: sdk/permission-client.md
     - Role Client: sdk/role-client.md
+    - Autoconfig: sdk/autoconfig.md
     - Integration Guide: sdk/integration.md
     - Examples: sdk/examples.md
   - JS/TS SDK:

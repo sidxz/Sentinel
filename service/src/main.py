@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI):
             errors.append("SESSION_SECRET_KEY is using the default dev value")
         if _no_service_apps:
             errors.append(
-                "No active service apps registered — service auth is disabled"
+                "No active service apps registered — all service-key endpoints will return 401"
             )
         if _insecure_cookie:
             errors.append("COOKIE_SECURE is False — cookies will be sent over HTTP")
@@ -125,7 +125,8 @@ async def lifespan(app: FastAPI):
             )
         if _no_service_apps:
             logger.warning(
-                "No active service apps registered — all service-key checks are bypassed"
+                "No active service apps registered — service-key endpoints will return 401. "
+                "Create one via the admin panel (/admin/service-apps)"
             )
         if _insecure_cookie:
             logger.warning(

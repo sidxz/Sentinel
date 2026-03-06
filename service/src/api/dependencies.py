@@ -84,17 +84,14 @@ async def require_service_key(
 ) -> ServiceKeyContext:
     """FastAPI dependency: validate X-Service-Key header against DB.
 
-    In dev mode (DEBUG=True with no active service apps), all requests pass through.
-    In production, requests without a valid key get 401.
+    Always requires a valid service key. Register service apps via the admin
+    panel (/admin/service-apps).
     Returns a ServiceKeyContext with the bound service_name.
     """
     from src.services import service_app_service
 
     key = request.headers.get("X-Service-Key")
     if not key:
-        # Dev mode passthrough: no key and no active apps
-        if settings.debug and not await service_app_service.has_active_apps(db):
-            return ServiceKeyContext(service_name="")
         raise HTTPException(
             status_code=401, detail="Invalid or missing service API key"
         )
@@ -108,12 +105,7 @@ async def require_service_key(
 
 
 def verify_service_scope(ctx: ServiceKeyContext, service_name: str) -> None:
-    """Verify the service key is scoped to the requested service_name.
-
-    In dev mode (empty service_name on ctx), all services are allowed.
-    """
-    if not ctx.service_name:
-        return  # dev mode — no enforcement
+    """Verify the service key is scoped to the requested service_name."""
     if ctx.service_name != service_name:
         raise HTTPException(
             status_code=403,
