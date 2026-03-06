@@ -77,8 +77,6 @@ from src.services import (
 from src.middleware.cors import refresh_origins
 from src.services import token_service
 
-_ADMIN_RATE_LIMIT = "30/minute"
-
 router = APIRouter(
     prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)]
 )

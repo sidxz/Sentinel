@@ -75,7 +75,11 @@ class Settings(BaseSettings):
             parsed = urlparse(url)
             if parsed.hostname:
                 hosts.add(parsed.hostname)
-        return list(hosts) if hosts else ["*"]
+        if not hosts:
+            # No hosts derived — allow all in dev, but startup check
+            # will reject this in production (DEBUG=False)
+            return ["*"]
+        return list(hosts)
 
 
 settings = Settings()

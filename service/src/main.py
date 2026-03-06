@@ -22,7 +22,7 @@ from src.middleware.rate_limit import (
     rate_limit_exceeded_handler,
 )
 from src.middleware.cors import DynamicCORSMiddleware, refresh_origins
-from src.middleware.security_headers import SecurityHeadersMiddleware
+from src.middleware.security_headers import MaxBodySizeMiddleware, SecurityHeadersMiddleware
 
 logger = structlog.get_logger()
 
@@ -72,6 +72,7 @@ async def lifespan(app: FastAPI):
     # Redis connectivity and auth check
     _redis_down = False
     _redis_no_auth = False
+    _redis_no_tls = False
     try:
         from src.services.token_service import get_redis
 
@@ -79,6 +80,8 @@ async def lifespan(app: FastAPI):
         await r.ping()
         if "@" not in settings.redis_url:
             _redis_no_auth = True
+        if not settings.redis_url.startswith("rediss://"):
+            _redis_no_tls = True
     except Exception:
         _redis_down = True
 
@@ -99,6 +102,14 @@ async def lifespan(app: FastAPI):
         if _redis_no_auth:
             errors.append(
                 "Redis URL has no authentication — set a password in REDIS_URL (redis://:password@host:port/db)"
+            )
+        if _redis_no_tls:
+            errors.append(
+                "Redis URL is not using TLS — use rediss:// scheme for encrypted connections"
+            )
+        if "*" in settings.allowed_hosts_list:
+            errors.append(
+                "ALLOWED_HOSTS is wildcard — set explicit hosts via ALLOWED_HOSTS or BASE_URL/ADMIN_URL"
             )
         if errors:
             for e in errors:
@@ -126,6 +137,10 @@ async def lifespan(app: FastAPI):
             logger.warning(
                 "Redis URL has no authentication — use redis://:password@host in production"
             )
+        if _redis_no_tls:
+            logger.warning(
+                "Redis URL is not using TLS — use rediss:// in production"
+            )
 
     app.state.start_time = time.time()
     yield
@@ -143,6 +158,9 @@ app = FastAPI(
 )
 
 # --- Middleware (applied bottom-to-top, so first added = outermost) ---
+
+# Reject oversized request bodies (10 MB)
+app.add_middleware(MaxBodySizeMiddleware, max_bytes=10_485_760)
 
 # Global rate limiting (30 req/min per IP, all endpoints)
 app.add_middleware(GlobalRateLimitMiddleware, requests_per_minute=30)
