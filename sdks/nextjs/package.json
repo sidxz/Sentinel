@@ -27,7 +27,7 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsup",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "clean": "rm -rf dist"
   },
