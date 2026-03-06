@@ -10,8 +10,6 @@ from sentinel_auth.roles import RoleClient
 
 from src.config import settings
 
-PUBLIC_KEY = settings.public_key_path.read_text()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -59,10 +57,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# JWT authentication — validates Bearer tokens on every request
+# JWT authentication — fetches signing key from Sentinel JWKS on first request
 app.add_middleware(
     JWTAuthMiddleware,
-    public_key=PUBLIC_KEY,
+    jwks_url=f"{settings.sentinel_url}/.well-known/jwks.json",
     exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
     allowed_workspaces=set(settings.allowed_workspaces) or None,
 )

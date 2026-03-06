@@ -1,8 +1,9 @@
+import { AuthGuard } from "@sentinel-auth/react";
 import { Route, Routes } from "react-router-dom";
-import { AuthGuard } from "./components/AuthGuard";
 import { Layout } from "./components/Layout";
 import { AuthCallback } from "./pages/AuthCallback";
 import { Export } from "./pages/Export";
+import { Login } from "./pages/Login";
 import { NoteDetail } from "./pages/NoteDetail";
 import { NoteList } from "./pages/NoteList";
 
@@ -16,7 +17,14 @@ export default function App() {
       <Route
         path="*"
         element={
-          <AuthGuard>
+          <AuthGuard
+            fallback={<Login />}
+            loading={
+              <div className="flex h-screen items-center justify-center bg-zinc-950">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
+              </div>
+            }
+          >
             <Layout>
               <Routes>
                 <Route path="/" element={<NoteList />} />

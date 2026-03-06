@@ -1,14 +1,14 @@
+import { useUser } from "@sentinel-auth/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { createNote, fetchNotes } from "../api/notes";
-import { useUser } from "../components/AuthGuard";
 import { NoteCard } from "../components/NoteCard";
 
 export function NoteList() {
   const user = useUser();
   const queryClient = useQueryClient();
   const canCreate = ["editor", "admin", "owner"].includes(
-    user.workspace_role
+    user.workspaceRole
   );
 
   const { data: notes = [], isLoading } = useQuery({
@@ -92,7 +92,7 @@ export function NoteList() {
             <NoteCard
               key={note.id}
               note={note}
-              isOwner={note.owner_id === user.user_id}
+              isOwner={note.owner_id === user.userId}
             />
           ))}
         </div>
@@ -100,7 +100,7 @@ export function NoteList() {
 
       {!canCreate && (
         <div className="mt-8 rounded border border-zinc-800 bg-zinc-900/50 p-3 text-xs text-zinc-500">
-          Your workspace role is <strong>{user.workspace_role}</strong>. You
+          Your workspace role is <strong>{user.workspaceRole}</strong>. You
           need at least <strong>editor</strong> to create notes. This
           demonstrates <code>require_role("editor")</code> from the SDK.
         </div>

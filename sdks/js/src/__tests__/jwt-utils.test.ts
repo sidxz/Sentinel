@@ -1,0 +1,81 @@
+import { describe, it, expect } from 'vitest'
+import { parseJwt, isTokenExpired, tokenToUser } from '../jwt-utils'
+
+// Helper to create a fake JWT (no signature verification in browser)
+function makeJwt(payload: Record<string, unknown>): string {
+  const header = btoa(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  const body = btoa(JSON.stringify(payload))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return `${header}.${body}.fake-signature`
+}
+
+const samplePayload = {
+  sub: 'user-123',
+  email: 'test@example.com',
+  name: 'Test User',
+  wid: 'ws-456',
+  wslug: 'my-workspace',
+  wrole: 'editor',
+  groups: ['group-a'],
+  aud: 'sentinel:access',
+  iss: 'sentinel',
+  exp: Math.floor(Date.now() / 1000) + 3600,
+  iat: Math.floor(Date.now() / 1000),
+  jti: 'token-id-789',
+}
+
+describe('parseJwt', () => {
+  it('decodes JWT payload correctly', () => {
+    const token = makeJwt(samplePayload)
+    const parsed = parseJwt(token)
+    expect(parsed.sub).toBe('user-123')
+    expect(parsed.email).toBe('test@example.com')
+    expect(parsed.wid).toBe('ws-456')
+    expect(parsed.wrole).toBe('editor')
+    expect(parsed.groups).toEqual(['group-a'])
+  })
+
+  it('throws on invalid JWT format', () => {
+    expect(() => parseJwt('not-a-jwt')).toThrow('Invalid JWT format')
+  })
+})
+
+describe('isTokenExpired', () => {
+  it('returns false for valid token', () => {
+    const token = makeJwt({ ...samplePayload, exp: Math.floor(Date.now() / 1000) + 3600 })
+    expect(isTokenExpired(token)).toBe(false)
+  })
+
+  it('returns true for expired token', () => {
+    const token = makeJwt({ ...samplePayload, exp: Math.floor(Date.now() / 1000) - 10 })
+    expect(isTokenExpired(token)).toBe(true)
+  })
+
+  it('respects buffer seconds', () => {
+    const exp = Math.floor(Date.now() / 1000) + 30
+    const token = makeJwt({ ...samplePayload, exp })
+    expect(isTokenExpired(token, 0)).toBe(false)
+    expect(isTokenExpired(token, 60)).toBe(true)
+  })
+
+  it('returns true for invalid token', () => {
+    expect(isTokenExpired('garbage')).toBe(true)
+  })
+})
+
+describe('tokenToUser', () => {
+  it('maps JWT claims to SentinelUser', () => {
+    const token = makeJwt(samplePayload)
+    const user = tokenToUser(token)
+    expect(user).toEqual({
+      userId: 'user-123',
+      email: 'test@example.com',
+      name: 'Test User',
+      workspaceId: 'ws-456',
+      workspaceSlug: 'my-workspace',
+      workspaceRole: 'editor',
+      groups: ['group-a'],
+    })
+  })
+})

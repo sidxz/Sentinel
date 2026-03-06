@@ -23,7 +23,6 @@ A simple note-taking app that demonstrates all features of the Sentinel Auth SDK
 
 - Identity service running locally (see [Getting Started](../docs/getting-started/))
 - Google OAuth credentials configured in `service/.env`
-- RSA key pair generated at `keys/private.pem` / `keys/public.pem`
 - Python 3.12+ and Node.js 18+
 
 ## Setup
@@ -46,12 +45,16 @@ make infra    # Start PostgreSQL + Redis
 make start    # Start the identity service on :9003
 ```
 
-### 3. Start the Demo Backend
+### 3. Register a Service App (optional)
+
+In the Sentinel admin panel ([http://localhost:9004](http://localhost:9004) → Service Apps → Register Service), create a service app with service name `team-notes`. Copy the generated API key.
+
+### 4. Start the Demo Backend
 
 ```bash
 cd demo/backend
 cp .env.example .env
-# Edit .env and set SERVICE_API_KEY if you have one configured
+# Edit .env and paste the SERVICE_API_KEY from step 3
 
 uv sync
 uv run python -m src.main
@@ -59,7 +62,9 @@ uv run python -m src.main
 uv run uvicorn src.main:app --port 9100 --reload
 ```
 
-### 4. Start the Demo Frontend
+The backend fetches the signing key automatically from Sentinel's JWKS endpoint — no PEM file distribution needed.
+
+### 5. Start the Demo Frontend
 
 ```bash
 cd demo/frontend
@@ -67,7 +72,7 @@ npm install
 npm run dev
 ```
 
-### 5. Open the App
+### 6. Open the App
 
 Visit [http://localhost:9101](http://localhost:9101) and sign in with Google.
 
@@ -85,7 +90,7 @@ Visit [http://localhost:9101](http://localhost:9101) and sign in with Google.
 
 | Feature | File | Usage |
 |---------|------|-------|
-| `JWTAuthMiddleware` | `backend/src/main.py` | Validates Bearer tokens on every request |
+| `JWTAuthMiddleware` | `backend/src/main.py` | Validates Bearer tokens via JWKS auto-discovery |
 | `get_current_user` | `backend/src/routes.py` | Extracts user from JWT in `/me` |
 | `get_workspace_id` | `backend/src/routes.py` | Scopes note list to workspace |
 | `require_role()` | `backend/src/routes.py` | Enforces editor/admin roles on create/delete |

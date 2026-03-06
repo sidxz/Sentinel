@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,7 +9,6 @@ class Settings(BaseSettings):
     sentinel_url: str = "http://localhost:9003"
     service_name: str = "team-notes"
     service_api_key: str = ""
-    public_key_path: Path = Path("../../keys/public.pem")
     allowed_workspaces: list[str] = []
     host: str = "0.0.0.0"
     port: int = 9100

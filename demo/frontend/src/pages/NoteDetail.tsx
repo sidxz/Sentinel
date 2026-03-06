@@ -1,8 +1,8 @@
+import { useUser } from "@sentinel-auth/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { deleteNote, fetchNote, updateNote } from "../api/notes";
-import { useUser } from "../components/AuthGuard";
 import { ShareDialog } from "../components/ShareDialog";
 
 export function NoteDetail() {
@@ -39,8 +39,8 @@ export function NoteDetail() {
     },
   });
 
-  const canDelete = ["admin", "owner"].includes(user.workspace_role);
-  const isOwner = note?.owner_id === user.user_id;
+  const canDelete = ["admin", "owner"].includes(user.workspaceRole);
+  const isOwner = note?.owner_id === user.userId;
 
   if (isLoading) {
     return (

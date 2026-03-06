@@ -1,15 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import {
-  exchangeToken,
-  fetchWorkspaces,
-  type WorkspaceOption,
-} from "../api/auth";
+import { useAuth, type WorkspaceOption } from "@sentinel-auth/react";
 import { RoleBadge } from "../components/RoleBadge";
 
 export function AuthCallback() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { getWorkspaces, selectWorkspace } = useAuth();
   const code = searchParams.get("code");
 
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
@@ -23,7 +20,7 @@ export function AuthCallback() {
       return;
     }
 
-    fetchWorkspaces(code)
+    getWorkspaces(code)
       .then(async (ws) => {
         if (ws.length === 0) {
           setError("No workspaces found. Ask an admin to invite you.");
@@ -31,8 +28,7 @@ export function AuthCallback() {
           return;
         }
         if (ws.length === 1) {
-          // Auto-select single workspace
-          await exchangeToken(code, ws[0].id);
+          await selectWorkspace(code, ws[0].id);
           navigate("/notes", { replace: true });
           return;
         }
@@ -43,13 +39,14 @@ export function AuthCallback() {
         setError(e instanceof Error ? e.message : "Failed to load workspaces");
         setLoading(false);
       });
-  }, [code, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
 
-  async function selectWorkspace(workspaceId: string) {
+  async function handleSelect(workspaceId: string) {
     if (!code) return;
     setLoading(true);
     try {
-      await exchangeToken(code, workspaceId);
+      await selectWorkspace(code, workspaceId);
       navigate("/notes", { replace: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Token exchange failed");
@@ -94,7 +91,7 @@ export function AuthCallback() {
           {workspaces.map((ws) => (
             <button
               key={ws.id}
-              onClick={() => selectWorkspace(ws.id)}
+              onClick={() => handleSelect(ws.id)}
               className="w-full rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700"
             >
               <div className="flex items-center justify-between">

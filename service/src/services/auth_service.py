@@ -115,7 +115,7 @@ async def issue_tokens(
     refresh_token = create_refresh_token(user_id=user.id)
 
     # Store refresh token in Redis for rotation tracking
-    rt_payload = decode_token(refresh_token)
+    rt_payload = decode_token(refresh_token, audience=_AUD_REFRESH)
     family_id = rt_payload["fid"]
     await token_service.store_refresh_token(
         jti=rt_payload["jti"],
@@ -206,7 +206,7 @@ async def rotate_refresh_token(
     new_refresh = create_refresh_token(user_id=user.id, family_id=family_id)
 
     # Store new refresh token in same family
-    new_rt_payload = decode_token(new_refresh)
+    new_rt_payload = decode_token(new_refresh, audience=_AUD_REFRESH)
     await token_service.store_refresh_token(
         jti=new_rt_payload["jti"],
         user_id=user.id,

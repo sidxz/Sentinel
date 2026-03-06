@@ -11,24 +11,6 @@ export interface Note {
   updated_at: string;
 }
 
-export interface UserInfo {
-  user_id: string;
-  email: string;
-  name: string;
-  workspace_id: string;
-  workspace_slug: string;
-  workspace_role: string;
-  groups: string[];
-}
-
-export function fetchMe(): Promise<UserInfo> {
-  return apiFetch("/me");
-}
-
-export function fetchMyActions(): Promise<{ actions: string[] }> {
-  return apiFetch("/me/actions");
-}
-
 export function fetchNotes(): Promise<Note[]> {
   return apiFetch("/notes");
 }

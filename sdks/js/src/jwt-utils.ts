@@ -1,0 +1,41 @@
+import type { JWTPayload, SentinelUser } from './types'
+
+/**
+ * Decode a JWT payload without verifying the signature.
+ * For browser-side use only — server-side code must use `verifyToken` from `@sentinel-auth/js/server`.
+ */
+export function parseJwt(token: string): JWTPayload {
+  const parts = token.split('.')
+  if (parts.length !== 3) throw new Error('Invalid JWT format')
+
+  const payload = parts[1]
+  // Base64url → base64, then decode
+  const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+  const json = atob(padded)
+  return JSON.parse(json) as JWTPayload
+}
+
+/** Check if a JWT is expired (with optional buffer in seconds). */
+export function isTokenExpired(token: string, bufferSeconds = 0): boolean {
+  try {
+    const payload = parseJwt(token)
+    return Date.now() >= (payload.exp - bufferSeconds) * 1000
+  } catch {
+    return true
+  }
+}
+
+/** Map JWT claims to a SentinelUser object. */
+export function tokenToUser(token: string): SentinelUser {
+  const p = parseJwt(token)
+  return {
+    userId: p.sub,
+    email: p.email,
+    name: p.name,
+    workspaceId: p.wid,
+    workspaceSlug: p.wslug,
+    workspaceRole: p.wrole,
+    groups: p.groups ?? [],
+  }
+}

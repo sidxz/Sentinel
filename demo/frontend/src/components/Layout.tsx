@@ -1,10 +1,10 @@
 import { Link, useLocation } from "react-router-dom";
-import { useUser } from "./AuthGuard";
-import { clearTokens } from "../api/client";
+import { useUser, useAuth } from "@sentinel-auth/react";
 import { RoleBadge } from "./RoleBadge";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const user = useUser();
+  const { logout } = useAuth();
   const location = useLocation();
 
   const navLinks = [
@@ -40,13 +40,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div className="text-right">
               <div className="text-sm text-zinc-300">{user.name}</div>
               <div className="flex items-center gap-2 text-xs text-zinc-500">
-                <span>{user.workspace_slug}</span>
-                <RoleBadge role={user.workspace_role} />
+                <span>{user.workspaceSlug}</span>
+                <RoleBadge role={user.workspaceRole} />
               </div>
             </div>
             <button
               onClick={() => {
-                clearTokens();
+                logout();
                 window.location.href = "/";
               }}
               className="rounded bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"

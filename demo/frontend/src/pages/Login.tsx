@@ -1,6 +1,8 @@
-import { loginWithGoogle } from "../api/auth";
+import { useAuth } from "@sentinel-auth/react";
 
 export function Login() {
+  const { login } = useAuth();
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-950">
       <div className="w-full max-w-sm space-y-6 text-center">
@@ -18,7 +20,7 @@ export function Login() {
             permissions.
           </p>
           <button
-            onClick={loginWithGoogle}
+            onClick={() => login("google")}
             className="w-full rounded bg-white px-4 py-2.5 text-sm font-medium text-zinc-900 hover:bg-zinc-200 transition"
           >
             Sign in with Google
