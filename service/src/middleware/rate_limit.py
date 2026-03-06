@@ -3,15 +3,26 @@
 import redis.asyncio as aioredis
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from src.config import settings
 
+
+def _proxy_aware_key_func(request: Request) -> str:
+    """Extract client IP, respecting X-Forwarded-For when behind a proxy."""
+    if settings.behind_proxy:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=_proxy_aware_key_func,
     storage_uri=settings.redis_url,
 )
 
@@ -21,7 +32,7 @@ async def rate_limit_exceeded_handler(
 ) -> JSONResponse:
     return JSONResponse(
         status_code=429,
-        content={"detail": f"Rate limit exceeded: {exc.detail}"},
+        content={"detail": "Too many requests"},
         headers={"Retry-After": str(exc.retry_after)},
     )
 
@@ -34,6 +45,17 @@ async def _get_redis() -> aioredis.Redis:
     if _redis is None:
         _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     return _redis
+
+
+# Lua script: atomic INCR + EXPIRE (avoids race where crash between
+# INCR and EXPIRE leaves a key with no TTL forever).
+_INCR_WITH_EXPIRE = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+"""
 
 
 class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
@@ -49,29 +71,22 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
         self.rpm = requests_per_minute
         self.window = 60  # seconds
 
-    def _get_client_ip(self, request: Request) -> str:
-        if request.client:
-            return request.client.host
-        return "unknown"
-
     async def dispatch(self, request: Request, call_next):
         # Skip health endpoint
         if request.url.path == "/health":
             return await call_next(request)
 
-        ip = self._get_client_ip(request)
+        ip = _proxy_aware_key_func(request)
         key = f"rl:global:{ip}"
 
         r = await _get_redis()
-        count = await r.incr(key)
-        if count == 1:
-            await r.expire(key, self.window)
+        count = await r.eval(_INCR_WITH_EXPIRE, 1, key, self.window)
 
         if count > self.rpm:
             ttl = await r.ttl(key)
             return JSONResponse(
                 status_code=429,
-                content={"detail": "Rate limit exceeded"},
+                content={"detail": "Too many requests"},
                 headers={"Retry-After": str(max(ttl, 1))},
             )
 

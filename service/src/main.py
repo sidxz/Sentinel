@@ -157,7 +157,7 @@ app = FastAPI(
     openapi_url="/openapi.json" if settings.debug else None,
 )
 
-# --- Middleware (applied bottom-to-top, so first added = outermost) ---
+# --- Middleware (last added = outermost, processes request first) ---
 
 # Reject oversized request bodies (10 MB)
 app.add_middleware(MaxBodySizeMiddleware, max_bytes=10_485_760)

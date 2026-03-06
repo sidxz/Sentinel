@@ -64,6 +64,7 @@ services:
       SESSION_SECRET_KEY: ${SESSION_SECRET_KEY}
       COOKIE_SECURE: "true"
       DEBUG: "false"
+      BEHIND_PROXY: "true"
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
       # OAuth providers (uncomment as needed)
@@ -75,7 +76,6 @@ services:
       # ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET}
       # ENTRA_TENANT_ID: ${ENTRA_TENANT_ID}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
-      SERVICE_API_KEYS: ${SERVICE_API_KEYS:-}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
     secrets:

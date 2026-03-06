@@ -49,7 +49,8 @@ class Settings(BaseSettings):
     # Security
     cookie_secure: bool = False  # Set True in production (requires HTTPS)
     allowed_hosts: str = ""  # comma-separated override; empty = derived from BASE_URL
-    debug: bool = True  # Set False in production (disables /docs, /redoc)
+    debug: bool = False  # Set True for local development (enables /docs, /redoc)
+    behind_proxy: bool = False  # Set True when behind a reverse proxy (nginx, ALB, etc.)
 
     # Admin
     admin_emails: str = ""
