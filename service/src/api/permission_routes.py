@@ -110,6 +110,15 @@ async def share_resource(
         raise HTTPException(status_code=404, detail="Permission not found")
     verify_service_scope(svc, perm.service_name)
 
+    # Ownership check: workspace isolation + owner or admin
+    if perm.workspace_id != user.workspace_id:
+        raise HTTPException(status_code=403, detail="Cross-workspace sharing not allowed")
+    if perm.owner_id != user.user_id and user.workspace_role not in ("owner", "admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the resource owner or workspace admin can share",
+        )
+
     await permission_service.share_resource(
         db,
         permission_id=permission_id,
