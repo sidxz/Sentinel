@@ -13,6 +13,7 @@ _AUTH_CODE_TTL = 300  # 5 minutes
 async def create_auth_code(
     user_id: uuid.UUID,
     *,
+    provider: str | None = None,
     client_app_id: uuid.UUID | None = None,
     code_challenge: str | None = None,
     code_challenge_method: str | None = None,
@@ -21,6 +22,8 @@ async def create_auth_code(
     code = secrets.token_urlsafe(32)
     r = await get_redis()
     data: dict = {"user_id": str(user_id)}
+    if provider:
+        data["provider"] = provider
     if client_app_id:
         data["client_app_id"] = str(client_app_id)
     if code_challenge:

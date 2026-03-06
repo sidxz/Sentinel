@@ -253,6 +253,7 @@ async def callback(
         # Generate auth code and redirect (with PKCE challenge bound to code)
         code = await auth_code_service.create_auth_code(
             user.id,
+            provider=provider,
             client_app_id=client_app.id,
             code_challenge=code_challenge,
             code_challenge_method=code_challenge_method,
