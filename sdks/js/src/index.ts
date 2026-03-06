@@ -1,7 +1,7 @@
 // Browser + types entry point
 export { SentinelAuth } from './client'
 export { generateCodeVerifier, deriveCodeChallenge } from './pkce'
-export { LocalStorageStore, MemoryStore } from './storage'
+export { LocalStorageStore, SessionStorageStore, MemoryStore } from './storage'
 export { parseJwt, isTokenExpired, tokenToUser } from './jwt-utils'
 
 export type {
