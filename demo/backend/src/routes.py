@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sentinel_auth.types import AuthenticatedUser
 from pydantic import BaseModel
 
+from src.config import sentinel
 from src.deps import get_current_user, get_token, get_workspace_id, require_role
-from src.main import sentinel
 from src.models import notes
 
 router = APIRouter()

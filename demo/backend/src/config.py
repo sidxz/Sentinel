@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sentinel_auth import Sentinel
 
 
 class Settings(BaseSettings):
@@ -16,3 +17,14 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+sentinel = Sentinel(
+    base_url=settings.sentinel_url,
+    service_name=settings.service_name,
+    service_key=settings.service_api_key,
+    actions=[
+        {"action": "notes:export", "description": "Export notes as JSON"},
+        {"action": "notes:bulk-delete", "description": "Bulk delete notes"},
+    ],
+    allowed_workspaces=set(settings.allowed_workspaces) or None,
+)

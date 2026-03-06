@@ -2,23 +2,8 @@
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sentinel_auth import Sentinel
 
-from src.config import settings
-
-# ---------------------------------------------------------------------------
-# Sentinel autoconfig: replaces the manual lifespan + middleware above.
-# ---------------------------------------------------------------------------
-sentinel = Sentinel(
-    base_url=settings.sentinel_url,
-    service_name=settings.service_name,
-    service_key=settings.service_api_key,
-    actions=[
-        {"action": "notes:export", "description": "Export notes as JSON"},
-        {"action": "notes:bulk-delete", "description": "Bulk delete notes"},
-    ],
-    allowed_workspaces=set(settings.allowed_workspaces) or None,
-)
+from src.config import sentinel, settings
 
 app = FastAPI(
     title="Team Notes",
@@ -37,7 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# JWT authentication — one call replaces the manual middleware setup
+# JWT authentication
 sentinel.protect(app, exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"])
 
 # Mount routes
