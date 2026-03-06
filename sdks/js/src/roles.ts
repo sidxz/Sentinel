@@ -1,4 +1,5 @@
 import type { ActionDefinition } from './types'
+import { warnIfInsecure } from './warn-insecure'
 
 /**
  * Server-side client for the Sentinel RBAC role/action API.
@@ -13,6 +14,7 @@ export class RoleClient {
     this.baseUrl = baseUrl.replace(/\/+$/, '')
     this.serviceName = serviceName
     this.serviceKey = serviceKey
+    warnIfInsecure(this.baseUrl, 'RoleClient')
   }
 
   /** Register actions for this service (service-key only). */

@@ -36,6 +36,18 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
     allowedWorkspaces,
   } = config
 
+  // Warn if JWKS URL is plain HTTP on a non-localhost host
+  try {
+    const parsed = new URL(jwksUrl)
+    const safe = new Set(['localhost', '127.0.0.1', '::1'])
+    if (parsed.protocol === 'http:' && !safe.has(parsed.hostname)) {
+      console.warn(
+        `[sentinel-auth] (NextMiddleware) Fetching JWKS over plain HTTP from ${parsed.hostname}. ` +
+          'Use HTTPS in production to protect token verification.',
+      )
+    }
+  } catch { /* invalid URL — let verifyToken handle it */ }
+
   return async function middleware(req: NextRequest): Promise<NextResponse> {
     const { pathname } = req.nextUrl
 

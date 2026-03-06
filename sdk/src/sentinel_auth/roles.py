@@ -4,6 +4,8 @@ import uuid
 
 import httpx
 
+from sentinel_auth._utils import warn_if_insecure
+
 
 class RoleClient:
     """Client for the identity service's RBAC role/action API."""
@@ -13,6 +15,7 @@ class RoleClient:
         self.service_name = service_name
         self.service_key = service_key
         self._client = httpx.AsyncClient(base_url=self.base_url, timeout=5.0)
+        warn_if_insecure(self.base_url, "RoleClient")
 
     def _headers(self, token: str | None = None) -> dict[str, str]:
         """Build request headers with service key and optional user JWT."""

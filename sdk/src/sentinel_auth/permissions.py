@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from sentinel_auth._utils import warn_if_insecure
+
 
 @dataclass
 class PermissionCheck:
@@ -31,6 +33,7 @@ class PermissionClient:
         self.service_name = service_name
         self.service_key = service_key
         self._client = httpx.AsyncClient(base_url=self.base_url, timeout=5.0)
+        warn_if_insecure(self.base_url, "PermissionClient")
 
     def _headers(self, token: str | None = None) -> dict[str, str]:
         """Build request headers with service key and optional user JWT."""

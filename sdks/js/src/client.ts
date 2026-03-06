@@ -1,6 +1,7 @@
 import { generateCodeVerifier, deriveCodeChallenge } from './pkce'
 import { LocalStorageStore } from './storage'
 import { isTokenExpired, tokenToUser } from './jwt-utils'
+import { warnIfInsecure } from './warn-insecure'
 import type {
   SentinelConfig,
   SentinelUser,
@@ -36,6 +37,7 @@ export class SentinelAuth {
     this.store = config.storage ?? new LocalStorageStore()
     this.autoRefresh = config.autoRefresh ?? true
     this.refreshBuffer = config.refreshBuffer ?? 60
+    warnIfInsecure(this.url, 'SentinelAuth')
 
     // Schedule a refresh if we already have a valid token
     if (this.autoRefresh && this.store.getAccessToken()) {

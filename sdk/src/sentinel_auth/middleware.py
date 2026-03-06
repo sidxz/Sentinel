@@ -17,6 +17,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
+from sentinel_auth._utils import warn_if_insecure
 from sentinel_auth.types import AuthenticatedUser
 
 
@@ -101,6 +102,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         self.audience = audience
         self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json"]
         self.allowed_workspaces = allowed_workspaces
+        if jwks_url:
+            warn_if_insecure(jwks_url, "JWTAuthMiddleware")
 
     async def _get_public_key(self) -> str:
         """Return the cached public key, fetching from JWKS if needed."""

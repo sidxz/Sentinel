@@ -5,6 +5,7 @@ import type {
   RegisterResourceRequest,
   ShareRequest,
 } from './types'
+import { warnIfInsecure } from './warn-insecure'
 
 /**
  * Server-side client for the Sentinel permission API.
@@ -19,6 +20,7 @@ export class PermissionClient {
     this.baseUrl = baseUrl.replace(/\/+$/, '')
     this.serviceName = serviceName
     this.serviceKey = serviceKey
+    warnIfInsecure(this.baseUrl, 'PermissionClient')
   }
 
   /** Batch check permissions. */
