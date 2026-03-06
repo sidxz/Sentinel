@@ -320,6 +320,11 @@ async def select_workspace_and_issue_tokens(
             status_code=400, detail="Invalid or expired authorization code"
         )
 
+    # Defense-in-depth: validate provider matches a configured IdP
+    stored_provider = code_data.get("provider")
+    if stored_provider and stored_provider not in get_configured_providers():
+        raise HTTPException(status_code=400, detail="Invalid authorization code")
+
     # PKCE verification — code_challenge is always present (mandatory)
     stored_challenge = code_data.get("code_challenge")
     challenge_method = code_data.get("code_challenge_method", "S256")
@@ -350,8 +355,8 @@ async def select_workspace_and_issue_tokens(
         tokens = await auth_service.issue_tokens(
             db, user, workspace.id, workspace.slug, client_app_id=client_app_id
         )
-    except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Cannot issue tokens for this workspace")
 
     return tokens
 
@@ -365,11 +370,8 @@ async def refresh_token(
 ):
     try:
         tokens = await auth_service.rotate_refresh_token(db, body.refresh_token)
-    except Exception as e:
-        raise HTTPException(
-            status_code=401,
-            detail=str(e) if isinstance(e, ValueError) else "Invalid refresh token",
-        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
     return tokens
 
 
