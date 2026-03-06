@@ -166,7 +166,10 @@ async def system_health(
 
 
 @router.get("/system/settings", response_model=SystemSettingsResponse)
-async def system_settings(db: AsyncSession = Depends(get_db)):
+async def system_settings(
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     # OAuth providers
     providers = [
         {"name": "google", "configured": bool(settings.google_client_id)},
@@ -230,6 +233,15 @@ async def system_settings(db: AsyncSession = Depends(get_db)):
         "frontend_url": settings.frontend_url,
         "admin_url": settings.admin_url,
     }
+
+    await activity_service.log_activity(
+        db,
+        action="view_system_settings",
+        target_type="system",
+        target_id=uuid.UUID(int=0),
+        actor_id=uuid.UUID(admin["sub"]),
+    )
+    await db.commit()
 
     return SystemSettingsResponse(
         oauth_providers=providers,
@@ -1356,7 +1368,10 @@ async def csv_execute(
 
 
 @router.get("/export/users")
-async def export_users(db: AsyncSession = Depends(get_db)):
+async def export_users(
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     stmt = (
         select(User, func.count(WorkspaceMembership.id).label("workspace_count"))
         .outerjoin(WorkspaceMembership, User.id == WorkspaceMembership.user_id)
@@ -1398,6 +1413,15 @@ async def export_users(db: AsyncSession = Depends(get_db)):
             output.seek(0)
             output.truncate(0)
 
+    await activity_service.log_activity(
+        db,
+        action="export_users",
+        target_type="export",
+        target_id=uuid.UUID(int=0),
+        actor_id=uuid.UUID(admin["sub"]),
+    )
+    await db.commit()
+
     return StreamingResponse(
         generate(),
         media_type="text/csv",
@@ -1406,7 +1430,10 @@ async def export_users(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/export/workspaces")
-async def export_workspaces(db: AsyncSession = Depends(get_db)):
+async def export_workspaces(
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     stmt = (
         select(Workspace, func.count(WorkspaceMembership.id).label("member_count"))
         .outerjoin(
@@ -1449,6 +1476,15 @@ async def export_workspaces(db: AsyncSession = Depends(get_db)):
             yield output.getvalue()
             output.seek(0)
             output.truncate(0)
+
+    await activity_service.log_activity(
+        db,
+        action="export_workspaces",
+        target_type="export",
+        target_id=uuid.UUID(int=0),
+        actor_id=uuid.UUID(admin["sub"]),
+    )
+    await db.commit()
 
     return StreamingResponse(
         generate(),
