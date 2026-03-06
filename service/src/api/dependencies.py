@@ -5,7 +5,6 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.jwt import _AUD_ACCESS, _AUD_ADMIN, decode_token
-from src.config import settings
 from src.database import get_db
 
 

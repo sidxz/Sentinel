@@ -115,7 +115,9 @@ async def share_resource(
 
     # Ownership check: workspace isolation + owner or admin
     if perm.workspace_id != user.workspace_id:
-        raise HTTPException(status_code=403, detail="Cross-workspace sharing not allowed")
+        raise HTTPException(
+            status_code=403, detail="Cross-workspace sharing not allowed"
+        )
     if perm.owner_id != user.user_id and user.workspace_role not in ("owner", "admin"):
         raise HTTPException(
             status_code=403,

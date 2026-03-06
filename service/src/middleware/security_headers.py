@@ -1,6 +1,6 @@
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 
@@ -69,27 +69,31 @@ class MaxBodySizeMiddleware:
     @staticmethod
     async def _send_413(send: Send) -> None:
         body = b'{"detail":"Request body too large"}'
-        await send({
-            "type": "http.response.start",
-            "status": 413,
-            "headers": [
-                [b"content-type", b"application/json"],
-                [b"content-length", str(len(body)).encode()],
-            ],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [
+                    [b"content-type", b"application/json"],
+                    [b"content-length", str(len(body)).encode()],
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": body})
 
     @staticmethod
     async def _send_400(send: Send) -> None:
         body = b'{"detail":"Invalid Content-Length header"}'
-        await send({
-            "type": "http.response.start",
-            "status": 400,
-            "headers": [
-                [b"content-type", b"application/json"],
-                [b"content-length", str(len(body)).encode()],
-            ],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 400,
+                "headers": [
+                    [b"content-type", b"application/json"],
+                    [b"content-length", str(len(body)).encode()],
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": body})
 
 
@@ -104,7 +108,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         # Prevent caching of sensitive auth/admin responses
         path = request.url.path
-        if path.startswith("/auth") or path.startswith("/admin") or path.startswith("/users"):
+        if (
+            path.startswith("/auth")
+            or path.startswith("/admin")
+            or path.startswith("/users")
+        ):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
         response.headers["X-Content-Type-Options"] = "nosniff"

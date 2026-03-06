@@ -51,7 +51,9 @@ class Settings(BaseSettings):
     cookie_secure: bool = False  # Set True in production (requires HTTPS)
     allowed_hosts: str = ""  # comma-separated override; empty = derived from BASE_URL
     debug: bool = False  # Set True for local development (enables /docs, /redoc)
-    behind_proxy: bool = False  # Set True when behind a reverse proxy (nginx, ALB, etc.)
+    behind_proxy: bool = (
+        False  # Set True when behind a reverse proxy (nginx, ALB, etc.)
+    )
 
     # Admin
     admin_emails: str = ""
@@ -68,6 +70,7 @@ class Settings(BaseSettings):
         else:
             # No CA cert provided — disable cert verification (still encrypted)
             import ssl as _ssl
+
             kwargs["ssl_cert_reqs"] = _ssl.CERT_NONE
         return kwargs
 

@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from starlette.types import ASGIApp
 
 from sentinel_auth._utils import warn_if_insecure
 from sentinel_auth.dependencies import require_action as _require_action

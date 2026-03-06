@@ -330,7 +330,9 @@ async def list_permissions(
         filters.append(ResourcePermission.service_name == service_name)
     if resource_id:
         filters.append(
-            cast(ResourcePermission.resource_id, Text).ilike(f"{escape_like(resource_id)}%")
+            cast(ResourcePermission.resource_id, Text).ilike(
+                f"{escape_like(resource_id)}%"
+            )
         )
     if owner:
         filters.append(User.email.ilike(f"%{escape_like(owner)}%"))

@@ -22,7 +22,10 @@ from src.middleware.rate_limit import (
     rate_limit_exceeded_handler,
 )
 from src.middleware.cors import DynamicCORSMiddleware, refresh_origins
-from src.middleware.security_headers import MaxBodySizeMiddleware, SecurityHeadersMiddleware
+from src.middleware.security_headers import (
+    MaxBodySizeMiddleware,
+    SecurityHeadersMiddleware,
+)
 
 logger = structlog.get_logger()
 
@@ -139,9 +142,7 @@ async def lifespan(app: FastAPI):
                 "Redis URL has no authentication — use redis://:password@host in production"
             )
         if _redis_no_tls:
-            logger.warning(
-                "Redis URL is not using TLS — use rediss:// in production"
-            )
+            logger.warning("Redis URL is not using TLS — use rediss:// in production")
 
     app.state.start_time = time.time()
     yield

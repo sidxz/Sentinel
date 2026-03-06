@@ -356,7 +356,9 @@ async def select_workspace_and_issue_tokens(
             db, user, workspace.id, workspace.slug, client_app_id=client_app_id
         )
     except ValueError:
-        raise HTTPException(status_code=403, detail="Cannot issue tokens for this workspace")
+        raise HTTPException(
+            status_code=403, detail="Cannot issue tokens for this workspace"
+        )
 
     return tokens
 
@@ -499,7 +501,9 @@ async def admin_callback(
             samesite="strict",
             max_age=3600,
         )
-        response.set_cookie(key="admin_token", value=admin_token, path="/", **_cookie_opts)
+        response.set_cookie(
+            key="admin_token", value=admin_token, path="/", **_cookie_opts
+        )
         return response
     except HTTPException:
         raise
