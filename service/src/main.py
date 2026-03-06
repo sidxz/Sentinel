@@ -174,6 +174,7 @@ app.add_middleware(
     secret_key=settings.session_secret_key,
     https_only=settings.cookie_secure,
     same_site="lax",
+    max_age=600,  # 10 min — bounds the OAuth flow window
 )
 
 # Trusted host validation (prevents Host header attacks)

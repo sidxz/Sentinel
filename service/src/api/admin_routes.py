@@ -4,6 +4,7 @@ import time
 import uuid
 from datetime import datetime
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, text
@@ -77,6 +78,8 @@ from src.services import (
 from src.middleware.cors import refresh_origins
 from src.middleware.rate_limit import limiter
 from src.services import token_service
+
+logger = structlog.get_logger()
 
 router = APIRouter(
     prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)]
@@ -360,7 +363,8 @@ async def add_user_to_workspace(
             actor_id=uuid.UUID(admin["sub"]),
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("add_user_to_workspace failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to add user to workspace")
     return {"status": "ok"}
 
 
@@ -418,7 +422,8 @@ async def create_workspace(
             description=body.description,
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("create_workspace failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to create workspace")
 
     await activity_service.log_activity(
         db,
@@ -698,7 +703,8 @@ async def add_group_member(
     try:
         await group_service.add_member(db, group_id, grp.workspace_id, user_id)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("add_group_member failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to add group member")
 
     await activity_service.log_activity(
         db,
@@ -821,7 +827,8 @@ async def share_permission(
             actor_id,
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("share_permission failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to share permission")
 
     await activity_service.log_activity(
         db,
@@ -1053,7 +1060,8 @@ async def assign_role_member(
             db, user_id, role_id, assigned_by=uuid.UUID(admin["sub"])
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("assign_user_role failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to assign role")
 
     await activity_service.log_activity(
         db,
@@ -1214,7 +1222,8 @@ async def create_service_app(
             db, name=body.name, service_name=body.service_name, created_by=actor_id
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("create_service_app failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to create service app")
 
     await activity_service.log_activity(
         db,

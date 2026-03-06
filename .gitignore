@@ -11,7 +11,10 @@ wheels/
 
 # Secrets
 keys/
-.env
+.env*
+!.env.example
+!.env.prod.example
+!demo/backend/.env.example
 
 # Node
 node_modules/

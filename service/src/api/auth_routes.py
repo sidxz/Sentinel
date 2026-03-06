@@ -493,15 +493,14 @@ async def admin_callback(
             user_id=user.id, email=user.email, name=user.name
         )
         response = RedirectResponse(url=f"{settings.admin_url}/", status_code=302)
-        response.set_cookie(
-            key="admin_token",
-            value=admin_token,
+        _cookie_opts = dict(
             httponly=True,
             secure=settings.cookie_secure,
             samesite="strict",
             max_age=3600,
-            path="/",
         )
+        response.set_cookie(key="admin_token", value=admin_token, path="/admin", **_cookie_opts)
+        response.set_cookie(key="admin_token", value=admin_token, path="/auth/admin", **_cookie_opts)
         return response
     except HTTPException:
         raise
@@ -523,5 +522,6 @@ async def admin_logout(request: Request, admin: dict = Depends(require_admin)):
     if jti := admin.get("jti"):
         await token_service.blacklist_access_token(jti, admin["exp"])
     response = JSONResponse({"ok": True})
-    response.delete_cookie("admin_token", path="/")
+    response.delete_cookie("admin_token", path="/admin")
+    response.delete_cookie("admin_token", path="/auth/admin")
     return response
