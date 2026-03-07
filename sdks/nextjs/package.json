@@ -24,6 +24,11 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "require": "./dist/server.cjs"
+    },
+    "./authz-middleware": {
+      "types": "./dist/authz-middleware.d.ts",
+      "import": "./dist/authz-middleware.js",
+      "require": "./dist/authz-middleware.cjs"
     }
   },
   "main": "./dist/index.cjs",

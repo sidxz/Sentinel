@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/middleware.ts', 'src/server.ts'],
+  entry: ['src/index.ts', 'src/middleware.ts', 'src/server.ts', 'src/authz-middleware.ts'],
   format: ['esm', 'cjs'],
   dts: true,
   clean: true,

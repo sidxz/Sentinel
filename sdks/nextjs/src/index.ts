@@ -20,3 +20,22 @@ export type {
   WorkspaceOption,
   WorkspaceRole,
 } from '@sentinel-auth/react'
+
+// Authz-mode components, hooks, and types
+export {
+  AuthzProvider,
+  useAuthz,
+  useAuthzUser,
+  useAuthzHasRole,
+  useAuthzFetch,
+  AuthzGuard,
+} from '@sentinel-auth/react'
+
+export type {
+  AuthzProviderProps,
+  AuthzContextValue,
+  AuthzGuardProps,
+  SentinelAuthzConfig,
+  AuthzTokenStore,
+  AuthzResolveResponse,
+} from '@sentinel-auth/react'
