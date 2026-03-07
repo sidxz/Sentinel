@@ -11,11 +11,13 @@ class ServiceAppCreateRequest(BaseModel):
     service_name: str = Field(
         pattern=r"^[a-z][a-z0-9-]*[a-z0-9]$", min_length=2, max_length=255
     )
+    allowed_origins: list[str] = Field(default_factory=list)
 
 
 class ServiceAppUpdateRequest(BaseModel):
     name: SafeStrOptional = None
     is_active: bool | None = None
+    allowed_origins: list[str] | None = None
 
 
 class ServiceAppResponse(BaseModel):
@@ -24,6 +26,7 @@ class ServiceAppResponse(BaseModel):
     service_name: str
     key_prefix: str
     is_active: bool
+    allowed_origins: list[str]
     last_used_at: datetime | None
     created_by: uuid.UUID | None
     created_at: datetime
