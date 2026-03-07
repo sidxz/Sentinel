@@ -13,6 +13,7 @@ from src.services.token_service import get_redis
 
 _CACHE_KEY = "svc:key_cache"
 _CACHE_TTL = 300  # 5 minutes
+_ORIGIN_CACHE_KEY = "svc:origin_cache"
 
 
 def _generate_key() -> tuple[str, str, str]:
@@ -32,6 +33,7 @@ async def create_service_app(
     name: str,
     service_name: str,
     created_by: uuid.UUID | None = None,
+    allowed_origins: list[str] | None = None,
 ) -> tuple[ServiceApp, str]:
     """Create a new service app. Returns (app, plaintext_key)."""
     plaintext, sha, prefix = _generate_key()
@@ -42,6 +44,7 @@ async def create_service_app(
         key_hash=sha,
         key_prefix=prefix,
         created_by=created_by,
+        allowed_origins=allowed_origins or [],
     )
     db.add(app)
     await db.flush()
@@ -103,6 +106,7 @@ async def update_service_app(
     app_id: uuid.UUID,
     name: str | None = None,
     is_active: bool | None = None,
+    allowed_origins: list[str] | None = None,
 ) -> ServiceApp:
     app = await db.get(ServiceApp, app_id)
     if not app:
@@ -111,6 +115,8 @@ async def update_service_app(
         app.name = name
     if is_active is not None:
         app.is_active = is_active
+    if allowed_origins is not None:
+        app.allowed_origins = allowed_origins
     await db.flush()
     await _invalidate_cache()
     return app
@@ -132,6 +138,26 @@ async def has_active_apps(db: AsyncSession) -> bool:
     return result.scalar_one_or_none() is not None
 
 
+async def validate_origin(origin: str, db: AsyncSession) -> tuple[str, uuid.UUID] | None:
+    """Validate a request origin against service app allowed_origins.
+    Returns (service_name, app_id) or None.
+    """
+    r = await get_redis()
+    cached = await r.hget(_ORIGIN_CACHE_KEY, origin)
+    if cached:
+        svc, app_id_str = cached.split(":", 1)
+        return svc, uuid.UUID(app_id_str)
+
+    await _rebuild_origin_cache(db)
+
+    cached = await r.hget(_ORIGIN_CACHE_KEY, origin)
+    if cached:
+        svc, app_id_str = cached.split(":", 1)
+        return svc, uuid.UUID(app_id_str)
+
+    return None
+
+
 # ── Internal helpers ─────────────────────────────────────────────────
 
 
@@ -150,9 +176,25 @@ async def _rebuild_cache(db: AsyncSession) -> None:
     await pipe.execute()
 
 
+async def _rebuild_origin_cache(db: AsyncSession) -> None:
+    """Load all active apps' allowed_origins into a Redis hash."""
+    r = await get_redis()
+    result = await db.execute(
+        select(ServiceApp).where(ServiceApp.is_active == True)  # noqa: E712
+    )
+    apps = result.scalars().all()
+    pipe = r.pipeline()
+    pipe.delete(_ORIGIN_CACHE_KEY)
+    for app in apps:
+        for origin in (app.allowed_origins or []):
+            pipe.hset(_ORIGIN_CACHE_KEY, origin, f"{app.service_name}:{app.id}")
+    pipe.expire(_ORIGIN_CACHE_KEY, _CACHE_TTL)
+    await pipe.execute()
+
+
 async def _invalidate_cache() -> None:
     r = await get_redis()
-    await r.delete(_CACHE_KEY)
+    await r.delete(_CACHE_KEY, _ORIGIN_CACHE_KEY)
 
 
 async def _touch_last_used(db: AsyncSession, app_id: uuid.UUID) -> bool:
