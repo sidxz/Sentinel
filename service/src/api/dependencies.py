@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.jwt import _AUD_ACCESS, _AUD_ADMIN, decode_token
+from src.auth.jwt import _AUD_ACCESS, _AUD_ADMIN, _AUD_AUTHZ, decode_token
 from src.database import get_db
 
 
@@ -52,7 +52,7 @@ async def get_current_user(request: Request) -> CurrentUser:
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     token = auth.removeprefix("Bearer ")
     try:
-        payload = decode_token(token, audience=_AUD_ACCESS)
+        payload = decode_token(token, audience=[_AUD_ACCESS, _AUD_AUTHZ])
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 

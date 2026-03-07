@@ -125,7 +125,7 @@ def create_authz_token(
     return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)
 
 
-def decode_token(token: str, audience: str | None = None) -> dict:
+def decode_token(token: str, audience: str | list[str] | None = None) -> dict:
     """Decode and validate a JWT.
 
     If audience is provided, the token's aud claim must match.
