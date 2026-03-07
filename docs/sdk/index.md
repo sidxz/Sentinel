@@ -6,7 +6,7 @@ The **Sentinel Auth SDK** (`sentinel-auth-sdk`) is a Python package that integra
 
 ### JWT Validation Middleware
 
-`JWTAuthMiddleware` is a Starlette middleware that intercepts every incoming request, validates the `Authorization: Bearer <token>` header against the identity service's RS256 public key, and populates `request.state.user` with an `AuthenticatedUser` instance. Excluded paths (health checks, docs) skip validation entirely.
+`JWTAuthMiddleware` is a Starlette middleware that intercepts every incoming request, validates the `Authorization: Bearer <token>` header against Sentinel's RS256 public key, and populates `request.state.user` with an `AuthenticatedUser` instance. Excluded paths (health checks, docs) skip validation entirely.
 
 ### FastAPI Dependency Helpers
 
@@ -16,11 +16,11 @@ A set of injectable dependencies for FastAPI routes:
 - **`get_workspace_id`** -- returns the active workspace UUID
 - **`get_workspace_context`** -- returns a `WorkspaceContext` with workspace and user identifiers
 - **`require_role`** -- dependency factory that enforces a minimum workspace role (`viewer`, `editor`, `admin`, `owner`)
-- **`require_action`** -- dependency factory that enforces an RBAC action via the identity service
+- **`require_action`** -- dependency factory that enforces an RBAC action via Sentinel
 
 ### Async Permission Client
 
-`PermissionClient` is an async HTTP client for the identity service's Zanzibar-style permission API. It supports:
+`PermissionClient` is an async HTTP client for Sentinel's Zanzibar-style permission API. It supports:
 
 - Single and batch permission checks (`can`, `check`)
 - Resource registration (`register_resource`)
@@ -29,7 +29,7 @@ A set of injectable dependencies for FastAPI routes:
 
 ### Async Role Client
 
-`RoleClient` is an async HTTP client for the identity service's RBAC API. It supports:
+`RoleClient` is an async HTTP client for Sentinel's RBAC API. It supports:
 
 - Service action registration (`register_actions`)
 - Action permission checks (`check_action`)
@@ -73,11 +73,11 @@ The SDK depends on:
 
 ```
 sentinel_auth/
-    __init__.py          # Re-exports AuthenticatedUser, JWTAuthMiddleware, PermissionClient, RoleClient, Sentinel, WorkspaceContext
+    __init__.py          # Re-exports AuthenticatedUser, JWTAuthMiddleware, PermissionClient, RoleClient, Sentinel, SentinelError, WorkspaceContext, get_token, __version__
     sentinel.py          # Sentinel autoconfig class (recommended entry point)
     types.py             # AuthenticatedUser, WorkspaceContext dataclasses
     middleware.py         # JWTAuthMiddleware
-    dependencies.py      # get_current_user, get_workspace_id, get_workspace_context, require_role, require_action
+    dependencies.py      # get_current_user, get_workspace_id, get_workspace_context, get_token, require_role, require_action
     permissions.py        # PermissionClient, PermissionCheck, PermissionResult
     roles.py             # RoleClient
 ```
@@ -87,13 +87,15 @@ sentinel_auth/
 === "Autoconfig (Recommended)"
 
     ```python
-    from fastapi import Depends, FastAPI
+    from uuid import UUID
+
+    from fastapi import Depends, FastAPI, HTTPException
     from sentinel_auth import Sentinel
-    from sentinel_auth.dependencies import get_current_user
+    from sentinel_auth.dependencies import get_current_user, get_token
     from sentinel_auth.types import AuthenticatedUser
 
     sentinel = Sentinel(
-        base_url="http://identity-service:9003",
+        base_url="http://sentinel:9003",
         service_name="my-service",
         service_key="sk_my_service_key",
     )
@@ -103,11 +105,12 @@ sentinel_auth/
 
     @app.get("/documents/{doc_id}")
     async def get_document(
-        doc_id: str,
+        doc_id: UUID,
+        token: str = Depends(get_token),
         user: AuthenticatedUser = Depends(get_current_user),
     ):
         allowed = await sentinel.permissions.can(
-            token=request.headers["Authorization"].removeprefix("Bearer "),
+            token=token,
             resource_type="document",
             resource_id=doc_id,
             action="view",
@@ -121,9 +124,10 @@ sentinel_auth/
 
     ```python
     from pathlib import Path
+    from uuid import UUID
 
-    from fastapi import Depends, FastAPI
-    from sentinel_auth.dependencies import get_current_user
+    from fastapi import Depends, FastAPI, HTTPException
+    from sentinel_auth.dependencies import get_current_user, get_token
     from sentinel_auth.middleware import JWTAuthMiddleware
     from sentinel_auth.permissions import PermissionClient
     from sentinel_auth.types import AuthenticatedUser
@@ -140,7 +144,7 @@ sentinel_auth/
 
     # 2. Create permission client
     permissions = PermissionClient(
-        base_url="http://identity-service:9003",
+        base_url="http://sentinel:9003",
         service_name="my-service",
         service_key="sk_my_service_key",
     )
@@ -148,11 +152,12 @@ sentinel_auth/
     # 3. Use dependencies in routes
     @app.get("/documents/{doc_id}")
     async def get_document(
-        doc_id: str,
+        doc_id: UUID,
+        token: str = Depends(get_token),
         user: AuthenticatedUser = Depends(get_current_user),
     ):
         allowed = await permissions.can(
-            token=user_token,
+            token=token,
             resource_type="document",
             resource_id=doc_id,
             action="view",

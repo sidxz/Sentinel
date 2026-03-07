@@ -28,8 +28,8 @@ A typical production deployment looks like this:
                     └──────┬──────┘
                            │ HTTP :9003
                     ┌──────▼──────┐
-                    │  Identity   │
-                    │  Service    │
+                    │  Sentinel   │
+                    │  Auth       │
                     └──┬──────┬───┘
                        │      │
               ┌────────▼┐  ┌──▼────────┐

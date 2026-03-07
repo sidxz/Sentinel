@@ -47,18 +47,21 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
     3. Sets ``request.state.user`` to an ``AuthenticatedUser`` instance
     4. Returns 401 if the token is missing, expired, or invalid
 
-    Provide **either** ``public_key`` (PEM string) or ``jwks_url`` to
-    specify how the signing key is obtained.  When ``jwks_url`` is given
-    the key is fetched lazily on the first request and cached.
+    Provide **one of** ``base_url``, ``jwks_url``, or ``public_key`` to
+    specify how the signing key is obtained.
 
     Args:
         app: The ASGI application to wrap.
+        base_url: Root URL of the Sentinel identity service (e.g.
+            ``"http://localhost:9003"``). The JWKS endpoint is derived
+            automatically as ``{base_url}/.well-known/jwks.json``.
+            This is the recommended option.
         public_key: RSA public key (PEM format) used to verify JWT signatures.
-            Obtain this from the identity service's ``keys/public.pem``,
-            or omit and use ``jwks_url`` instead.
-        jwks_url: URL of the Sentinel JWKS endpoint (e.g.
-            ``"http://localhost:9003/.well-known/jwks.json"``).
-            The first RSA signing key will be fetched and cached.
+            Use this for air-gapped deployments where the service cannot
+            reach the identity service at runtime.
+        jwks_url: Explicit JWKS endpoint URL. Use this only when pointing
+            at a non-Sentinel OIDC provider whose JWKS path differs from
+            the standard ``/.well-known/jwks.json``.
         algorithm: JWT signing algorithm. Defaults to ``"RS256"``.
         audience: Expected JWT audience claim. Defaults to ``"sentinel:access"``.
         exclude_paths: List of path prefixes to skip authentication for.
@@ -67,11 +70,11 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             are permitted to access this service. ``None`` (default) allows
             all workspaces. Returns 403 if the JWT's workspace is not in the set.
 
-    Example using JWKS (recommended)::
+    Example using base_url (recommended)::
 
         app.add_middleware(
             JWTAuthMiddleware,
-            jwks_url="http://localhost:9003/.well-known/jwks.json",
+            base_url="http://localhost:9003",
         )
 
     Example using PEM file::
@@ -87,6 +90,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app: ASGIApp,
+        base_url: str | None = None,
         public_key: str | None = None,
         jwks_url: str | None = None,
         algorithm: str = "RS256",
@@ -95,8 +99,10 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         allowed_workspaces: set[str] | None = None,
     ):
         super().__init__(app)
+        if base_url:
+            jwks_url = f"{base_url.rstrip('/')}/.well-known/jwks.json"
         if not public_key and not jwks_url:
-            raise ValueError("Either public_key or jwks_url must be provided")
+            raise ValueError("Provide base_url, jwks_url, or public_key")
         self.public_key = public_key
         self.jwks_url = jwks_url
         self._jwks_lock = asyncio.Lock()
@@ -155,6 +161,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                     content={"detail": "Workspace not permitted for this service"},
                 )
 
+            request.state.token = token
             request.state.user = AuthenticatedUser(
                 user_id=uuid.UUID(payload["sub"]),
                 email=payload["email"],

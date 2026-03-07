@@ -1,6 +1,6 @@
 # Service-to-Service Authentication
 
-Consuming applications authenticate with the Identity Service using the `X-Service-Key` header. This mechanism ensures that only authorized backend services can call permission and role endpoints, while also identifying which application is making the request.
+Consuming applications authenticate with Sentinel using the `X-Service-Key` header. This mechanism ensures that only authorized backend services can call permission and role endpoints, while also identifying which application is making the request.
 
 ## Service Apps
 
@@ -12,7 +12,7 @@ When a service app is created, a plaintext API key (prefixed with `sk_`) is retu
 X-Service-Key: sk_a1b2c3d4e5f6...
 ```
 
-The Identity Service validates the key by hashing it and matching against active service apps via `service_app_service.validate_key()`. If the key is missing, invalid, or belongs to an inactive app, the request is rejected with `401 Unauthorized`.
+Sentinel validates the key by hashing it and matching against active service apps via `service_app_service.validate_key()`. If the key is missing, invalid, or belongs to an inactive app, the request is rejected with `401 Unauthorized`.
 
 ### Service App Fields
 

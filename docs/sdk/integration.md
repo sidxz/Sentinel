@@ -5,36 +5,16 @@ This guide walks through adding authentication and authorization to an existing 
 ## Prerequisites
 
 - A running Sentinel Auth instance
-- The identity service's RS256 public key (`keys/public.pem`)
-- A service API key registered with the identity service
+- A service API key registered with Sentinel
 - An existing FastAPI application to integrate with
 
 ## Step 1: Install the SDK
-
-Add the SDK to your project:
 
 ```bash
 uv add sentinel-auth-sdk
 ```
 
-Or for local development against the monorepo:
-
-```toml
-# pyproject.toml
-[project]
-dependencies = [
-    "sentinel-auth-sdk",
-]
-
-[tool.uv.sources]
-sentinel-auth-sdk = { path = "../identity-service/sdk", editable = true }
-```
-
-Then sync:
-
-```bash
-uv sync
-```
+See [Installation](installation.md) for editable installs and other options.
 
 ## Step 2: Add JWT Middleware
 
@@ -50,22 +30,39 @@ app = FastAPI(title="My Service")
 
 **After:**
 
-```python
-from pathlib import Path
+=== "Base URL (recommended)"
 
-from fastapi import FastAPI
-from sentinel_auth.middleware import JWTAuthMiddleware
+    ```python
+    from fastapi import FastAPI
+    from sentinel_auth.middleware import JWTAuthMiddleware
 
-app = FastAPI(title="My Service")
+    app = FastAPI(title="My Service")
 
-PUBLIC_KEY = Path("keys/public.pem").read_text()
+    app.add_middleware(
+        JWTAuthMiddleware,
+        base_url="http://sentinel:9003",
+        exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
+    )
+    ```
 
-app.add_middleware(
-    JWTAuthMiddleware,
-    public_key=PUBLIC_KEY,
-    exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
-)
-```
+=== "PEM file"
+
+    ```python
+    from pathlib import Path
+
+    from fastapi import FastAPI
+    from sentinel_auth.middleware import JWTAuthMiddleware
+
+    app = FastAPI(title="My Service")
+
+    PUBLIC_KEY = Path("keys/public.pem").read_text()
+
+    app.add_middleware(
+        JWTAuthMiddleware,
+        public_key=PUBLIC_KEY,
+        exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
+    )
+    ```
 
 Every authenticated request now has an `AuthenticatedUser` on `request.state.user`.
 
@@ -74,7 +71,7 @@ To restrict access to specific workspaces, add `allowed_workspaces`:
 ```python
 app.add_middleware(
     JWTAuthMiddleware,
-    public_key=PUBLIC_KEY,
+    base_url="http://sentinel:9003",
     exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
     allowed_workspaces={"workspace-uuid-1", "workspace-uuid-2"},  # None = all
 )
@@ -84,45 +81,31 @@ See [Middleware — Restricting by Workspace](middleware.md#restricting-by-works
 
 ## Step 3: Create Auth Dependencies
 
-Set up reusable dependencies for your routes. Create an `auth.py` module (or add to an existing dependencies module):
+The SDK provides all the dependencies you need out of the box. For convenience, you can re-export them from a local module:
 
 ```python
 # src/dependencies/auth.py
 from sentinel_auth.dependencies import (
+    get_token,
     get_current_user,
     get_workspace_id,
     get_workspace_context,
     require_role,
 )
 from sentinel_auth.types import AuthenticatedUser, WorkspaceContext
-
-# Re-export for convenience -- routes import from here
-__all__ = [
-    "get_current_user",
-    "get_workspace_id",
-    "get_workspace_context",
-    "require_role",
-    "AuthenticatedUser",
-    "WorkspaceContext",
-]
 ```
 
 You can also add application-specific dependencies that build on the SDK:
 
 ```python
 # src/dependencies/auth.py (continued)
-from fastapi import Depends, Request
+from fastapi import Request
 from sentinel_auth.permissions import PermissionClient
 
 
 def get_permissions(request: Request) -> PermissionClient:
     """Retrieve the PermissionClient from app state."""
     return request.app.state.permissions
-
-
-def get_token(request: Request) -> str:
-    """Extract the raw JWT token from the Authorization header."""
-    return request.headers["Authorization"].removeprefix("Bearer ")
 ```
 
 ## Step 4: Update API Routes
@@ -306,9 +289,9 @@ results = await vector_store.query(
 )
 ```
 
-## Step 8: Register Resources with the Identity Service
+## Step 8: Register Resources with Sentinel
 
-When creating resources that need entity-level access control, register them with the identity service's permission system.
+When creating resources that need entity-level access control, register them with Sentinel's permission system.
 
 Set up the `PermissionClient` in your application lifespan:
 
@@ -321,7 +304,7 @@ from sentinel_auth.permissions import PermissionClient
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.permissions = PermissionClient(
-        base_url="http://identity-service:9003",
+        base_url="http://sentinel:9003",
         service_name="my-service",
         service_key="sk_my_service_key",
     )
@@ -350,7 +333,7 @@ async def create_document(
     db.add(document)
     await db.commit()
 
-    # Register with identity service for ACL management
+    # Register with Sentinel for ACL management
     await request.app.state.permissions.register_resource(
         resource_type="document",
         resource_id=document.id,
@@ -364,19 +347,17 @@ async def create_document(
 
 ## Step 9: Network Configuration
 
-In a Docker Compose environment, your service and the identity service must be on the same network:
+In a Docker Compose environment, your service and Sentinel must be on the same network:
 
 ```yaml
 # docker-compose.yml
 services:
-  identity-service:
-    build: ./identity-service/service
+  sentinel:
+    build: ./sentinel/service
     networks:
       - backend
     ports:
       - "9003:9003"
-    volumes:
-      - identity-keys:/app/keys
 
   my-service:
     build: ./my-service
@@ -385,26 +366,21 @@ services:
     ports:
       - "8200:8200"
     environment:
-      IDENTITY_SERVICE_URL: "http://identity-service:9003"
-      IDENTITY_SERVICE_KEY: "sk_my_service_key"
-    volumes:
-      - identity-keys:/app/keys:ro
+      SENTINEL_URL: "http://sentinel:9003"
+      SENTINEL_SERVICE_KEY: "sk_my_service_key"
     depends_on:
-      - identity-service
+      - sentinel
 
 networks:
   backend:
     driver: bridge
-
-volumes:
-  identity-keys:
 ```
 
 Key points:
 
 - Both services are on the `backend` network so they can reach each other by service name
-- The identity service's key directory is shared as a read-only volume
-- The service URL uses the Docker service name (`identity-service`), not `localhost`
+- The service URL uses the Docker service name (`sentinel`), not `localhost`
+- With JWKS auto-discovery, no shared key volumes are needed — the middleware fetches the signing key at runtime
 
 ## Complete Example: Fully Integrated Application
 
@@ -414,10 +390,9 @@ Here is a minimal but complete FastAPI application with all integration steps ap
 import os
 import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
-from sentinel_auth.dependencies import get_current_user, get_workspace_id, require_role
+from fastapi import Depends, FastAPI, HTTPException
+from sentinel_auth.dependencies import get_current_user, get_token, get_workspace_id, require_role
 from sentinel_auth.middleware import JWTAuthMiddleware
 from sentinel_auth.permissions import PermissionClient
 from sentinel_auth.types import AuthenticatedUser
@@ -428,9 +403,9 @@ from sentinel_auth.types import AuthenticatedUser
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.permissions = PermissionClient(
-        base_url=os.environ["IDENTITY_SERVICE_URL"],
+        base_url=os.environ["SENTINEL_URL"],
         service_name="my-service",
-        service_key=os.environ["IDENTITY_SERVICE_KEY"],
+        service_key=os.environ["SENTINEL_SERVICE_KEY"],
     )
     yield
     await app.state.permissions.close()
@@ -440,10 +415,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="My Service", lifespan=lifespan)
 
-PUBLIC_KEY = Path("keys/public.pem").read_text()
 app.add_middleware(
     JWTAuthMiddleware,
-    public_key=PUBLIC_KEY,
+    base_url=os.environ["SENTINEL_URL"],
     exclude_paths=["/health", "/docs", "/openapi.json"],
 )
 
@@ -457,12 +431,11 @@ async def health():
 
 @app.get("/documents")
 async def list_documents(
-    request: Request,
+    token: str = Depends(get_token),
     user: AuthenticatedUser = Depends(get_current_user),
     workspace_id: uuid.UUID = Depends(get_workspace_id),
 ):
-    token = request.headers["Authorization"].removeprefix("Bearer ")
-    resource_ids, has_full_access = await request.app.state.permissions.accessible(
+    resource_ids, has_full_access = await app.state.permissions.accessible(
         token=token,
         resource_type="document",
         action="view",
@@ -475,13 +448,12 @@ async def list_documents(
 
 @app.post("/documents")
 async def create_document(
-    request: Request,
     user: AuthenticatedUser = Depends(require_role("editor")),
 ):
     doc_id = uuid.uuid4()
     # ... create document in database ...
 
-    await request.app.state.permissions.register_resource(
+    await app.state.permissions.register_resource(
         resource_type="document",
         resource_id=doc_id,
         workspace_id=user.workspace_id,
@@ -494,11 +466,10 @@ async def create_document(
 @app.get("/documents/{doc_id}")
 async def get_document(
     doc_id: uuid.UUID,
-    request: Request,
+    token: str = Depends(get_token),
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    token = request.headers["Authorization"].removeprefix("Bearer ")
-    allowed = await request.app.state.permissions.can(
+    allowed = await app.state.permissions.can(
         token=token,
         resource_type="document",
         resource_id=doc_id,

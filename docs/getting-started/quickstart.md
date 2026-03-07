@@ -91,7 +91,7 @@ Every frontend that authenticates through Sentinel must be registered as a **cli
 
     1. Navigate to **Client Apps** in the sidebar.
     2. Click **Add Client App**.
-    3. Set a name (e.g., `dev-frontend`) and add the redirect URI: `http://localhost:9003/docs`.
+    3. Set a name (e.g., `dev-frontend`) and add the redirect URI: `http://localhost:3000/auth/callback`.
     4. Save.
 
 === "curl"
@@ -101,7 +101,7 @@ Every frontend that authenticates through Sentinel must be registered as a **cli
       -H "Content-Type: application/json" \
       -H "Cookie: admin_token=YOUR_ADMIN_TOKEN" \
       -H "X-Requested-With: XMLHttpRequest" \
-      -d '{"name": "dev-frontend", "redirect_uris": ["http://localhost:9003/docs"]}'
+      -d '{"name": "dev-frontend", "redirect_uris": ["http://localhost:3000/auth/callback"]}'
     ```
 
 !!! info "Why client apps?"
@@ -125,7 +125,7 @@ If your backend needs to call Sentinel's API (for permissions, roles, or resourc
 
 Navigate to the login endpoint with the redirect URI you registered:
 
-> `http://localhost:9003/auth/login/google?redirect_uri=http://localhost:9003/docs`
+> `http://localhost:9003/auth/login/google?redirect_uri=http://localhost:3000/auth/callback`
 
 This redirects you to Google's consent screen. After you authorize, the service creates a user record (if it's your first login) and redirects to your `redirect_uri` with an authorization code (`?code=X`).
 

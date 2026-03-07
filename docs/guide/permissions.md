@@ -6,7 +6,7 @@ The Sentinel Auth implements a three-tier authorization model: workspace roles (
 
 ### Tier 1: Workspace Roles (from JWT)
 
-Workspace roles (`owner`, `admin`, `editor`, `viewer`) are embedded in the access token and can be checked by any consuming application without calling the Identity Service. This is ideal for coarse-grained authorization:
+Workspace roles (`owner`, `admin`, `editor`, `viewer`) are embedded in the access token and can be checked by any consuming application without calling Sentinel. This is ideal for coarse-grained authorization:
 
 - Can this user create resources? (editor+)
 - Can this user manage members? (admin+)
@@ -16,13 +16,13 @@ No service call is needed. The consuming application reads the `wrole` claim fro
 
 ### Tier 2: Custom Roles / RBAC (via service call)
 
-For action-based authorization ("Can this user export reports?"), the consuming application calls the Identity Service's `/roles/check-action` endpoint. Custom roles allow services to define application-specific actions and organize them into named roles within a workspace.
+For action-based authorization ("Can this user export reports?"), the consuming application calls Sentinel's `/roles/check-action` endpoint. Custom roles allow services to define application-specific actions and organize them into named roles within a workspace.
 
 See the [Custom Roles guide](roles.md) for full documentation.
 
 ### Tier 3: Entity ACLs (via service call)
 
-For resource-level authorization ("Can user X edit document Y?"), the consuming application calls the Identity Service's `/permissions/check` endpoint. The service resolves the permission by checking ownership, workspace role, resource visibility, direct user shares, and group shares.
+For resource-level authorization ("Can user X edit document Y?"), the consuming application calls Sentinel's `/permissions/check` endpoint. The service resolves the permission by checking ownership, workspace role, resource visibility, direct user shares, and group shares.
 
 ## Generic Resource Model
 
@@ -44,7 +44,7 @@ Additional fields on the registration:
 
 ### Registering a Resource
 
-When a consuming application creates a new resource, it registers it with the Identity Service:
+When a consuming application creates a new resource, it registers it with Sentinel:
 
 ```
 POST /permissions/register

@@ -9,10 +9,20 @@ from typing import TYPE_CHECKING
 import httpx
 from fastapi import Depends, HTTPException, Request
 
+from sentinel_auth.auth import RequestAuth
 from sentinel_auth.types import AuthenticatedUser, SentinelError, WorkspaceContext
 
 if TYPE_CHECKING:
+    from sentinel_auth.permissions import PermissionClient
     from sentinel_auth.roles import RoleClient
+
+
+def get_token(request: Request) -> str:
+    """Extract the bearer token from the Authorization header."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    return auth.removeprefix("Bearer ")
 
 
 def get_current_user(request: Request) -> AuthenticatedUser:
@@ -84,5 +94,38 @@ def require_action(role_client: RoleClient, action: str) -> Callable:
         if not allowed:
             raise HTTPException(status_code=403, detail=f"Action '{action}' not permitted")
         return user
+
+    return dependency
+
+
+def get_request_auth_factory(
+    permissions: PermissionClient | None = None,
+    roles: RoleClient | None = None,
+) -> Callable:
+    """Create a FastAPI dependency that returns a ``RequestAuth`` per request.
+
+    The returned dependency extracts the JWT token and authenticated user
+    from the request and bundles them into a ``RequestAuth`` object with
+    optional permission/role clients wired in.
+
+    Args:
+        permissions: Optional ``PermissionClient`` for entity-level checks.
+        roles: Optional ``RoleClient`` for RBAC action checks.
+
+    Returns:
+        A FastAPI-compatible dependency function.
+    """
+
+    def dependency(
+        request: Request,
+        user: AuthenticatedUser = Depends(get_current_user),
+    ) -> RequestAuth:
+        token: str | None = getattr(request.state, "token", None)
+        if token is None:
+            auth = request.headers.get("Authorization", "")
+            if not auth.startswith("Bearer "):
+                raise HTTPException(status_code=401, detail="Missing bearer token")
+            token = auth.removeprefix("Bearer ")
+        return RequestAuth(user=user, _token=token, _permissions=permissions, _roles=roles)
 
     return dependency

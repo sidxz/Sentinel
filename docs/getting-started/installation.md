@@ -90,8 +90,8 @@ Use this path if you want to develop the service itself or run the admin panel l
 ### Quick path
 
 ```bash
-git clone <repo-url> identity-service
-cd identity-service
+git clone <repo-url> sentinel
+cd sentinel
 make setup
 ```
 
@@ -100,7 +100,7 @@ make setup
 After setup completes, follow the printed instructions:
 
 1. Edit `service/.env` — add OAuth credentials (`GOOGLE_CLIENT_ID`, etc.) and `ADMIN_EMAILS`
-2. `make start` — start the identity service on `:9003`
+2. `make start` — start Sentinel on `:9003`
 3. `make admin` — start the admin panel on `:9004`
 
 Jump to the [Quickstart](quickstart.md) for the full walkthrough.
@@ -111,8 +111,8 @@ Jump to the [Quickstart](quickstart.md) for the full walkthrough.
 #### 1. Clone the repository
 
 ```bash
-git clone <repo-url> identity-service
-cd identity-service
+git clone <repo-url> sentinel
+cd sentinel
 ```
 
 #### 2. Install dependencies
@@ -138,12 +138,18 @@ TLS certs for Postgres/Redis are generated automatically by `make setup`. If set
 
 #### 4. Create your env file
 
+If you ran `make setup`, `service/.env` already exists with correct key paths and a random session secret — skip to step 5. Otherwise, create it manually:
+
 ```bash
 cp .env.dev.example service/.env
-# Edit service/.env to set SESSION_SECRET_KEY, OAuth creds, and ADMIN_EMAILS
 ```
 
-The defaults work for local development. Key paths need to be adjusted to `../keys/` since the service runs from the `service/` directory.
+Then edit `service/.env`:
+
+- Set `JWT_PRIVATE_KEY_PATH=../keys/private.pem` and `JWT_PUBLIC_KEY_PATH=../keys/public.pem` (paths are relative to the `service/` directory)
+- Set `REDIS_TLS_CA_CERT=../keys/tls/ca.crt`
+- Generate a `SESSION_SECRET_KEY` (see the [Quickstart](quickstart.md#2-verify-the-session-secret))
+- Add your OAuth credentials and `ADMIN_EMAILS`
 
 #### 5. Start infrastructure
 

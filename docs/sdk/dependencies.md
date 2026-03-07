@@ -6,6 +6,7 @@ The SDK provides a set of FastAPI dependency functions that extract authenticati
 
 | Dependency | Returns | Purpose |
 |------------|---------|---------|
+| `get_token` | `str` | Extract the raw JWT from the Authorization header |
 | `get_current_user` | `AuthenticatedUser` | Extract the full user context |
 | `get_workspace_id` | `UUID` | Extract just the workspace ID |
 | `get_workspace_context` | `WorkspaceContext` | Extract workspace-scoped context |
@@ -16,6 +17,7 @@ All dependencies are importable from `sentinel_auth.dependencies`:
 
 ```python
 from sentinel_auth.dependencies import (
+    get_token,
     get_current_user,
     get_workspace_id,
     get_workspace_context,
@@ -23,6 +25,46 @@ from sentinel_auth.dependencies import (
     require_role,
 )
 ```
+
+## `get_token`
+
+Extracts the raw JWT string from the `Authorization: Bearer <token>` header. Raises HTTP 401 if the header is missing or does not start with `Bearer `.
+
+Use this when you need to pass the token to `PermissionClient` or `RoleClient` methods.
+
+**Signature:**
+
+```python
+def get_token(request: Request) -> str
+```
+
+**Usage:**
+
+```python
+from fastapi import Depends
+from sentinel_auth.dependencies import get_current_user, get_token
+from sentinel_auth.types import AuthenticatedUser
+
+
+@router.get("/documents/{doc_id}")
+async def get_document(
+    doc_id: UUID,
+    token: str = Depends(get_token),
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    allowed = await permissions.can(token, "document", doc_id, "view")
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
+    ...
+```
+
+**Error response** when header is missing:
+
+```json
+{"detail": "Missing bearer token"}
+```
+
+Status code: 401.
 
 ## `get_current_user`
 
@@ -301,7 +343,7 @@ from sentinel_auth.roles import RoleClient
 from sentinel_auth.types import AuthenticatedUser
 
 roles = RoleClient(
-    base_url="http://identity-service:9003",
+    base_url="http://sentinel:9003",
     service_name="analytics",
     service_key="sk_my_service_key",
 )

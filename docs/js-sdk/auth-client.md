@@ -109,6 +109,17 @@ Behavior:
 2. If the response is 401, attempts a token refresh
 3. If refresh succeeds, retries the original request with the new token
 
+### `fetchJson`
+
+A convenience wrapper around `fetch` that also sets the `Content-Type: application/json` header (if not already set) and parses the JSON response. Throws on non-OK responses with the `detail` field from the error body (or a generic `HTTP <status>` message).
+
+```typescript
+interface Note { id: string; title: string }
+
+const notes = await auth.fetchJson<Note[]>('/api/notes')
+// notes is typed as Note[]
+```
+
 ## Events
 
 Subscribe to auth state changes:

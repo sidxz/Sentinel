@@ -56,7 +56,7 @@ The defaults work out of the box for local development. See the [Environment Var
 | Command | Description |
 |---------|-------------|
 | `make setup` | First-time setup: generate keys, install deps, start DB |
-| `make start` | Start the identity service on port 9003 with hot reload |
+| `make start` | Start Sentinel on port 9003 with hot reload |
 | `make admin` | Start the admin UI dev server on port 9004 |
 | `make seed` | Populate the database with test data |
 | `make create-admin` | Create or promote a user to admin |
@@ -80,7 +80,7 @@ On startup, the service automatically runs Alembic migrations, so the database s
 make admin
 ```
 
-The admin panel runs on `http://localhost:9004`. It communicates with the identity service API at `:9003`.
+The admin panel runs on `http://localhost:9004`. It communicates with the Sentinel API at `:9003`.
 
 ## Seeding Test Data
 
@@ -96,7 +96,7 @@ This runs `scripts/seed.py`, which populates the database with sample users, wor
 make status
 ```
 
-This shows the state of Docker containers, whether the identity service is responding on `:9003`, and whether the admin panel is running on `:9004`.
+This shows the state of Docker containers, whether Sentinel is responding on `:9003`, and whether the admin panel is running on `:9004`.
 
 ## Resetting
 

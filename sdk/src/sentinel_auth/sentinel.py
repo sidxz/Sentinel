@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from sentinel_auth._utils import warn_if_insecure
+from sentinel_auth.dependencies import get_current_user, get_request_auth_factory
 from sentinel_auth.dependencies import require_action as _require_action
 from sentinel_auth.middleware import JWTAuthMiddleware
 from sentinel_auth.permissions import PermissionClient
@@ -101,7 +102,7 @@ class Sentinel:
     ) -> None:
         """Add ``JWTAuthMiddleware`` to the app.
 
-        The JWKS URL is auto-derived as ``{base_url}/.well-known/jwks.json``.
+        The JWKS URL is auto-derived from ``base_url``.
 
         Args:
             app: The FastAPI application instance.
@@ -110,7 +111,7 @@ class Sentinel:
         """
         app.add_middleware(
             JWTAuthMiddleware,
-            jwks_url=f"{self.base_url}/.well-known/jwks.json",
+            base_url=self.base_url,
             exclude_paths=exclude_paths,
             allowed_workspaces=self.allowed_workspaces,
         )
@@ -138,6 +139,38 @@ class Sentinel:
         return _lifespan
 
     # -- Dependency helpers --------------------------------------------------
+
+    @property
+    def require_user(self) -> Callable:
+        """FastAPI dependency returning the authenticated user.
+
+        Usage::
+
+            @app.get("/items")
+            async def list_items(user: AuthenticatedUser = Depends(sentinel.require_user)):
+                ...
+        """
+        return get_current_user
+
+    @property
+    def get_auth(self) -> Callable:
+        """FastAPI dependency returning a ``RequestAuth`` for the current request.
+
+        The ``RequestAuth`` bundles the authenticated user with token-backed
+        authorization methods (``can``, ``check_action``, ``accessible``),
+        eliminating the need to manually extract and pass JWT tokens.
+
+        Usage::
+
+            @app.post("/artifacts")
+            async def create(auth: RequestAuth = Depends(sentinel.get_auth)):
+                if await auth.can("artifact", artifact_id, "edit"):
+                    ...
+        """
+        return get_request_auth_factory(
+            permissions=self.permissions,
+            roles=self.roles,
+        )
 
     def require_action(self, action: str) -> Callable:
         """Dependency factory that enforces an RBAC action.

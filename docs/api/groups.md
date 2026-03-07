@@ -12,8 +12,8 @@ The group endpoints manage groups within a workspace. Groups are used for organi
 | `GET` | `/workspaces/{workspace_id}/groups` | member | List groups in workspace |
 | `PATCH` | `/workspaces/{workspace_id}/groups/{group_id}` | admin+ | Update a group |
 | `DELETE` | `/workspaces/{workspace_id}/groups/{group_id}` | admin+ | Delete a group |
-| `POST` | `/workspaces/{workspace_id}/groups/{group_id}/members/{user_id}` | admin+ | Add user to group |
-| `DELETE` | `/workspaces/{workspace_id}/groups/{group_id}/members/{user_id}` | admin+ | Remove user from group |
+| `POST` | `/workspaces/{workspace_id}/groups/{group_id}/members/{member_user_id}` | admin+ | Add user to group |
+| `DELETE` | `/workspaces/{workspace_id}/groups/{group_id}/members/{member_user_id}` | admin+ | Remove user from group |
 
 All endpoints validate that the JWT's `workspace_id` matches the `{workspace_id}` path parameter.
 
@@ -169,14 +169,14 @@ DELETE /workspaces/{workspace_id}/groups/{group_id}
 Adds a user to a group.
 
 ```
-POST /workspaces/{workspace_id}/groups/{group_id}/members/{user_id}
+POST /workspaces/{workspace_id}/groups/{group_id}/members/{member_user_id}
 ```
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
 | `workspace_id` | path | UUID | Yes | Workspace ID |
 | `group_id` | path | UUID | Yes | Group ID |
-| `user_id` | path | UUID | Yes | User ID to add |
+| `member_user_id` | path | UUID | Yes | User ID to add |
 
 **Auth:** JWT Bearer token required. Minimum role: `admin`.
 
@@ -202,14 +202,14 @@ curl -X POST http://localhost:9003/workspaces/a1b2c3d4-e5f6-7890-abcd-ef12345678
 Removes a user from a group.
 
 ```
-DELETE /workspaces/{workspace_id}/groups/{group_id}/members/{user_id}
+DELETE /workspaces/{workspace_id}/groups/{group_id}/members/{member_user_id}
 ```
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
 | `workspace_id` | path | UUID | Yes | Workspace ID |
 | `group_id` | path | UUID | Yes | Group ID |
-| `user_id` | path | UUID | Yes | User ID to remove |
+| `member_user_id` | path | UUID | Yes | User ID to remove |
 
 **Auth:** JWT Bearer token required. Minimum role: `admin`.
 

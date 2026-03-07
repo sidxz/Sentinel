@@ -23,7 +23,7 @@ app.add_middleware(
 )
 ```
 
-### Using JWKS auto-discovery (recommended)
+### Using base URL (recommended)
 
 ```python
 from fastapi import FastAPI
@@ -33,23 +33,26 @@ app = FastAPI()
 
 app.add_middleware(
     JWTAuthMiddleware,
-    jwks_url="https://identity.example.com/.well-known/jwks.json",
+    base_url="https://identity.example.com",
     exclude_paths=["/health", "/docs", "/openapi.json"],
 )
 ```
 
-The JWKS URL is fetched lazily on the first request and cached. This avoids the need to distribute PEM files and supports automatic key rotation.
+The JWKS endpoint is derived automatically as `{base_url}/.well-known/jwks.json`, fetched lazily on the first request, and cached. This avoids the need to distribute PEM files and supports automatic key rotation.
 
 ## Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `public_key` | `str \| None` | `None` | RSA public key in PEM format. Used to verify RS256 JWT signatures. Obtain this from the identity service's `keys/public.pem`. Either `public_key` or `jwks_url` must be provided. |
-| `jwks_url` | `str \| None` | `None` | URL to a JWKS endpoint for auto-discovery of the signing key. The key is fetched lazily on first request and cached. Either `public_key` or `jwks_url` must be provided. |
+| `base_url` | `str \| None` | `None` | Root URL of the Sentinel identity service. The JWKS endpoint is derived automatically. This is the recommended option. |
+| `public_key` | `str \| None` | `None` | RSA public key in PEM format for air-gapped deployments where the service cannot reach Sentinel at runtime. |
+| `jwks_url` | `str \| None` | `None` | Explicit JWKS endpoint URL. Use only when pointing at a non-Sentinel OIDC provider whose JWKS path differs from `/.well-known/jwks.json`. |
 | `audience` | `str` | `"sentinel:access"` | Expected `aud` claim in the JWT. Tokens with a different audience are rejected. |
-| `algorithm` | `str` | `"RS256"` | JWT signing algorithm. Must match the identity service's signing configuration. |
+| `algorithm` | `str` | `"RS256"` | JWT signing algorithm. Must match Sentinel's signing configuration. |
 | `exclude_paths` | `list[str] \| None` | `["/health", "/docs", "/openapi.json"]` | List of path prefixes that bypass authentication. Any request whose path starts with one of these strings is passed through without token validation. |
 | `allowed_workspaces` | `set[str] \| None` | `None` | Optional set of workspace IDs permitted to access this service. `None` allows all workspaces. If set, requests with a workspace ID not in the set receive a 403 response. |
+
+One of `base_url`, `jwks_url`, or `public_key` must be provided.
 
 ## How It Works
 
@@ -81,7 +84,7 @@ If the header is missing or does not start with `Bearer `, the middleware return
 
 The token is decoded and validated using PyJWT with the provided public key and algorithm. The middleware checks:
 
-- **Signature** -- the token was signed by the identity service's private key
+- **Signature** -- the token was signed by Sentinel's private key
 - **Expiration** -- the `exp` claim has not passed
 - **Audience** -- the `aud` claim matches the expected value (default: `"sentinel:access"`)
 - **Structure** -- the token is a well-formed JWT
@@ -131,7 +134,7 @@ Content-Type: application/json
 {"detail": "Token has expired"}
 ```
 
-Returned when the JWT's `exp` claim is in the past. The client should use their refresh token to obtain a new access token from the identity service.
+Returned when the JWT's `exp` claim is in the past. The client should use their refresh token to obtain a new access token from Sentinel.
 
 ### Invalid Token
 
@@ -139,13 +142,13 @@ Returned when the JWT's `exp` claim is in the past. The client should use their 
 HTTP/1.1 401 Unauthorized
 Content-Type: application/json
 
-{"detail": "Invalid token: <reason>"}
+{"detail": "Invalid token"}
 ```
 
 Returned when:
 - The signature does not match the public key
 - The token is malformed or cannot be decoded
-- Required claims are missing
+- The audience claim does not match
 
 ### Workspace Not Permitted
 
@@ -169,7 +172,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 # Added last = runs first
 app.add_middleware(
     JWTAuthMiddleware,
-    public_key=public_key,
+    base_url="https://identity.example.com",
     exclude_paths=["/health", "/docs", "/openapi.json"],
 )
 
@@ -197,7 +200,7 @@ Override the defaults to include additional paths or restrict the exclusion list
 ```python
 app.add_middleware(
     JWTAuthMiddleware,
-    public_key=public_key,
+    base_url="https://identity.example.com",
     exclude_paths=[
         "/health",
         "/docs",
@@ -217,7 +220,7 @@ If your service should only be accessible to members of specific workspaces, pas
 ```python
 app.add_middleware(
     JWTAuthMiddleware,
-    public_key=public_key,
+    base_url="https://identity.example.com",
     allowed_workspaces={"a1b2c3d4-...", "e5f6g7h8-..."},
 )
 ```
@@ -238,7 +241,7 @@ Pass `None` (the default) to allow all workspaces. This is useful for multi-tena
 allowed = settings.allowed_workspaces  # e.g. ["uuid1", "uuid2"]
 app.add_middleware(
     JWTAuthMiddleware,
-    public_key=public_key,
+    base_url=settings.sentinel_url,
     allowed_workspaces=set(allowed) or None,
 )
 ```

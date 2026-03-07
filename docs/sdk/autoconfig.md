@@ -27,7 +27,7 @@ That's it. The `Sentinel` object:
 2. Creates `PermissionClient` and `RoleClient` on first use (lazy)
 3. Registers RBAC actions on startup via the lifespan
 4. Closes HTTP clients on shutdown
-5. Adds `JWTAuthMiddleware` with the JWKS URL auto-derived from `base_url`
+5. Adds `JWTAuthMiddleware` using `base_url` for automatic JWKS discovery
 
 ## Constructor
 
@@ -56,7 +56,9 @@ Sentinel(
 Returns a lazily-created [`PermissionClient`](permission-client.md) configured with the same `base_url`, `service_name`, and `service_key`.
 
 ```python
-await sentinel.permissions.can(token=token, resource_type="doc", resource_id=doc_id, action="view")
+allowed = await sentinel.permissions.can(
+    token=token, resource_type="doc", resource_id=doc_id, action="view",
+)
 ```
 
 ### `sentinel.roles`
@@ -64,8 +66,40 @@ await sentinel.permissions.can(token=token, resource_type="doc", resource_id=doc
 Returns a lazily-created [`RoleClient`](role-client.md) configured with the same `base_url`, `service_name`, and `service_key`.
 
 ```python
-actions = await sentinel.roles.get_user_actions(token, workspace_id)
+actions = await sentinel.roles.get_user_actions(
+    token=token, workspace_id=workspace_id,
+)
 ```
+
+### `sentinel.require_user`
+
+FastAPI dependency that returns the authenticated `AuthenticatedUser`. A convenience property equivalent to importing `get_current_user` directly.
+
+```python
+from fastapi import Depends
+from sentinel_auth.types import AuthenticatedUser
+
+@router.get("/me")
+async def get_profile(user: AuthenticatedUser = Depends(sentinel.require_user)):
+    return {"email": user.email}
+```
+
+### `sentinel.get_auth`
+
+FastAPI dependency that returns a [`RequestAuth`](ddd.md#requestauth-overview) for the current request. The `RequestAuth` bundles the authenticated user with token-backed authorization methods (`can`, `check_action`, `accessible`), eliminating the need to manually extract and pass JWT tokens.
+
+```python
+from fastapi import Depends
+from sentinel_auth import RequestAuth
+
+@router.get("/documents/{doc_id}")
+async def get_document(doc_id: UUID, auth: RequestAuth = Depends(sentinel.get_auth)):
+    if not await auth.can("document", doc_id, "view"):
+        raise HTTPException(403, "Access denied")
+    ...
+```
+
+This is especially useful for [DDD / Clean Architecture](ddd.md) applications where use cases receive auth context as a plain object typed against a Protocol.
 
 ### `sentinel.lifespan`
 
@@ -79,7 +113,7 @@ app = FastAPI(lifespan=sentinel.lifespan)
 
 ### `sentinel.protect(app, exclude_paths=None)`
 
-Adds `JWTAuthMiddleware` to the app. The JWKS URL is auto-derived as `{base_url}/.well-known/jwks.json`.
+Adds `JWTAuthMiddleware` to the app using the same `base_url`.
 
 ```python
 sentinel.protect(app, exclude_paths=["/health", "/docs", "/openapi.json"])
@@ -92,7 +126,7 @@ sentinel.protect(app, exclude_paths=["/health", "/docs", "/openapi.json"])
 
 ### `sentinel.require_action(action)`
 
-Dependency factory that enforces an RBAC action via the identity service. Returns a FastAPI dependency.
+Dependency factory that enforces an RBAC action via Sentinel. Returns a FastAPI dependency.
 
 ```python
 from fastapi import Depends

@@ -1,6 +1,6 @@
 # Permission Client
 
-The `PermissionClient` is an async HTTP client for the identity service's Zanzibar-style permission API. It provides entity-level access control beyond workspace roles, allowing you to check, register, and query permissions on individual resources.
+The `PermissionClient` is an async HTTP client for Sentinel's Zanzibar-style permission API. It provides entity-level access control beyond workspace roles, allowing you to check, register, and query permissions on individual resources.
 
 ## Overview
 
@@ -15,7 +15,7 @@ The permission system works alongside workspace roles:
 from sentinel_auth.permissions import PermissionClient
 
 permissions = PermissionClient(
-    base_url="http://identity-service:9003",
+    base_url="http://sentinel:9003",
     service_name="my-service",
     service_key="sk_my_service_key",
 )
@@ -25,7 +25,7 @@ permissions = PermissionClient(
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `base_url` | `str` | Yes | Base URL of the identity service (trailing slashes are stripped) |
+| `base_url` | `str` | Yes | Base URL of the Sentinel service (trailing slashes are stripped) |
 | `service_name` | `str` | Yes | Your service's registered name (e.g., `"docu-store"`, `"my-service"`) |
 | `service_key` | `str \| None` | No | Service API key for authenticated requests. Required for `register_resource` and recommended for all calls |
 
@@ -35,7 +35,7 @@ The client manages an internal `httpx.AsyncClient`. Use it as an async context m
 
 ```python
 async with PermissionClient(
-    base_url="http://identity-service:9003",
+    base_url="http://sentinel:9003",
     service_name="my-service",
     service_key="sk_my_service_key",
 ) as client:
@@ -43,7 +43,7 @@ async with PermissionClient(
     # httpx client is closed automatically on exit
 ```
 
-For long-lived clients (e.g., application-scoped), call `close()` explicitly during shutdown:
+For long-lived clients, call `close()` explicitly during shutdown (or use the [`Sentinel` autoconfig](autoconfig.md) which handles this automatically):
 
 ```python
 # In your FastAPI lifespan
@@ -52,7 +52,7 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.permissions = PermissionClient(
-        base_url="http://identity-service:9003",
+        base_url="http://sentinel:9003",
         service_name="my-service",
         service_key="sk_my_service_key",
     )
@@ -96,18 +96,17 @@ async def can(
 ```python
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Request
-from sentinel_auth.dependencies import get_current_user
+from fastapi import Depends, HTTPException
+from sentinel_auth.dependencies import get_current_user, get_token
 from sentinel_auth.types import AuthenticatedUser
 
 
 @router.get("/documents/{doc_id}")
 async def get_document(
     doc_id: UUID,
-    request: Request,
+    token: str = Depends(get_token),
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    token = request.headers["Authorization"].removeprefix("Bearer ")
     allowed = await permissions.can(token, "document", doc_id, "view")
     if not allowed:
         raise HTTPException(status_code=403, detail="You do not have access to this document")
@@ -144,21 +143,31 @@ async def check(
 | `resource_id` | `UUID` | Resource identifier |
 | `action` | `str` | Action to check |
 
-**Returns:** A list of `PermissionResult` objects, each containing the same fields as the input plus an `allowed: bool` field.
+**`PermissionResult` fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `service_name` | `str` | Service that owns the resource |
+| `resource_type` | `str` | Type of resource |
+| `resource_id` | `UUID` | Resource identifier |
+| `action` | `str` | Action that was checked |
+| `allowed` | `bool` | Whether the action is permitted |
+
+**Returns:** A list of `PermissionResult` objects.
 
 **Example:**
 
 ```python
+from sentinel_auth.dependencies import get_token
 from sentinel_auth.permissions import PermissionCheck
 
 
 @router.post("/documents/batch-check")
 async def check_access(
     doc_ids: list[UUID],
-    request: Request,
+    token: str = Depends(get_token),
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    token = request.headers["Authorization"].removeprefix("Bearer ")
     checks = [
         PermissionCheck(
             service_name="my-service",
@@ -177,7 +186,7 @@ async def check_access(
 
 ### `register_resource` -- Register a New Resource
 
-Register a resource with the identity service so that permissions can be managed for it. This uses service-key authentication only (no user JWT needed).
+Register a resource with Sentinel so that permissions can be managed for it. This uses service-key authentication only (no user JWT needed).
 
 **Signature:**
 
@@ -222,7 +231,7 @@ async def create_document(
     # Create the document in your database
     document = await create_doc(body, user)
 
-    # Register it with the identity service
+    # Register it with Sentinel
     await permissions.register_resource(
         resource_type="document",
         resource_id=document.id,
@@ -271,11 +280,10 @@ async def accessible(
 ```python
 @router.get("/documents")
 async def list_documents(
-    request: Request,
+    token: str = Depends(get_token),
     user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    token = request.headers["Authorization"].removeprefix("Bearer ")
     resource_ids, has_full_access = await permissions.accessible(
         token=token,
         resource_type="document",
@@ -302,6 +310,7 @@ The permission API uses different authentication requirements depending on the e
 | `/permissions/check` | Service key + user JWT | `check()`, `can()` |
 | `/permissions/accessible` | Service key + user JWT | `accessible()` |
 | `/permissions/register` | Service key only | `register_resource()` |
+| `/permissions/{id}/share` | Service key + user JWT | `share()` |
 
 The `_headers(token)` method handles this automatically:
 
@@ -310,23 +319,67 @@ The `_headers(token)` method handles this automatically:
 
 ## Error Handling
 
-The client raises `httpx.HTTPStatusError` on non-2xx responses. Wrap calls in try/except for graceful error handling:
+The client catches `httpx.HTTPStatusError` internally and re-raises it as `SentinelError` with a `status_code` attribute. Catch `SentinelError` for API errors and `httpx.ConnectError` / `httpx.TimeoutException` for network failures.
+
+See [Examples — Error Handling](examples.md#error-handling) for a full pattern with `fail_open` support.
+
+### `share` -- Share a Resource
+
+Share a resource with a user or group. This resolves the resource by its coordinates (`service_name`, `resource_type`, `resource_id`) and then creates an ACL entry.
+
+**Signature:**
 
 ```python
-import httpx
+async def share(
+    self,
+    token: str,
+    resource_type: str,
+    resource_id: uuid.UUID,
+    grantee_type: str,
+    grantee_id: uuid.UUID,
+    permission: str = "view",
+) -> dict
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `token` | `str` | *required* | The user's JWT access token |
+| `resource_type` | `str` | *required* | Type of resource (e.g., `"document"`) |
+| `resource_id` | `UUID` | *required* | Unique identifier of the resource |
+| `grantee_type` | `str` | *required* | Type of grantee -- `"user"` or `"group"` |
+| `grantee_id` | `UUID` | *required* | User or group ID to share with |
+| `permission` | `str` | `"view"` | Permission level to grant -- `"view"` or `"edit"` |
+
+**Returns:** The created ACL entry as a dict.
+
+**Example:**
+
+```python
+from uuid import UUID
+
+from fastapi import Depends, Request
+from sentinel_auth.dependencies import get_current_user, get_token
+from sentinel_auth.types import AuthenticatedUser
 
 
-async def safe_permission_check(token: str, resource_type: str, resource_id: UUID, action: str) -> bool:
-    try:
-        return await permissions.can(token, resource_type, resource_id, action)
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            raise HTTPException(status_code=401, detail="Token expired or invalid")
-        logger.error(f"Permission check failed: {e.response.status_code} {e.response.text}")
-        raise HTTPException(status_code=502, detail="Permission service unavailable")
-    except httpx.ConnectError:
-        logger.error("Cannot reach identity service")
-        raise HTTPException(status_code=502, detail="Permission service unavailable")
+@router.post("/documents/{doc_id}/share")
+async def share_document(
+    doc_id: UUID,
+    target_user_id: UUID,
+    token: str = Depends(get_token),
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    result = await permissions.share(
+        token=token,
+        resource_type="document",
+        resource_id=doc_id,
+        grantee_type="user",
+        grantee_id=target_user_id,
+        permission="view",
+    )
+    return result
 ```
 
 ## Timeout Configuration
@@ -337,7 +390,7 @@ The client uses a default timeout of 5 seconds. The underlying `httpx.AsyncClien
 import httpx
 
 client = PermissionClient(
-    base_url="http://identity-service:9003",
+    base_url="http://sentinel:9003",
     service_name="my-service",
     service_key="sk_key",
 )

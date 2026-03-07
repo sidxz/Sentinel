@@ -57,12 +57,17 @@ import { useAuth } from '@sentinel-auth/react'
 
 function MyComponent() {
   const {
+    client,         // SentinelAuth — the underlying client instance
     user,           // SentinelUser | null
     isAuthenticated,// boolean
     isLoading,      // boolean
     login,          // (provider: string) => Promise<void>
     logout,         // () => void
+    getProviders,   // () => Promise<string[]> — fetch available OAuth providers
+    getWorkspaces,  // (code: string) => Promise<WorkspaceOption[]> — get workspace options after OAuth callback
+    selectWorkspace,// (code: string, workspaceId: string) => Promise<void> — complete auth by selecting a workspace
     fetch,          // auth-aware fetch wrapper
+    fetchJson,      // <T>(input, init?) => Promise<T> — auth-aware fetch that returns parsed JSON
   } = useAuth()
 }
 ```

@@ -36,7 +36,7 @@ Use `require_role` to enforce minimum role requirements on routes. The role hier
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from sentinel_auth.dependencies import require_role
+from sentinel_auth.dependencies import get_current_user, require_role
 from sentinel_auth.types import AuthenticatedUser
 
 router = APIRouter(prefix="/documents")
@@ -86,7 +86,7 @@ Check whether the current user can access a specific resource using the permissi
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sentinel_auth.dependencies import get_current_user
+from sentinel_auth.dependencies import get_current_user, get_token
 from sentinel_auth.permissions import PermissionClient
 from sentinel_auth.types import AuthenticatedUser
 
@@ -95,10 +95,6 @@ router = APIRouter(prefix="/documents")
 
 def get_permissions(request: Request) -> PermissionClient:
     return request.app.state.permissions
-
-
-def get_token(request: Request) -> str:
-    return request.headers["Authorization"].removeprefix("Bearer ")
 
 
 @router.get("/{doc_id}")
@@ -128,7 +124,7 @@ async def get_document(
 
 ## Registering Resources on Creation
 
-Register new resources with the identity service so permissions can be managed for them.
+Register new resources with Sentinel so permissions can be managed for them.
 
 ```python
 @router.post("/")
@@ -149,7 +145,7 @@ async def create_document(
     await db.commit()
     await db.refresh(document)
 
-    # Register with identity service for permission management
+    # Register with Sentinel for permission management
     await perms.register_resource(
         resource_type="document",
         resource_id=document.id,
@@ -185,7 +181,7 @@ async def list_documents(
     perms: PermissionClient = Depends(get_permissions),
     db: AsyncSession = Depends(get_db),
 ):
-    # Ask the identity service which documents this user can view
+    # Ask Sentinel which documents this user can view
     resource_ids, has_full_access = await perms.accessible(
         token=token,
         resource_type="document",
@@ -246,8 +242,10 @@ async def update_document(
 Wrap permission client calls with proper error handling to avoid cascading failures:
 
 ```python
-import httpx
 import logging
+
+import httpx
+from sentinel_auth.types import SentinelError
 
 logger = logging.getLogger(__name__)
 
@@ -269,15 +267,11 @@ async def check_permission_safe(
     """
     try:
         return await perms.can(token, resource_type, resource_id, action)
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
+    except SentinelError as e:
+        if e.status_code == 401:
             # Token is invalid/expired -- propagate as auth error
             raise HTTPException(status_code=401, detail="Authentication expired")
-        logger.error(
-            "Permission check failed: %s %s",
-            e.response.status_code,
-            e.response.text,
-        )
+        logger.error("Permission check failed: %s", e.status_code)
         if fail_open:
             return True
         raise HTTPException(status_code=502, detail="Permission service error")
@@ -348,7 +342,6 @@ The recommended way to manage the `PermissionClient` lifecycle:
 ```python
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from sentinel_auth.middleware import JWTAuthMiddleware
@@ -359,9 +352,9 @@ from sentinel_auth.permissions import PermissionClient
 async def lifespan(app: FastAPI):
     # Startup: create the permission client
     app.state.permissions = PermissionClient(
-        base_url=os.environ["IDENTITY_SERVICE_URL"],
+        base_url=os.environ["SENTINEL_URL"],
         service_name="my-service",
-        service_key=os.environ["IDENTITY_SERVICE_KEY"],
+        service_key=os.environ["SENTINEL_SERVICE_KEY"],
     )
     yield
     # Shutdown: close the HTTP client
@@ -370,10 +363,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="My Service", lifespan=lifespan)
 
-PUBLIC_KEY = Path("keys/public.pem").read_text()
 app.add_middleware(
     JWTAuthMiddleware,
-    public_key=PUBLIC_KEY,
+    base_url=os.environ["SENTINEL_URL"],
     exclude_paths=["/health", "/docs", "/openapi.json"],
 )
 ```
@@ -453,7 +445,7 @@ assert response.status_code == 200
 
 ## Demo Application
 
-The identity service repository includes a demo application under `demo/` that shows a working integration with the SDK. It demonstrates:
+The Sentinel repository includes a demo application under `demo/` that shows a working integration with the SDK. It demonstrates:
 
 - JWT middleware configuration
 - Route protection with `get_current_user` and `require_role`

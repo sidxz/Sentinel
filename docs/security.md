@@ -135,7 +135,7 @@ The service uses four authentication tiers, applied depending on the sensitivity
 
 ### RS256 JWT Tokens
 
-All tokens are signed with RS256 (RSA + SHA-256) using a private key and verified with the corresponding public key. This allows any service with the public key to validate tokens without contacting the identity service.
+All tokens are signed with RS256 (RSA + SHA-256) using a private key and verified with the corresponding public key. This allows any service with the public key to validate tokens without contacting Sentinel.
 
 **Key generation:**
 
@@ -262,7 +262,7 @@ User logout (`POST /auth/logout`) performs two actions:
 
 ## Service-to-Service Authentication
 
-Backend services authenticate to the identity service using the `X-Service-Key` header. This is used for permission and role operations where a service acts autonomously or on behalf of a user.
+Backend services authenticate to Sentinel using the `X-Service-Key` header. This is used for permission and role operations where a service acts autonomously or on behalf of a user.
 
 ### Service Apps (Database-Managed Keys)
 

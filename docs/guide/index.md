@@ -52,7 +52,7 @@ NIST Core RBAC as a third authorization layer between workspace roles and entity
 
 ## Service-to-Service Auth
 
-How consuming applications authenticate with the Identity Service using `X-Service-Key` headers. Covers the dual-auth and service-only auth tiers, and key management via the admin panel.
+How consuming applications authenticate with Sentinel using `X-Service-Key` headers. Covers the dual-auth and service-only auth tiers, and key management via the admin panel.
 
 [Read more](service-auth.md)
 

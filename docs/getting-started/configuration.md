@@ -83,7 +83,7 @@ Replace `{BASE_URL}` with your service URL (default: `http://localhost:9003`).
 |----------|------|---------|-------------|
 | `SERVICE_HOST` | `str` | `0.0.0.0` | Host address the service binds to. |
 | `SERVICE_PORT` | `int` | `9003` | Port the service listens on. |
-| `BASE_URL` | `str` | `http://localhost:9003` | Public URL of the identity service. Used to construct OAuth callback URLs. |
+| `BASE_URL` | `str` | `http://localhost:9003` | Public URL of Sentinel. Used to construct OAuth callback URLs. |
 | `FRONTEND_URL` | `str` | `http://localhost:3000` | URL of the frontend application. Used for post-login redirects. |
 
 ---
@@ -116,7 +116,7 @@ Replace `{BASE_URL}` with your service URL (default: `http://localhost:9003`).
     ```
 
 !!! note "Service API keys"
-    Service API keys are no longer configured via environment variables. They are managed through the admin panel under **Service Apps** (`/admin/service-apps`). Each key is scoped to a `service_name` and stored as a SHA-256 hash. See the [Service Authentication guide](../guide/service-auth.md) for details.
+    Service API keys are configured through the admin panel under **Service Apps** (`/admin/service-apps`), not via environment variables. Each key is scoped to a `service_name` and stored as a SHA-256 hash. See the [Service Authentication guide](../guide/service-auth.md) for details.
 
 ---
 

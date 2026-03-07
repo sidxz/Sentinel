@@ -1,6 +1,6 @@
 # Admin Panel
 
-The Sentinel Auth includes an administrative panel for platform operators to manage users, workspaces, groups, permissions, and monitor system activity. The admin panel runs as a separate React application and communicates with the Identity Service API through dedicated admin endpoints.
+The Sentinel Auth includes an administrative panel for platform operators to manage users, workspaces, groups, permissions, and monitor system activity. The admin panel runs as a separate React application and communicates with the Sentinel API through dedicated admin endpoints.
 
 ## Overview
 
@@ -96,17 +96,17 @@ Admin authentication uses the same OAuth providers as regular user authenticatio
 1. Admin navigates to the admin panel login page
 2. Admin clicks "Sign in with {provider}"
 3. Browser → GET /auth/admin/login/{provider}
-4. Identity Service redirects to OAuth provider
+4. Sentinel redirects to OAuth provider
 5. OAuth provider authenticates the user
 6. Provider redirects to GET /auth/admin/callback/{provider}
-7. Identity Service:
+7. Sentinel:
    a. Exchanges authorization code for tokens
    b. Extracts user info (same logic as regular auth)
    c. Calls find_or_create_user()
    d. Checks user.is_admin flag
    e. If not admin → redirect to login page with error=not_admin
    f. If admin → create admin JWT token
-8. Identity Service sets admin_token cookie and redirects to admin panel
+8. Sentinel sets admin_token cookie and redirects to admin panel
 ```
 
 ### Admin JWT Cookie
@@ -179,7 +179,7 @@ The admin panel URL is configured via:
 ADMIN_URL=http://localhost:9004
 ```
 
-This is used by the Identity Service to redirect the admin after successful authentication. In production, set this to the public URL of the admin panel (e.g., `https://admin.identity.example.com`).
+This is used by Sentinel to redirect the admin after successful authentication. In production, set this to the public URL of the admin panel (e.g., `https://admin.identity.example.com`).
 
 ## API Endpoints
 

@@ -4,176 +4,195 @@ This guide covers the testing approach for the Sentinel Auth, including how to r
 
 ## Running Tests
 
-From the service directory:
+### SDK Tests
+
+The SDK (`sdk/`) has a full test suite. From the SDK directory:
 
 ```bash
-cd service && uv run pytest
+cd sdk && uv run pytest
 ```
 
 With verbose output:
 
 ```bash
-cd service && uv run pytest -v
+cd sdk && uv run pytest -v
 ```
 
 Run a specific test file:
 
 ```bash
-cd service && uv run pytest tests/test_permissions.py
+cd sdk && uv run pytest tests/test_permissions.py
 ```
 
 Run a specific test function:
 
 ```bash
-cd service && uv run pytest tests/test_permissions.py::test_check_permission -v
+cd sdk && uv run pytest tests/test_permissions.py::TestPermissionClient::test_can_allowed -v
 ```
+
+### Service Tests
+
+!!! warning "Not yet implemented"
+    The service (`service/`) does not currently have its own test suite. Integration and API-level tests for the FastAPI service are planned but not yet in place. Contributions welcome.
 
 ## Test Structure
 
-Tests mirror the source directory structure:
+SDK tests live in `sdk/tests/` and cover each public module:
 
 ```
-service/
-├── src/
-│   ├── api/
-│   │   ├── auth_routes.py
-│   │   ├── user_routes.py
-│   │   └── permission_routes.py
-│   └── services/
-│       ├── auth_service.py
-│       └── permission_service.py
+sdk/
+├── src/sentinel_auth/
+│   ├── types.py
+│   ├── middleware.py
+│   ├── dependencies.py
+│   ├── permissions.py
+│   ├── roles.py
+│   └── sentinel.py
 └── tests/
-    ├── conftest.py              # Shared fixtures
-    ├── test_auth.py             # Auth route tests
-    ├── test_users.py            # User route tests
-    └── test_permissions.py      # Permission route tests
+    ├── conftest.py              # Shared fixtures (RSA keypair, JWT helpers)
+    ├── test_types.py            # AuthenticatedUser, WorkspaceContext
+    ├── test_middleware.py       # JWTAuthMiddleware (Starlette TestClient)
+    ├── test_dependencies.py     # FastAPI dependency helpers
+    ├── test_permissions.py      # PermissionClient (httpx mocked via respx)
+    └── test_roles.py            # RoleClient (httpx mocked via respx)
 ```
 
 ## Fixtures
 
-### Database Session
+Shared fixtures are defined in `sdk/tests/conftest.py`.
 
-The `conftest.py` file provides a test database session that uses transactions rolled back after each test, ensuring test isolation without requiring a separate test database:
+### RSA Keypair
 
-```python
-@pytest.fixture
-async def db_session():
-    async with async_session() as session:
-        async with session.begin():
-            yield session
-            await session.rollback()
-```
-
-### Test Client
-
-An async test client for making HTTP requests against the FastAPI application:
+A session-scoped RSA keypair used to sign and verify JWTs throughout the test suite:
 
 ```python
-from httpx import AsyncClient, ASGITransport
-
-@pytest.fixture
-async def client():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-```
-
-### Authenticated User
-
-A fixture that provides a pre-authenticated user context, bypassing the JWT validation middleware:
-
-```python
-@pytest.fixture
-def auth_headers(test_user):
-    """Headers with a valid JWT for test_user."""
-    token = create_access_token(
-        user_id=str(test_user.id),
-        email=test_user.email,
-        workspace_roles={"test-workspace": "owner"},
+@pytest.fixture(scope="session")
+def rsa_keypair():
+    """Generate an RSA keypair for signing/verifying JWTs."""
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
     )
-    return {"Authorization": f"Bearer {token}"}
+    return private_pem, public_pem
+```
+
+### JWT Payload and Token Factory
+
+A standard JWT payload matching the middleware's expected claims, and a factory to encode it:
+
+```python
+@pytest.fixture()
+def jwt_payload(user_id, workspace_id):
+    """Standard JWT payload matching the middleware's expected claims."""
+    return {
+        "sub": str(user_id),
+        "email": "alice@example.com",
+        "name": "Alice",
+        "wid": str(workspace_id),
+        "wslug": "acme-corp",
+        "wrole": "editor",
+        "groups": [],
+        "aud": "sentinel:access",
+        "exp": datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1),
+        "iat": datetime.datetime.now(datetime.UTC),
+    }
+
+@pytest.fixture()
+def make_token(rsa_keypair):
+    """Factory to encode a JWT payload with the test private key."""
+    private_pem, _ = rsa_keypair
+    def _make(payload: dict) -> str:
+        return jwt.encode(payload, private_pem, algorithm="RS256")
+    return _make
+```
+
+### Injecting a Fake User (Dependency Tests)
+
+For testing FastAPI dependency helpers, a middleware injects an `AuthenticatedUser` into `request.state` to bypass JWT validation:
+
+```python
+def _inject_user(app: FastAPI, user: AuthenticatedUser):
+    @app.middleware("http")
+    async def _set_user(request: Request, call_next):
+        request.state.user = user
+        return await call_next(request)
 ```
 
 ## Testing Patterns
 
-### Testing API Routes
+### Testing Middleware
 
-Use the async test client to make requests and assert on responses:
-
-```python
-@pytest.mark.asyncio
-async def test_get_current_user(client, auth_headers):
-    response = await client.get("/users/me", headers=auth_headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["email"] == "test@example.com"
-```
-
-### Testing with Mocked JWT
-
-For tests that need to verify behavior with different user contexts, create tokens with specific claims:
+Middleware tests build a minimal Starlette app, add `JWTAuthMiddleware`, and use `TestClient` to verify token validation:
 
 ```python
-@pytest.mark.asyncio
-async def test_viewer_cannot_delete(client):
-    token = create_access_token(
-        user_id="user-uuid",
-        email="viewer@example.com",
-        workspace_roles={"my-workspace": "viewer"},
-    )
-    headers = {"Authorization": f"Bearer {token}"}
+class TestJWTMiddleware:
+    def test_valid_token(self, rsa_keypair, valid_token):
+        _, pub = rsa_keypair
+        client = TestClient(_make_app(pub))
+        resp = client.get("/protected", headers={"Authorization": f"Bearer {valid_token}"})
+        assert resp.status_code == 200
+        assert resp.json()["email"] == "alice@example.com"
 
-    response = await client.delete(
-        "/workspaces/my-workspace",
-        headers=headers,
-    )
-    assert response.status_code == 403
+    def test_expired_token(self, rsa_keypair, jwt_payload, make_token):
+        _, pub = rsa_keypair
+        jwt_payload["exp"] = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
+        token = make_token(jwt_payload)
+        client = TestClient(_make_app(pub))
+        resp = client.get("/protected", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 401
 ```
 
-### Testing Permission Checks
+### Testing FastAPI Dependencies
 
-Permission tests typically involve registering a resource, setting visibility or shares, and then verifying access:
+Dependency tests use `FastAPI` + `TestClient` with the fake-user middleware to verify that `get_current_user`, `get_workspace_id`, `get_workspace_context`, and `require_role` work correctly:
 
 ```python
-@pytest.mark.asyncio
-async def test_permission_check_owner_has_access(client, auth_headers, service_headers):
-    # Register a resource
-    await client.post(
-        "/permissions/register",
-        json={
-            "resource_type": "document",
-            "resource_id": "doc-uuid",
-            "workspace_id": "ws-uuid",
-            "owner_id": "user-uuid",
-        },
-        headers=service_headers,
-    )
+class TestRequireRole:
+    def test_passes_when_role_sufficient(self, editor_user):
+        app = FastAPI()
+        _inject_user(app, editor_user)
 
-    # Check access
-    response = await client.post(
-        "/permissions/check",
-        json={
-            "resource_type": "document",
-            "resource_id": "doc-uuid",
-            "permission": "edit",
-        },
-        headers={**auth_headers, **service_headers},
-    )
-    assert response.status_code == 200
-    assert response.json()["allowed"] is True
+        @app.get("/edit")
+        def edit(user: AuthenticatedUser = Depends(require_role("editor"))):
+            return {"ok": True}
+
+        assert TestClient(app).get("/edit").status_code == 200
+
+    def test_rejects_when_role_insufficient(self, editor_user):
+        app = FastAPI()
+        _inject_user(app, editor_user)
+
+        @app.get("/admin")
+        def admin(user: AuthenticatedUser = Depends(require_role("admin"))):
+            return {"ok": True}
+
+        resp = TestClient(app).get("/admin")
+        assert resp.status_code == 403
 ```
 
-### Testing Service-Key Authentication
+### Testing HTTP Clients (PermissionClient / RoleClient)
 
-For endpoints that require service-key authentication:
+The `PermissionClient` and `RoleClient` tests use [respx](https://lundberg.github.io/respx/) to mock `httpx` requests, so no live service is needed:
 
 ```python
-@pytest.fixture
-def service_headers():
-    return {"X-Service-Key": "test-service-key"}
+class TestRoleClient:
+    @respx.mock
+    async def test_check_action_allowed(self, client):
+        respx.post("https://auth.test/roles/check-action").mock(
+            return_value=httpx.Response(200, json={"allowed": True})
+        )
+        assert await client.check_action("tok", "reports:export", WS_ID) is True
 ```
-
-Service keys are always validated against the database. For integration tests, create a service app via the admin API or use test fixtures that seed a service app into the database.
 
 ## Security / Penetration Testing
 

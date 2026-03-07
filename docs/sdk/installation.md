@@ -18,7 +18,7 @@ This installs the SDK and all its dependencies (`pyjwt[crypto]`, `httpx`, `crypt
 
 ## Editable Install for Local Development
 
-If you are developing against a local checkout of the identity service monorepo, you can install the SDK in editable mode so changes to the SDK source are reflected immediately.
+If you are developing against a local checkout of the Sentinel monorepo, you can install the SDK in editable mode so changes to the SDK source are reflected immediately.
 
 Add the SDK as a dependency in your service's `pyproject.toml`:
 
@@ -33,7 +33,7 @@ Then configure uv to resolve it from the local path by adding a `[tool.uv.source
 
 ```toml
 [tool.uv.sources]
-sentinel-auth-sdk = { path = "../identity-service/sdk", editable = true }
+sentinel-auth-sdk = { path = "../sentinel/sdk", editable = true }
 ```
 
 Run `uv sync` to install:
@@ -42,7 +42,7 @@ Run `uv sync` to install:
 uv sync
 ```
 
-The SDK will be installed as an editable link. Any changes you make to the SDK code under `identity-service/sdk/src/sentinel_auth/` will be picked up without reinstalling.
+The SDK will be installed as an editable link. Any changes you make to the SDK code under `sentinel/sdk/src/sentinel_auth/` will be picked up without reinstalling.
 
 ## Verify Installation
 
@@ -55,65 +55,87 @@ Confirm the SDK is installed and importable:
 >>> from sentinel_auth.permissions import PermissionClient
 ```
 
-## Public Key Setup
+## Token Verification Setup
 
-The SDK's JWT middleware validates tokens using the identity service's RS256 public key. You need a copy of this key available to your service at runtime.
+The SDK's JWT middleware needs to verify token signatures from Sentinel. There are two approaches:
 
-### Option 1: File on Disk
+### JWKS Auto-Discovery (recommended)
 
-Copy the public key from the identity service:
+Point the middleware at Sentinel's JWKS endpoint. The signing key is fetched lazily on first request and cached. No key files to distribute or rotate.
 
-```bash
-cp /path/to/identity-service/keys/public.pem ./keys/public.pem
+```python
+app.add_middleware(
+    JWTAuthMiddleware,
+    base_url="http://sentinel:9003",
+)
 ```
 
-Load it in your application:
+The [`Sentinel` autoconfig class](autoconfig.md) does this automatically — it derives the JWKS URL from `base_url`:
+
+```python
+sentinel = Sentinel(
+    base_url="http://sentinel:9003",
+    service_name="my-service",
+    service_key="sk_...",
+)
+sentinel.protect(app)  # adds JWTAuthMiddleware with JWKS
+```
+
+### PEM Public Key (alternative)
+
+If your deployment cannot reach Sentinel at runtime (air-gapped, pre-baked images), you can provide the RSA public key directly.
+
+<details>
+<summary>PEM key distribution options</summary>
+
+**File on disk:**
+
+```bash
+cp /path/to/sentinel/keys/public.pem ./keys/public.pem
+```
 
 ```python
 from pathlib import Path
 
 PUBLIC_KEY = Path("keys/public.pem").read_text()
+app.add_middleware(JWTAuthMiddleware, public_key=PUBLIC_KEY)
 ```
 
-### Option 2: Environment Variable
-
-Set the public key as an environment variable (useful for containerized deployments):
+**Environment variable** (useful for containers):
 
 ```bash
-export IDENTITY_PUBLIC_KEY="$(cat keys/public.pem)"
+export SENTINEL_PUBLIC_KEY="$(cat keys/public.pem)"
 ```
-
-Load it in your application:
 
 ```python
 import os
 
-PUBLIC_KEY = os.environ["IDENTITY_PUBLIC_KEY"]
+PUBLIC_KEY = os.environ["SENTINEL_PUBLIC_KEY"]
+app.add_middleware(JWTAuthMiddleware, public_key=PUBLIC_KEY)
 ```
 
-### Option 3: Shared Volume (Docker)
-
-In a Docker Compose setup, mount the identity service's key directory as a read-only volume:
+**Shared Docker volume:**
 
 ```yaml
 services:
   my-service:
     volumes:
-      - identity-keys:/app/keys:ro
+      - sentinel-keys:/app/keys:ro
 
-  identity-service:
+  sentinel:
     volumes:
-      - identity-keys:/app/keys
+      - sentinel-keys:/app/keys
 
 volumes:
-  identity-keys:
+  sentinel-keys:
 ```
+
+</details>
 
 ## Requirements
 
 - **Python** >= 3.12
-- **Identity Service** running and accessible over the network (for permission client calls)
-- **Public key** from the identity service (for JWT validation)
+- **Sentinel** running and accessible over the network (for JWKS, permission, and role API calls)
 
 ## Next Steps
 

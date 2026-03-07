@@ -1,6 +1,6 @@
 # Role Client
 
-The `RoleClient` is an async HTTP client for the identity service's RBAC API. It allows services to register actions, check user permissions, and query available actions -- providing action-based authorization beyond workspace roles.
+The `RoleClient` is an async HTTP client for Sentinel's RBAC API. It allows services to register actions, check user permissions, and query available actions -- providing action-based authorization beyond workspace roles.
 
 ## Overview
 
@@ -16,7 +16,7 @@ The RBAC system works alongside workspace roles and entity ACLs:
 from sentinel_auth.roles import RoleClient
 
 roles = RoleClient(
-    base_url="http://identity-service:9003",
+    base_url="http://sentinel:9003",
     service_name="my-service",
     service_key="sk_my_service_key",
 )
@@ -26,7 +26,7 @@ roles = RoleClient(
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `base_url` | `str` | Yes | Base URL of the identity service (trailing slashes are stripped) |
+| `base_url` | `str` | Yes | Base URL of the Sentinel service (trailing slashes are stripped) |
 | `service_name` | `str` | Yes | Your service's registered name (e.g., `"analytics"`, `"docu-store"`) |
 | `service_key` | `str \| None` | No | Service API key for authenticated requests |
 
@@ -36,14 +36,14 @@ The client manages an internal `httpx.AsyncClient`. Use it as an async context m
 
 ```python
 async with RoleClient(
-    base_url="http://identity-service:9003",
+    base_url="http://sentinel:9003",
     service_name="my-service",
     service_key="sk_my_service_key",
 ) as client:
     allowed = await client.check_action(token, "reports:export", workspace_id)
 ```
 
-For long-lived clients, call `close()` explicitly during shutdown:
+For long-lived clients, call `close()` explicitly during shutdown (or use the [`Sentinel` autoconfig](autoconfig.md) which handles this automatically):
 
 ```python
 from contextlib import asynccontextmanager
@@ -51,7 +51,7 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.roles = RoleClient(
-        base_url="http://identity-service:9003",
+        base_url="http://sentinel:9003",
         service_name="my-service",
         service_key="sk_my_service_key",
     )
@@ -77,7 +77,7 @@ async def register_actions(self, actions: list[dict]) -> dict
 |-----------|------|-------------|
 | `actions` | `list[dict]` | List of action definitions. Each dict has `"action"` (str, required) and `"description"` (str, optional) |
 
-**Returns:** The list of registered action objects.
+**Returns:** The API response as a `dict`.
 
 **Example:**
 
@@ -118,17 +118,16 @@ async def check_action(
 **Example:**
 
 ```python
-from fastapi import Depends, HTTPException, Request
-from sentinel_auth.dependencies import get_current_user
+from fastapi import Depends, HTTPException
+from sentinel_auth.dependencies import get_current_user, get_token
 from sentinel_auth.types import AuthenticatedUser
 
 
 @router.get("/reports/export")
 async def export_report(
-    request: Request,
+    token: str = Depends(get_token),
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    token = request.headers["Authorization"].removeprefix("Bearer ")
     allowed = await roles.check_action(token, "reports:export", user.workspace_id)
     if not allowed:
         raise HTTPException(status_code=403, detail="Not authorized to export reports")
@@ -163,10 +162,9 @@ async def get_user_actions(
 ```python
 @router.get("/user/capabilities")
 async def get_capabilities(
-    request: Request,
+    token: str = Depends(get_token),
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    token = request.headers["Authorization"].removeprefix("Bearer ")
     actions = await roles.get_user_actions(token, user.workspace_id)
     return {"actions": actions}
     # → {"actions": ["reports:export", "reports:view", "dashboards:create"]}
@@ -184,24 +182,9 @@ The `_headers(token)` method handles this automatically -- same pattern as `Perm
 
 ## Error Handling
 
-The client raises `httpx.HTTPStatusError` on non-2xx responses:
+The client catches `httpx.HTTPStatusError` internally and re-raises it as `SentinelError` with a `status_code` attribute. Catch `SentinelError` for API errors and `httpx.ConnectError` / `httpx.TimeoutException` for network failures.
 
-```python
-import httpx
-
-
-async def safe_action_check(token: str, action: str, workspace_id: UUID) -> bool:
-    try:
-        return await roles.check_action(token, action, workspace_id)
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            raise HTTPException(status_code=401, detail="Token expired or invalid")
-        if e.response.status_code == 403:
-            return False  # Cross-workspace check
-        raise HTTPException(status_code=502, detail="Role service unavailable")
-    except httpx.ConnectError:
-        raise HTTPException(status_code=502, detail="Role service unavailable")
-```
+See [Examples — Error Handling](examples.md#error-handling) for a full pattern.
 
 ## Next Steps
 

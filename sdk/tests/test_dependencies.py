@@ -7,16 +7,27 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from sentinel_auth.dependencies import get_current_user, get_workspace_context, get_workspace_id, require_role
+from sentinel_auth.auth import RequestAuth
+from sentinel_auth.dependencies import (
+    get_current_user,
+    get_request_auth_factory,
+    get_workspace_context,
+    get_workspace_id,
+    require_role,
+)
 from sentinel_auth.types import AuthenticatedUser
 
+FAKE_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.fake"
 
-def _inject_user(app: FastAPI, user: AuthenticatedUser):
+
+def _inject_user(app: FastAPI, user: AuthenticatedUser, *, with_token: bool = False):
     """Middleware that injects a fake user into request.state (bypass JWT)."""
 
     @app.middleware("http")
     async def _set_user(request: Request, call_next):
         request.state.user = user
+        if with_token:
+            request.state.token = FAKE_TOKEN
         return await call_next(request)
 
 
@@ -106,3 +117,66 @@ class TestRequireRole:
         resp = TestClient(app).get("/admin")
         assert resp.status_code == 403
         assert "admin" in resp.json()["detail"]
+
+
+class TestGetRequestAuth:
+    def test_returns_request_auth_with_state_token(self, editor_user):
+        """When middleware sets request.state.token, get_request_auth uses it."""
+        app = FastAPI()
+        _inject_user(app, editor_user, with_token=True)
+        dep = get_request_auth_factory()
+
+        @app.get("/auth")
+        def auth_route(auth: RequestAuth = Depends(dep)):
+            return {"user_id": str(auth.user_id), "email": auth.email}
+
+        resp = TestClient(app).get("/auth")
+        assert resp.status_code == 200
+        assert resp.json()["email"] == "a@b.com"
+
+    def test_fallback_to_authorization_header(self, editor_user):
+        """When request.state.token is missing, extracts from Authorization header."""
+        app = FastAPI()
+        _inject_user(app, editor_user, with_token=False)
+        dep = get_request_auth_factory()
+
+        @app.get("/auth")
+        def auth_route(auth: RequestAuth = Depends(dep)):
+            return {"user_id": str(auth.user_id)}
+
+        resp = TestClient(app).get("/auth", headers={"Authorization": f"Bearer {FAKE_TOKEN}"})
+        assert resp.status_code == 200
+
+    def test_401_when_no_token_anywhere(self, editor_user):
+        """When no token on state or header, returns 401."""
+        app = FastAPI()
+        _inject_user(app, editor_user, with_token=False)
+        dep = get_request_auth_factory()
+
+        @app.get("/auth")
+        def auth_route(auth: RequestAuth = Depends(dep)):
+            return {"ok": True}
+
+        resp = TestClient(app).get("/auth")
+        assert resp.status_code == 401
+
+    def test_wires_permission_and_role_clients(self, editor_user):
+        """Clients passed to factory are available on the resulting RequestAuth."""
+        from sentinel_auth.permissions import PermissionClient
+        from sentinel_auth.roles import RoleClient
+
+        pc = PermissionClient("https://auth.test", "svc", service_key="sk")
+        rc = RoleClient("https://auth.test", "svc", service_key="sk")
+        app = FastAPI()
+        _inject_user(app, editor_user, with_token=True)
+        dep = get_request_auth_factory(permissions=pc, roles=rc)
+
+        @app.get("/auth")
+        def auth_route(auth: RequestAuth = Depends(dep)):
+            has_perms = auth._permissions is not None
+            has_roles = auth._roles is not None
+            return {"has_perms": has_perms, "has_roles": has_roles}
+
+        resp = TestClient(app).get("/auth")
+        assert resp.status_code == 200
+        assert resp.json() == {"has_perms": True, "has_roles": True}

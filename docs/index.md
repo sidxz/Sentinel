@@ -29,7 +29,7 @@ Built with **FastAPI**, **SQLAlchemy 2.0** (async), **PostgreSQL 16**, **Redis 7
 
     ---
 
-    Isolate users, groups, and resources by workspace. Role-based access control at the workspace level with `owner`, `admin`, `member`, and `viewer` roles embedded in every JWT.
+    Isolate users, groups, and resources by workspace. Role-based access control at the workspace level with `owner`, `admin`, `editor`, and `viewer` roles embedded in every JWT.
 
     [:octicons-arrow-right-24: Workspace management](guide/workspaces.md)
 

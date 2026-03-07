@@ -64,7 +64,7 @@ Set this to the exact origin(s) of your frontend. Do not use wildcards in produc
 
 ## 7. Deploy behind a TLS-terminating reverse proxy
 
-The identity service does not handle TLS itself. Place it behind a reverse proxy that terminates HTTPS:
+Sentinel does not handle TLS itself. Place it behind a reverse proxy that terminates HTTPS:
 
 === "Caddy (recommended)"
 
@@ -149,12 +149,12 @@ If you previously committed secrets (API keys, session secrets, database passwor
 Do not reuse the development database credentials (`identity` / `identity_dev`) in production. Create a dedicated PostgreSQL user with a strong password:
 
 ```sql
-CREATE USER identity_prod WITH PASSWORD 'strong-random-password';
-CREATE DATABASE identity_prod OWNER identity_prod;
+CREATE USER sentinel WITH PASSWORD 'strong-random-password';
+CREATE DATABASE sentinel OWNER sentinel;
 ```
 
 ```ini
-DATABASE_URL=postgresql+asyncpg://identity_prod:strong-random-password@db-host:5432/identity_prod?ssl=require
+DATABASE_URL=postgresql+asyncpg://sentinel:strong-random-password@db-host:5432/sentinel?ssl=require
 ```
 
 ## 13. Generate production JWT keys

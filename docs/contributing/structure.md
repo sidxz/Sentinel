@@ -3,7 +3,7 @@
 The Sentinel Auth is organized as a uv workspace with multiple packages. Here is the full directory tree with annotations.
 
 ```
-identity-service/
+sentinel/
 ├── service/                        # FastAPI microservice
 │   ├── src/
 │   │   ├── main.py                # App factory + lifespan (auto-runs migrations)
@@ -14,6 +14,9 @@ identity-service/
 │   │   │   ├── workspace.py      #   Workspace, WorkspaceMembership
 │   │   │   ├── group.py          #   Group, GroupMembership
 │   │   │   ├── permission.py     #   ResourcePermission, ResourceShare
+│   │   │   ├── role.py           #   ServiceAction, Role, RoleAction, UserRole
+│   │   │   ├── service_app.py    #   ServiceApp (backend API key auth)
+│   │   │   ├── client_app.py     #   ClientApp (frontend redirect URI allowlist)
 │   │   │   └── activity.py       #   ActivityLog
 │   │   ├── schemas/               # Pydantic request/response schemas
 │   │   │   └── permission.py     #   Permission-related schemas
@@ -30,6 +33,7 @@ identity-service/
 │   │   │   ├── workspace_routes.py   # /workspaces/*
 │   │   │   ├── group_routes.py   #   /groups/*
 │   │   │   ├── permission_routes.py  # /permissions/*
+│   │   │   ├── role_routes.py    #   /roles/* (RBAC service-facing API)
 │   │   │   ├── admin_routes.py   #   /admin/* (admin panel API)
 │   │   │   └── dependencies.py   #   Shared FastAPI dependencies
 │   │   └── middleware/            # ASGI middleware
@@ -43,11 +47,19 @@ identity-service/
 ├── sdk/                           # Python SDK (pip-installable)
 │   ├── src/sentinel_auth/
 │   │   ├── __init__.py
-│   │   ├── types.py              # AuthenticatedUser, WorkspaceContext
+│   │   ├── types.py              # AuthenticatedUser, WorkspaceContext, SentinelError
 │   │   ├── middleware.py         # JWTAuthMiddleware (Starlette)
 │   │   ├── dependencies.py       # FastAPI deps (get_current_user, etc.)
-│   │   └── permissions.py        # PermissionClient (httpx async)
+│   │   ├── permissions.py        # PermissionClient (httpx async)
+│   │   ├── roles.py              # RoleClient (RBAC action checks, httpx async)
+│   │   └── sentinel.py           # Sentinel autoconfig class (one-line integration)
+│   ├── tests/                    # SDK test suite (pytest + respx)
 │   └── pyproject.toml            # Published as sentinel-auth-sdk
+│
+├── sdks/                          # JavaScript/TypeScript SDKs
+│   ├── js/                       #   @sentinel-auth/js (browser + server)
+│   ├── react/                    #   @sentinel-auth/react (provider, hooks)
+│   └── nextjs/                   #   @sentinel-auth/nextjs (middleware, helpers)
 │
 ├── admin/                         # React admin panel
 │   ├── src/

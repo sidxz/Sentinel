@@ -29,6 +29,7 @@ Provider, hooks, and components for React applications:
 - **`useAuth`** -- full auth context (login, logout, fetch, user)
 - **`useUser`** -- current authenticated user (throws if not authenticated)
 - **`useHasRole`** -- workspace role hierarchy check
+- **`useAuthFetch`** -- shortcut to the auth-aware `fetch` wrapper
 - **`AuthGuard`** -- conditional rendering based on auth state
 - **`AuthCallback`** -- OAuth callback route handler with workspace selection
 

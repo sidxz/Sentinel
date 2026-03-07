@@ -18,7 +18,7 @@ The auth endpoints handle OAuth2/OIDC login flows, token refresh, logout, and ad
 | `GET` | `/auth/admin/login/{provider}` | None | 5/min | Redirect to OAuth provider for admin login |
 | `GET` | `/auth/admin/callback/{provider}` | None | 5/min | Handle admin OAuth callback |
 | `GET` | `/auth/admin/me` | Admin Cookie | -- | Get current admin user info |
-| `POST` | `/auth/admin/logout` | None | -- | Clear admin session cookie |
+| `POST` | `/auth/admin/logout` | Admin Cookie | -- | Clear admin session cookie |
 
 ---
 
@@ -314,6 +314,8 @@ POST /auth/admin/logout
 ```
 
 Clears the `admin_token` cookie.
+
+**Auth:** `admin_token` cookie required.
 
 **Response** `200 OK`
 

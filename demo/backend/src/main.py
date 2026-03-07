@@ -92,7 +92,7 @@ if __name__ == "__main__":
 #
 #   app.add_middleware(
 #       JWTAuthMiddleware,
-#       jwks_url=f"{settings.sentinel_url}/.well-known/jwks.json",
+#       base_url=settings.sentinel_url,
 #       exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
 #       allowed_workspaces=set(settings.allowed_workspaces) or None,
 #   )

@@ -103,3 +103,19 @@ class TestJWTMiddleware:
         client = TestClient(_make_app(pub))
         resp = client.get("/protected", headers={"Authorization": f"Bearer {valid_token}"})
         assert resp.status_code == 200
+
+    def test_middleware_sets_token_on_state(self, rsa_keypair, valid_token):
+        """After successful auth, request.state.token should contain the raw JWT."""
+        _, pub = rsa_keypair
+
+        async def check_token(request: Request) -> JSONResponse:
+            return JSONResponse({"has_token": hasattr(request.state, "token"), "token": request.state.token})
+
+        app = Starlette(routes=[Route("/check", check_token)])
+        app.add_middleware(JWTAuthMiddleware, public_key=pub)
+        client = TestClient(app)
+        resp = client.get("/check", headers={"Authorization": f"Bearer {valid_token}"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["has_token"] is True
+        assert data["token"] == valid_token

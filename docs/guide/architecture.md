@@ -54,7 +54,7 @@ Rather than provisioning a separate database per tenant, we use a `workspace_id`
 
 ### D4: Stateless JWT with Redis-backed revocation
 
-Access tokens are stateless RS256 JWTs containing the full user context (user ID, workspace, role, groups). This means consuming applications can validate tokens locally using the public key without calling the Identity Service on every request. For the minority of cases where a token must be revoked before expiry (logout, password change), we maintain a lightweight `jti` denylist in Redis with automatic TTL expiration.
+Access tokens are stateless RS256 JWTs containing the full user context (user ID, workspace, role, groups). This means consuming applications can validate tokens locally using the public key without calling Sentinel on every request. For the minority of cases where a token must be revoked before expiry (logout, password change), we maintain a lightweight `jti` denylist in Redis with automatic TTL expiration.
 
 ### D5: Custom build, not Keycloak
 

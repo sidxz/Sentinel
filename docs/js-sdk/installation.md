@@ -27,8 +27,8 @@
 | Package | Peer Dependencies |
 |---------|-------------------|
 | `@sentinel-auth/js` | None |
-| `@sentinel-auth/react` | `react` ^18 or ^19, `@sentinel-auth/js` ^0.1.0 |
-| `@sentinel-auth/nextjs` | `next` ^14 or ^15, `react` ^18 or ^19, `@sentinel-auth/js`, `@sentinel-auth/react` |
+| `@sentinel-auth/react` | `react` ^18 or ^19, `@sentinel-auth/js` ^0.7.1 |
+| `@sentinel-auth/nextjs` | `next` ^14 or ^15, `react` ^18 or ^19, `@sentinel-auth/js` ^0.7.1, `@sentinel-auth/react` ^0.7.1 |
 
 ## Local Development
 

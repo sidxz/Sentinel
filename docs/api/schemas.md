@@ -10,7 +10,7 @@ This page consolidates all Pydantic request and response models used by the Sent
 
 ### TokenResponse
 
-Returned by `POST /auth/refresh` after a successful token rotation.
+Returned by `POST /auth/token` and `POST /auth/refresh`.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -272,7 +272,7 @@ Returned by resource registration, visibility update, and ACL retrieval endpoint
 | `resource_type` | `string` | Yes | Type of the resource |
 | `resource_id` | `UUID` | Yes | Resource ID |
 | `workspace_id` | `UUID` | Yes | Workspace the resource belongs to |
-| `owner_id` | `UUID` | Yes | User ID of the resource owner |
+| `owner_id` | `UUID \| null` | No | User ID of the resource owner |
 | `visibility` | `string` | Yes | Current visibility: `private` or `workspace` |
 | `created_at` | `datetime` | Yes | When the resource was registered (ISO 8601) |
 | `shares` | `list[ResourceShareResponse]` | Yes | List of active shares for this resource |
@@ -287,7 +287,7 @@ Nested within [ResourcePermissionResponse](#resourcepermissionresponse).
 | `grantee_type` | `string` | Yes | `user` or `group` |
 | `grantee_id` | `UUID` | Yes | ID of the user or group |
 | `permission` | `string` | Yes | `view` or `edit` |
-| `granted_by` | `UUID` | Yes | User ID of who created the share |
+| `granted_by` | `UUID \| null` | No | User ID of who created the share |
 | `granted_at` | `datetime` | Yes | When the share was created (ISO 8601) |
 
 ### AccessibleResourcesRequest

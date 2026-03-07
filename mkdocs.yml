@@ -112,6 +112,7 @@ nav:
     - Permission Client: sdk/permission-client.md
     - Role Client: sdk/role-client.md
     - Autoconfig: sdk/autoconfig.md
+    - DDD / Clean Architecture: sdk/ddd.md
     - Integration Guide: sdk/integration.md
     - Examples: sdk/examples.md
   - JS/TS SDK:
@@ -136,6 +137,8 @@ nav:
     - Middleware: reference/middleware.md
     - Dependencies: reference/dependencies.md
     - Permissions: reference/permissions.md
+    - Roles: reference/roles.md
+    - Autoconfig: reference/autoconfig.md
   - Security: security.md
   - Deployment:
     - deployment/index.md

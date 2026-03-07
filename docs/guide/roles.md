@@ -108,7 +108,7 @@ Using the SDK:
 from sentinel_auth.roles import RoleClient
 
 roles = RoleClient(
-    base_url="http://identity-service:8000",
+    base_url="http://sentinel:9003",
     service_name="analytics",
     service_key="sk_your_service_key",
 )

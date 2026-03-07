@@ -31,3 +31,5 @@ htmlcov/
 site/
 
 local-docs/
+
+CLAUDE.md

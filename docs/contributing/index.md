@@ -24,7 +24,7 @@ The fastest way to get running:
 
 ```bash
 make setup   # One-time: generate keys, install deps, start DB
-make start   # Start the identity service on :9003
+make start   # Start Sentinel on :9003
 ```
 
 ## Key Principles

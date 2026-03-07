@@ -169,13 +169,13 @@ Role management is available through the admin API. See the [Admin Panel guide](
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/admin/service-actions` | List all registered actions |
-| `GET` | `/admin/workspaces/{wid}/roles` | List workspace roles |
-| `POST` | `/admin/workspaces/{wid}/roles` | Create role |
-| `PATCH` | `/admin/roles/{rid}` | Update role |
-| `DELETE` | `/admin/roles/{rid}` | Delete role |
-| `GET` | `/admin/roles/{rid}/actions` | List role's actions |
-| `POST` | `/admin/roles/{rid}/actions` | Add actions to role |
-| `DELETE` | `/admin/roles/{rid}/actions/{said}` | Remove action from role |
-| `GET` | `/admin/roles/{rid}/members` | List role members |
-| `POST` | `/admin/roles/{rid}/members/{uid}` | Assign user to role |
-| `DELETE` | `/admin/roles/{rid}/members/{uid}` | Remove user from role |
+| `GET` | `/admin/workspaces/{workspace_id}/roles` | List workspace roles |
+| `POST` | `/admin/workspaces/{workspace_id}/roles` | Create role |
+| `PATCH` | `/admin/roles/{role_id}` | Update role |
+| `DELETE` | `/admin/roles/{role_id}` | Delete role |
+| `GET` | `/admin/roles/{role_id}/actions` | List role's actions |
+| `POST` | `/admin/roles/{role_id}/actions` | Add actions to role |
+| `DELETE` | `/admin/roles/{role_id}/actions/{service_action_id}` | Remove action from role |
+| `GET` | `/admin/roles/{role_id}/members` | List role members |
+| `POST` | `/admin/roles/{role_id}/members/{user_id}` | Assign user to role |
+| `DELETE` | `/admin/roles/{role_id}/members/{user_id}` | Remove user from role |

@@ -72,7 +72,7 @@ Tokens are signed using an RSA private key and verified using the corresponding 
 Key paths are configured via environment variables:
 
 ```
-JWT_PRIVATE_KEY_PATH=keys/private.pem   # Used by the Identity Service to sign tokens
+JWT_PRIVATE_KEY_PATH=keys/private.pem   # Used by Sentinel to sign tokens
 JWT_PUBLIC_KEY_PATH=keys/public.pem     # Distributed to consuming services for verification
 ```
 

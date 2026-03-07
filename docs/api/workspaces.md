@@ -300,7 +300,7 @@ PATCH /workspaces/{workspace_id}/members/{user_id}
 }
 ```
 
-**Response** `200 OK`
+**Response** `200 OK` -- Returns a [WorkspaceMemberResponse](schemas.md#workspacememberresponse).
 
 **Errors:**
 

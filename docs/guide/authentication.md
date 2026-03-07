@@ -139,7 +139,7 @@ DELETE /admin/client-apps/{id}      # Delete
 
 ## Authorization Codes
 
-Authorization codes replace the previous pattern of passing raw `user_id` values in redirect URLs. This prevents token theft by anyone who knows a user's UUID.
+Authorization codes are used instead of passing raw `user_id` values in redirect URLs. This prevents token theft by anyone who knows a user's UUID.
 
 | Property | Value |
 |----------|-------|

@@ -11,7 +11,6 @@ These variables have insecure defaults and must be explicitly set in any non-dev
 | `SESSION_SECRET_KEY` | Signs OAuth2 state cookies. `make setup` generates this automatically. | `dev-only-change-me-in-production` |
 | `COOKIE_SECURE` | Set `true` to add the `Secure` flag to cookies (requires HTTPS). | `false` |
 | `DEBUG` | Set `false` for production. Disables `/docs` and `/redoc`, enables fail-closed startup validation. | `false` |
-| `ALLOWED_HOSTS` | Derived from `BASE_URL` + `ADMIN_URL` hostnames. Override with comma-separated hostnames. | `""` (derived) |
 
 !!! note "Service API keys"
     Service API keys are managed via the admin panel (`/admin/service-apps`), not environment variables. Register at least one service app before deploying to production.
@@ -30,6 +29,7 @@ The connection string must use the `postgresql+asyncpg://` scheme. The `?ssl=req
 |----------|-------------|---------|
 | `REDIS_URL` | Redis connection string. Used for auth codes, refresh tokens, access token denylist, and rate limiting. | `rediss://:sentinel_dev@localhost:9002/0` |
 | `REDIS_TLS_CA_CERT` | Path to CA certificate for Redis TLS verification. When empty, cert verification is skipped (connection is still encrypted). | `""` |
+| `REDIS_TLS_VERIFY` | Redis TLS certificate verification mode. Set to `required` in production to verify the server certificate against the CA; set to `none` to encrypt without verification. | `none` |
 
 Both dev and prod use TLS (`rediss://`) by default. The dev compose auto-configures Redis with password auth and TLS using self-signed certs from `keys/tls/`.
 
@@ -46,6 +46,7 @@ The service validates Redis connectivity, authentication, and TLS at startup. Wi
 | `JWT_ALGORITHM` | JWT signing algorithm. | `RS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime in minutes. | `15` |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token lifetime in days. | `7` |
+| `ADMIN_TOKEN_EXPIRE_MINUTES` | Admin session token lifetime in minutes. | `60` |
 
 `make setup` generates the RSA key pair automatically. To generate manually:
 
@@ -87,7 +88,7 @@ Configure at least one provider to enable user login. Leave a provider's variabl
 |----------|-------------|---------|
 | `SERVICE_HOST` | Host address the service binds to. | `0.0.0.0` |
 | `SERVICE_PORT` | Port the service listens on. | `9003` |
-| `BASE_URL` | Public URL of the identity service. Used for OAuth callback URLs. | `http://localhost:9003` |
+| `BASE_URL` | Public URL of Sentinel. Used for OAuth callback URLs. | `http://localhost:9003` |
 | `FRONTEND_URL` | URL of the frontend application. Used for post-login redirects. | `http://localhost:3000` |
 
 ## Security
@@ -95,7 +96,6 @@ Configure at least one provider to enable user login. Leave a provider's variabl
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CORS_ORIGINS` | Comma-separated list of static CORS origins. Combined with origins from registered client apps at runtime. | `http://localhost:3000,http://localhost:9101` |
-| `COOKIE_SECURE` | Whether cookies require HTTPS. | `false` |
 | `ALLOWED_HOSTS` | Derived from `BASE_URL` + `ADMIN_URL` hostnames. Override with comma-separated hostnames. Falls back to `*` if no hostnames found. | `""` (derived) |
 | `BEHIND_PROXY` | Set `true` when behind a reverse proxy. Enables proxy-aware rate limiting using `X-Forwarded-For`. | `false` |
 
@@ -105,3 +105,16 @@ Configure at least one provider to enable user login. Leave a provider's variabl
 |----------|-------------|---------|
 | `ADMIN_EMAILS` | Comma-separated email addresses that are automatically granted admin access. | `""` |
 | `ADMIN_URL` | URL of the admin panel. Used for CORS and redirects. | `http://localhost:9004` |
+
+## Docker / Production Infrastructure
+
+These variables are used by `docker-compose.prod.yml` and `.env.prod`. They are not read by the FastAPI application itself but configure the containerized PostgreSQL, Redis, and service port mapping.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `POSTGRES_DB` | Name of the PostgreSQL database created by the container. | `sentinel` |
+| `POSTGRES_USER` | PostgreSQL user created by the container. | `sentinel` |
+| `POSTGRES_PASSWORD` | Password for the PostgreSQL user. Generate with `openssl rand -base64 24`. | *(none — must be set)* |
+| `REDIS_PASSWORD` | Password for Redis authentication. Generate with `openssl rand -base64 24`. | *(none — must be set)* |
+| `REDIS_TLS_VERIFY` | Redis TLS certificate verification mode (`required` or `none`). In production compose, set to `required`. | `required` |
+| `SENTINEL_PORT` | Host port mapped to the Sentinel container's port 9003. | `9003` |

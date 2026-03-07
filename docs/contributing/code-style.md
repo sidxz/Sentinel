@@ -144,7 +144,7 @@ The root `uv.lock` file locks all dependencies across the workspace. Always comm
 
 ## No Local User Management
 
-This is a fundamental architectural decision: the identity service never stores passwords or manages user credentials directly. All authentication flows go through external identity providers (Google, GitHub, Microsoft Entra ID) via OAuth2/OIDC.
+This is a fundamental architectural decision: Sentinel never stores passwords or manages user credentials directly. All authentication flows go through external identity providers (Google, GitHub, Microsoft Entra ID) via OAuth2/OIDC.
 
 User records are created automatically on first login. The `social_accounts` table links users to their provider identities, allowing a single user to log in through multiple providers.
 
