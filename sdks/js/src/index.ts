@@ -20,3 +20,16 @@ export type {
   ActionDefinition,
   VerifyOptions,
 } from './types'
+
+// Authz (direct IdP) mode
+export { SentinelAuthz } from './authz-client'
+export { AuthzLocalStorageStore, AuthzMemoryStore } from './authz-storage'
+
+export type {
+  SentinelAuthzConfig,
+  AuthzTokenStore,
+  AuthzResolveResponse,
+  AuthzUserInfo,
+  AuthzWorkspaceOption,
+  AuthzWorkspaceInfo,
+} from './authz-types'
