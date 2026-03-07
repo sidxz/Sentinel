@@ -110,3 +110,38 @@ def verify_service_scope(ctx: ServiceKeyContext, service_name: str) -> None:
             status_code=403,
             detail=f"Service key is not authorized for service '{service_name}'",
         )
+
+
+async def require_service_context(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> ServiceKeyContext:
+    """Resolve service identity from X-Service-Key header OR Origin header.
+
+    Backends send X-Service-Key. Browser frontends are identified by
+    matching the Origin header against ServiceApp.allowed_origins.
+    """
+    from src.services import service_app_service
+
+    # 1. Try service key (backends)
+    key = request.headers.get("X-Service-Key")
+    if key:
+        result = await service_app_service.validate_key(key, db)
+        if not result:
+            raise HTTPException(
+                status_code=401, detail="Invalid or missing service API key"
+            )
+        service_name, _app_id = result
+        return ServiceKeyContext(service_name=service_name)
+
+    # 2. Try origin (browser frontends)
+    origin = request.headers.get("Origin")
+    if origin:
+        result = await service_app_service.validate_origin(origin, db)
+        if result:
+            service_name, _app_id = result
+            return ServiceKeyContext(service_name=service_name)
+
+    raise HTTPException(
+        status_code=401,
+        detail="Missing service API key or unregistered origin",
+    )
