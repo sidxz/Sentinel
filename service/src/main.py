@@ -8,6 +8,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from src.api.admin_routes import router as admin_router
 from src.api.auth_routes import router as auth_router
+from src.api.authz_routes import router as authz_router
 from src.api.group_routes import router as group_router
 from src.api.permission_routes import router as permission_router
 from src.api.role_routes import router as role_router
@@ -196,6 +197,7 @@ app.include_router(workspace_router)
 app.include_router(group_router)
 app.include_router(permission_router)
 app.include_router(role_router)
+app.include_router(authz_router)
 
 
 @app.get("/health")
