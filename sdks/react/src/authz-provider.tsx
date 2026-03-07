@@ -17,6 +17,7 @@ export interface AuthzContextValue {
   user: SentinelUser | null
   isLoading: boolean
   isAuthenticated: boolean
+  login(provider: string): void
   resolve(idpToken: string, provider: string): Promise<AuthzResolveResponse>
   selectWorkspace(idpToken: string, provider: string, workspaceId: string): Promise<void>
   logout(): void
@@ -67,6 +68,7 @@ export function AuthzProvider({
     user,
     isLoading,
     isAuthenticated: user !== null,
+    login: (provider) => client.login(provider),
     resolve: (idpToken, provider) => client.resolve(idpToken, provider),
     selectWorkspace: (idpToken, provider, workspaceId) =>
       client.selectWorkspace(idpToken, provider, workspaceId),

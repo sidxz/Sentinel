@@ -4,7 +4,7 @@ This section covers the core concepts and design decisions behind the Sentinel A
 
 ## Tutorial
 
-A step-by-step guide to building a "Team Notes" app that demonstrates authentication, workspace isolation, role enforcement, custom RBAC, and entity-level permissions. Start here if you want to integrate the SDK into your own app.
+A step-by-step guide to building a "Team Notes" app that demonstrates Google Sign-In with Sentinel's authz mode — dual-token authentication, workspace isolation, role enforcement, custom RBAC, and entity-level permissions. Start here if you want to integrate the SDK into your own app.
 
 [Read more](tutorial.md)
 
@@ -16,9 +16,15 @@ How the service is structured, why we chose each technology, and how the major c
 
 ## Authentication
 
-The OAuth2/OIDC login flow from browser redirect through provider callback to JWT issuance. Covers all three supported identity providers (Google, GitHub, Microsoft Entra ID) and how Authlib handles the heavy lifting.
+How authentication works in Sentinel. In authz mode, client apps sign in with their IdP directly (Google, GitHub, EntraID) and call Sentinel's `/authz/resolve` to get an authorization JWT. Covers IdP token validation, JIT user provisioning, and workspace resolution.
 
 [Read more](authentication.md)
+
+## AuthZ Mode Architecture
+
+Deep dive into the dual-token architecture: how the IdP token and Sentinel authz token work together, the security properties of token binding, and how downstream services validate both tokens.
+
+[Read more](../architecture/authz-mode.md)
 
 ## JWT Tokens
 

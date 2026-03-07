@@ -5,6 +5,7 @@ import type {
   SentinelAuthzConfig,
   AuthzTokenStore,
   AuthzResolveResponse,
+  IdpConfig,
 } from './authz-types'
 import type { SentinelUser } from './types'
 
@@ -19,6 +20,8 @@ export class SentinelAuthz {
   private readonly store: AuthzTokenStore
   private readonly autoRefresh: boolean
   private readonly refreshBuffer: number
+  private readonly idps: Record<string, IdpConfig>
+  private readonly redirectUri: string
   private refreshTimer: ReturnType<typeof setTimeout> | null = null
   private refreshPromise: Promise<boolean> | null = null
   private listeners: Set<AuthStateListener> = new Set()
@@ -28,11 +31,71 @@ export class SentinelAuthz {
     this.store = config.storage ?? new AuthzLocalStorageStore()
     this.autoRefresh = config.autoRefresh ?? true
     this.refreshBuffer = config.refreshBuffer ?? 30
+    this.idps = config.idps ?? {}
+    this.redirectUri = config.redirectUri
+      ?? (typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : '')
     warnIfInsecure(this.sentinelUrl, 'SentinelAuthz')
 
     if (this.autoRefresh && this.store.getAuthzToken()) {
       this.scheduleRefresh()
     }
+  }
+
+  // ── Login ───────────────────────────────────────────────────────────
+
+  /** Redirect to IdP login page. Requires the provider to be configured in `idps`. */
+  login(provider: string): void {
+    const idp = this.idps[provider]
+    if (!idp) {
+      throw new Error(
+        `IdP "${provider}" not configured. Pass it via idps in SentinelAuthzConfig, ` +
+        `e.g. { idps: { google: IdpConfigs.google('your-client-id') } }`
+      )
+    }
+
+    const nonce = crypto.randomUUID()
+    sessionStorage.setItem('sentinel_authz_nonce', nonce)
+    sessionStorage.setItem('sentinel_authz_provider', provider)
+
+    const params = new URLSearchParams({
+      client_id: idp.clientId,
+      redirect_uri: this.redirectUri,
+      response_type: idp.responseType ?? 'id_token',
+      scope: (idp.scopes ?? ['openid', 'email', 'profile']).join(' '),
+      nonce,
+      ...idp.extraParams,
+    })
+
+    window.location.href = `${idp.authorizationUrl}?${params}`
+  }
+
+  /**
+   * Handle the OAuth callback. Extracts the id_token from the URL hash,
+   * calls resolve, and returns the result.
+   *
+   * Call this from your callback route. Returns null if no hash is present.
+   */
+  handleCallback(): { idpToken: string; provider: string } | null {
+    const hash = window.location.hash.substring(1)
+    if (!hash) return null
+
+    const params = new URLSearchParams(hash)
+    const idpToken = params.get('id_token')
+    const error = params.get('error')
+
+    if (error) {
+      throw new Error(params.get('error_description') || error)
+    }
+    if (!idpToken) return null
+
+    // Clean the URL
+    window.history.replaceState({}, '', window.location.pathname)
+
+    const provider = sessionStorage.getItem('sentinel_authz_provider') || 'google'
+    sessionStorage.removeItem('sentinel_authz_nonce')
+    sessionStorage.removeItem('sentinel_authz_provider')
+
+    return { idpToken, provider }
   }
 
   // ── Auth flow ───────────────────────────────────────────────────────

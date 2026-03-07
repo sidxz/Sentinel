@@ -6,13 +6,11 @@ with an ``AuthenticatedUser`` instance.
 """
 
 import asyncio
-import base64
 import uuid
 
 import httpx
 import jwt
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from jwt.algorithms import RSAAlgorithm
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -20,21 +18,6 @@ from starlette.types import ASGIApp
 
 from sentinel_auth._utils import warn_if_insecure
 from sentinel_auth.types import AuthenticatedUser
-
-
-def _base64url_to_int(value: str) -> int:
-    """Decode a Base64url-encoded string to an integer."""
-    padded = value + "=" * (4 - len(value) % 4)
-    return int.from_bytes(base64.urlsafe_b64decode(padded), "big")
-
-
-def _jwk_to_pem(jwk: dict) -> str:
-    """Convert an RSA JWK to PEM-encoded public key."""
-    n = _base64url_to_int(jwk["n"])
-    e = _base64url_to_int(jwk["e"])
-    pub_numbers = RSAPublicNumbers(e, n)
-    pub_key = pub_numbers.public_key()
-    return pub_key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
 
 
 class JWTAuthMiddleware(BaseHTTPMiddleware):
@@ -127,7 +110,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                 jwks = resp.json()
             for key in jwks["keys"]:
                 if key.get("kty") == "RSA" and key.get("use", "sig") == "sig":
-                    self.public_key = _jwk_to_pem(key)
+                    self.public_key = RSAAlgorithm.from_jwk(key)
                     return self.public_key
             raise RuntimeError("No RSA signing key found in JWKS")
 

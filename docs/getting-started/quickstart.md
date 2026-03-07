@@ -1,17 +1,20 @@
 # Quickstart
 
-This guide assumes you have completed the [Installation](installation.md) steps. You will configure an OAuth provider, register client and service apps, and verify the full auth flow.
+This guide assumes you have completed the [Installation](installation.md) steps. You will configure an identity provider, register a service app, and run the demo app to verify the full authorization flow.
 
-## 1. Configure an OAuth Provider
+## 1. Configure an Identity Provider
 
-You need at least one OAuth provider for user authentication. **Google** is the easiest to get started with.
+You need at least one identity provider for user authentication. **Google** is the easiest to get started with.
 
 ### Google (recommended for development)
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
-2. Create an OAuth 2.0 Client ID (application type: **Web application**).
-3. Add `http://localhost:9003/auth/callback/google` as an **Authorized redirect URI**.
-4. Copy the client ID and secret into `service/.env`:
+2. Create an **OAuth 2.0 Client ID** (application type: **Web application**).
+3. Add the following to **Authorized JavaScript origins**:
+    - `http://localhost:5174` (demo frontend)
+4. Add the following to **Authorized redirect URIs**:
+    - `http://localhost:9003/auth/callback/google` (admin panel login only)
+5. Copy the client ID and secret into `service/.env`:
 
 ```dotenv
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
@@ -20,6 +23,9 @@ GOOGLE_CLIENT_SECRET=your-client-secret
 
 !!! tip "Other providers"
     GitHub and Microsoft EntraID are also supported. See the [Configuration](configuration.md) reference for their environment variables. You can enable multiple providers simultaneously.
+
+!!! info "Why both origins and redirect URIs?"
+    **Authorized JavaScript origins** are for your frontend apps that use Google Sign-In directly in the browser. **Authorized redirect URIs** are only needed for the admin panel, which uses a server-side OAuth callback.
 
 ## 2. Verify the Session Secret
 
@@ -83,72 +89,108 @@ curl http://localhost:9003/health
 
 Sign in through the admin panel using your OAuth provider to create your initial user account.
 
-## 5. Register a Client App
+## 5. Register a Service App
 
-Every frontend that authenticates through Sentinel must be registered as a **client app** with its redirect URI(s). This prevents unauthorized apps from initiating OAuth flows.
-
-=== "Admin Panel"
-
-    1. Navigate to **Client Apps** in the sidebar.
-    2. Click **Add Client App**.
-    3. Set a name (e.g., `dev-frontend`) and add the redirect URI: `http://localhost:3000/auth/callback`.
-    4. Save.
-
-=== "curl"
-
-    ```bash
-    curl -X POST http://localhost:9003/admin/client-apps \
-      -H "Content-Type: application/json" \
-      -H "Cookie: admin_token=YOUR_ADMIN_TOKEN" \
-      -H "X-Requested-With: XMLHttpRequest" \
-      -d '{"name": "dev-frontend", "redirect_uris": ["http://localhost:3000/auth/callback"]}'
-    ```
-
-!!! info "Why client apps?"
-    Client apps control the redirect URI allowlist. Sentinel will reject any `redirect_uri` that doesn't match a registered client app. This protects against open-redirect attacks.
-
-## 6. Register a Service App
-
-If your backend needs to call Sentinel's API (for permissions, roles, or resource registration), register a **service app** to get an API key.
+Register a **service app** for your frontend and backend. This gives your backend an API key for server-side calls and configures origin-based auth for your frontend.
 
 === "Admin Panel"
 
     1. Navigate to **Service Apps** in the sidebar.
-    2. Click **Add Service App**.
-    3. Set a name and service name for your backend.
-    4. Copy the generated `sk_...` key — you'll need it for your backend's `.env`.
+    2. Click **Register Service App**.
+    3. Set a name (e.g. `team-notes`) and a service name (e.g. `team-notes`).
+    4. Add `http://localhost:5174` to **Allowed Origins**.
+    5. Save and copy the generated `sk_...` key.
 
-!!! info "Service apps are database-managed"
-    Service API keys are created and managed through the admin panel. There is no environment variable for service keys.
+=== "curl"
 
-## 7. Verify the Auth Flow
+    ```bash
+    curl -X POST http://localhost:9003/admin/service-apps \
+      -H "Content-Type: application/json" \
+      -H "Cookie: admin_token=YOUR_ADMIN_TOKEN" \
+      -H "X-Requested-With: XMLHttpRequest" \
+      -d '{
+        "name": "team-notes",
+        "service_name": "team-notes",
+        "allowed_origins": ["http://localhost:5174"]
+      }'
+    ```
 
-Navigate to the login endpoint with the redirect URI you registered:
+!!! info "Service key vs. origin-based auth"
+    The **service key** (`sk_...`) is for backend-to-backend calls -- permissions, roles, and resource registration. Browser clients use **origin-based auth** instead: Sentinel validates the request's `Origin` header against the service app's allowed origins. No API key is needed from the browser.
 
-> `http://localhost:9003/auth/login/google?redirect_uri=http://localhost:3000/auth/callback`
+## 6. Try the Demo App
 
-This redirects you to Google's consent screen. After you authorize, the service creates a user record (if it's your first login) and redirects to your `redirect_uri` with an authorization code (`?code=X`).
+The repository includes a complete demo application ("Team Notes") that showcases the authorization flow with Google Sign-In, workspace roles, entity ACLs, and custom RBAC.
 
-Exchange it for JWT tokens:
+### Start the backend
 
 ```bash
-curl -X POST http://localhost:9003/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"code": "CODE_FROM_REDIRECT", "workspace_id": "YOUR_WS_ID", "code_verifier": "YOUR_CODE_VERIFIER"}'
+cd demo-authz/backend
+uv sync
+cp .env.example .env
+# Edit .env: set SERVICE_API_KEY=sk_... (the key from step 5)
+uv run python -m src.main
 ```
 
-!!! note "PKCE"
-    The `code_verifier` is required for PKCE validation. In practice, the JS and Python SDKs handle PKCE automatically. For manual testing, generate a `code_verifier` before the login redirect and pass `code_challenge` + `code_challenge_method=S256` as query params.
+The backend starts on **port 9200**.
 
-## 8. Explore the API
+### Start the frontend
 
-Open the interactive Swagger UI:
+In a new terminal:
 
-> [http://localhost:9003/docs](http://localhost:9003/docs)
+```bash
+cd demo-authz/frontend
+npm install
+cp .env.example .env
+# Edit .env: set VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+npm run dev
+```
 
-This documents every endpoint, including auth flows, user management, workspace operations, group management, and the permission system.
+The frontend starts on **port 5174**.
 
-## Optional: Seed Data
+### Sign in
+
+Open [http://localhost:5174](http://localhost:5174) and sign in with Google. The demo shows:
+
+- Google Sign-In button for authentication
+- Workspace selection after first login
+- Notes CRUD with role-based access control
+
+## 7. What Just Happened
+
+Here is the flow that ran when you signed in:
+
+1. The frontend rendered a **Google Sign-In** button (using `@react-oauth/google`).
+2. After you signed in, the frontend received a **Google ID token** directly from Google.
+3. The frontend called Sentinel's **`POST /authz/resolve`** with the ID token and provider name. This uses origin-based auth -- no service key needed from the browser.
+4. Sentinel **validated the token** against Google's JWKS, JIT-provisioned the user if it was their first login, and returned the list of workspaces.
+5. After workspace selection, Sentinel returned a signed **authz JWT** containing workspace roles and RBAC actions.
+6. The frontend sends **both tokens** on every API call to the backend: the IdP token in the `Authorization` header, and the authz token in the `X-Authz-Token` header.
+7. The backend's `AuthzMiddleware` **validates both tokens** independently (IdP token against Google's public keys, authz token against Sentinel's public key) and verifies that the `idp_sub` claims match -- binding the two tokens to the same user.
+
+```
+Browser                     Sentinel (:9003)              Backend (:9200)
+-------                     ----------------              ---------------
+Google Sign-In
+  -> Google ID token
+
+POST /authz/resolve  -----> Validate IdP token
+  { idp_token, provider }   JIT provision user
+                       <---- { authz_token, workspaces }
+
+Select workspace
+POST /authz/resolve  -----> Issue authz JWT with
+  { ..., workspace_id }     workspace roles + actions
+                       <---- { authz_token }
+
+GET /api/notes        ------------------------------------> Validate IdP token
+  Authorization: Bearer <idp_token>                         Validate authz token
+  X-Authz-Token: <authz_token>                              Check idp_sub binding
+                                                            Authorize request
+                       <------------------------------------ { notes: [...] }
+```
+
+## 8. Optional: Seed Data
 
 Load test data to explore the API without manually creating resources:
 
@@ -166,26 +208,17 @@ Load test data to explore the API without manually creating resources:
 
 This populates the database with sample users, workspaces, groups, and permissions.
 
-## Try the Demo App
+## 9. Explore the API
 
-The repository includes a complete demo application ("Team Notes") that showcases JWT auth, workspace roles, entity ACLs, and custom RBAC with a React frontend using `@sentinel-auth/react` and a FastAPI backend.
+Open the interactive Swagger UI:
 
-!!! note "Prerequisites"
-    Before the demo app can authenticate, register a client app with redirect URI `http://localhost:9101/auth/callback` (see step 5 above) and a service app for the demo backend (see step 6).
+> [http://localhost:9003/docs](http://localhost:9003/docs)
 
-```bash
-# Demo backend
-cd demo/backend && uv sync && uv run python -m src.main
+This documents every endpoint, including the `/authz/resolve` authorization flow, user management, workspace operations, group management, and the permission system.
 
-# Demo frontend (in another terminal)
-cd demo/frontend && npm install && npm run dev
-```
+## 10. Next Steps
 
-Open [http://localhost:9101](http://localhost:9101) and sign in with Google. See the [Tutorial](../guide/tutorial.md) for a detailed walkthrough of how the demo is built.
-
-## Next Steps
-
+- Follow the [Tutorial](../guide/tutorial.md) to build your own app with Google Sign-In and the authz flow.
 - Review all available settings in the [Configuration](configuration.md) reference.
 - Read the [Architecture](../guide/architecture.md) section to understand how the service is structured.
-- Follow the [Tutorial](../guide/tutorial.md) to build your own app with the SDK.
-- Integrate your application using the [SDK guide](../sdk/index.md).
+- Integrate your application using the [Python SDK](../sdk/index.md) or [JS/TS SDK](../js-sdk/index.md).

@@ -1,18 +1,24 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { GoogleOAuthProvider } from '@react-oauth/google'
-import { AuthzProvider } from '@sentinel-auth/react'
-import { App } from './App'
+import { AuthzProvider } from "@sentinel-auth/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import { App } from "./App";
+import { authzClient } from "./api/client";
+import "./app.css";
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
-const SENTINEL_URL = import.meta.env.VITE_SENTINEL_URL || 'http://localhost:9003'
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
+});
 
-createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <AuthzProvider config={{ sentinelUrl: SENTINEL_URL }}>
-        <App />
-      </AuthzProvider>
-    </GoogleOAuthProvider>
+    <AuthzProvider client={authzClient}>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </AuthzProvider>
   </StrictMode>,
-)
+);

@@ -2,6 +2,46 @@
 
 The Sentinel Auth does not manage local user credentials. Users always authenticate through external identity providers (IdPs) via OAuth2 or OpenID Connect. The service acts as an OAuth2 client, handling the redirect flow, extracting user information from the provider, and issuing its own JWT tokens.
 
+## Authentication Modes
+
+Sentinel supports two authentication modes:
+
+### AuthZ Mode (Recommended)
+
+Client apps authenticate users directly with their identity provider using the IdP's native SDK (Google Sign-In, MSAL, etc.). The app then calls Sentinel's `POST /authz/resolve` with the IdP token to get an authorization JWT.
+
+```
+Browser                        Sentinel                     IdP
+  │                              │                           │
+  │  1. Sign in with Google      │                           │
+  │  ──────────────────────────────────────────────────────► │
+  │  ◄── IdP token (1hr)         │                           │
+  │                              │                           │
+  │  2. POST /authz/resolve      │                           │
+  │  { idp_token, provider }  ──►│                           │
+  │                              │  Validates token vs JWKS  │
+  │                              │  JIT provisions user      │
+  │  ◄── { authz_token, user }   │                           │
+  │                              │                           │
+  │  3. API calls with both      │                           │
+  │  Authorization: Bearer <idp> │                           │
+  │  X-Authz-Token: <authz>     │                           │
+```
+
+**Key properties:**
+- Client handles IdP sign-in natively — no redirect through Sentinel
+- Sentinel only handles authorization (workspace roles, RBAC, permissions)
+- Two tokens per request: IdP token (identity) + authz token (authorization)
+- `idp_sub` binding prevents token misuse
+
+See [AuthZ Mode Architecture](../architecture/authz-mode.md) for the full security analysis.
+
+### Full Proxy Mode
+
+Sentinel handles the entire OAuth2/OIDC flow — login redirect, provider callback, token exchange, and JWT issuance. Client apps redirect to Sentinel and receive a single JWT.
+
+The existing Login Flow diagram below describes the proxy mode flow.
+
 ## Login Flow
 
 ```mermaid

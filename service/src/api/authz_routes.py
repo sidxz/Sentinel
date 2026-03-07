@@ -1,7 +1,7 @@
 """AuthZ Mode endpoints — IdP token validation + authorization JWT issuance."""
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +9,7 @@ from src.api.dependencies import ServiceKeyContext, require_service_context
 from src.auth.jwt import create_authz_token
 from src.config import settings
 from src.database import get_db
+from src.middleware.rate_limit import limiter
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.schemas.authz import (
     AuthzResolveRequest,
@@ -27,7 +28,9 @@ router = APIRouter(prefix="/authz", tags=["authz"])
 
 
 @router.post("/resolve", response_model=AuthzResolveResponse)
+@limiter.limit("10/minute")
 async def resolve(
+    request: Request,
     body: AuthzResolveRequest,
     service_ctx: ServiceKeyContext = Depends(require_service_context),
     db: AsyncSession = Depends(get_db),
@@ -41,6 +44,12 @@ async def resolve(
     try:
         idp_claims = await validate_idp_token(body.idp_token, body.provider)
     except IdpValidationError as e:
+        logger.warning(
+            "authz_resolve_idp_validation_failed",
+            provider=body.provider,
+            error=str(e),
+            service=service_ctx.service_name,
+        )
         raise HTTPException(status_code=400, detail=str(e))
 
     # 2. Find or create user (JIT provisioning)
@@ -54,6 +63,11 @@ async def resolve(
     )
 
     if not user.is_active:
+        logger.warning(
+            "authz_resolve_inactive_user",
+            user_id=str(user.id),
+            email=user.email,
+        )
         raise HTTPException(status_code=403, detail="User account is inactive")
 
     user_resp = AuthzUserResponse(id=user.id, email=user.email, name=user.name)
@@ -81,6 +95,11 @@ async def resolve(
     result = await db.execute(stmt)
     membership = result.scalar_one_or_none()
     if not membership:
+        logger.warning(
+            "authz_resolve_not_member",
+            user_id=str(user.id),
+            workspace_id=str(body.workspace_id),
+        )
         raise HTTPException(
             status_code=403, detail="User is not a member of this workspace"
         )
@@ -93,6 +112,14 @@ async def resolve(
     )
 
     # 6. Sign authz JWT
+    logger.info(
+        "authz_token_issued",
+        user_id=str(user.id),
+        workspace_id=str(workspace.id),
+        workspace_role=membership.role,
+        service=service_ctx.service_name,
+        actions_count=len(actions),
+    )
     authz_token = create_authz_token(
         user_id=user.id,
         idp_sub=idp_claims["sub"],

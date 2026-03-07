@@ -1,6 +1,6 @@
 # JavaScript / TypeScript SDK
 
-The **Sentinel Auth JS SDK** is a family of three npm packages that integrate JavaScript and TypeScript applications with the Sentinel Auth service. It handles PKCE OAuth flows, token management, JWT verification, and permission/role checks so you can focus on your application logic.
+The **Sentinel Auth JS SDK** is a family of three npm packages that integrate JavaScript and TypeScript applications with the Sentinel Auth service. It supports two integration modes: **authz mode** (recommended), where your app handles IdP sign-in directly and Sentinel provides authorization tokens, and **proxy mode**, where Sentinel manages the full OAuth2 redirect flow.
 
 ## Packages
 
@@ -12,26 +12,29 @@ The **Sentinel Auth JS SDK** is a family of three npm packages that integrate Ja
 
 ## What the SDK Provides
 
-### Browser Auth Client
+### Browser Auth Client (AuthZ Mode)
 
-`SentinelAuth` is the core browser class that encapsulates the full OAuth2 + PKCE + workspace-selection flow:
+`SentinelAuthz` is the primary browser class for authz mode -- the recommended integration pattern:
 
-- **PKCE login** -- generates code verifier/challenge, redirects to OAuth provider
-- **Workspace selection** -- fetches available workspaces, completes token exchange
-- **Token management** -- stores tokens, auto-refreshes before expiry
-- **Auth-aware fetch** -- injects `Authorization: Bearer` header, retries on 401
+- **IdP sign-in** -- use your IdP's client SDK (Google Sign-In, MSAL, etc.) to get an identity token
+- **Resolve** -- call `resolve()` to validate the IdP token with Sentinel and get workspace options
+- **Workspace selection** -- call `selectWorkspace()` to get a signed authz JWT
+- **Token management** -- stores both tokens, auto-refreshes authz token before expiry
+- **Auth-aware fetch** -- injects both `Authorization: Bearer` and `X-Authz-Token` headers, retries on 401
+
+### Browser Auth Client (Full Proxy Mode)
+
+`SentinelAuth` handles the full OAuth2 + PKCE redirect flow for apps that want Sentinel to manage the entire auth process (login redirect, callback, token exchange).
 
 ### React Bindings
 
-Provider, hooks, and components for React applications:
-
-- **`SentinelAuthProvider`** -- React context provider wrapping `SentinelAuth`
-- **`useAuth`** -- full auth context (login, logout, fetch, user)
-- **`useUser`** -- current authenticated user (throws if not authenticated)
-- **`useHasRole`** -- workspace role hierarchy check
-- **`useAuthFetch`** -- shortcut to the auth-aware `fetch` wrapper
-- **`AuthGuard`** -- conditional rendering based on auth state
-- **`AuthCallback`** -- OAuth callback route handler with workspace selection
+- **`AuthzProvider`** -- React context provider wrapping `SentinelAuthz` (authz mode)
+- **`useAuthz`** -- full authz context (resolve, selectWorkspace, user, fetch, fetchJson)
+- **`useAuthzUser`** -- current user from authz token
+- **`useAuthzHasRole`** -- workspace role check
+- **`useAuthzFetch`** -- shortcut to dual-header fetch
+- **`AuthzGuard`** -- conditional rendering based on authz state
+- Also includes proxy-mode components: `SentinelAuthProvider`, `useAuth`, `AuthGuard`, `AuthCallback`
 
 ### Server Utilities
 
@@ -45,50 +48,63 @@ Node.js and Edge-compatible utilities for backend use:
 
 Edge Middleware and server helpers for Next.js applications:
 
-- **`createSentinelMiddleware`** -- Edge Middleware for JWT validation with JWKS
-- **`getUser` / `requireUser`** -- read user from middleware-set headers in Server Components
-- **`withAuth`** -- HOC for Route Handlers requiring authentication
+- **`createSentinelAuthzMiddleware`** -- Edge Middleware for dual-token validation (IdP + authz + binding)
+- **`createSentinelMiddleware`** -- Edge Middleware for single-token validation (proxy mode)
+- **`getUser` / `requireUser`** -- read user from middleware headers (works with either middleware)
+- **`withAuth`** -- HOC for Route Handlers
 
 ## Quick Start
 
-=== "React"
+=== "React (AuthZ Mode)"
 
     ```bash
-    npm install @sentinel-auth/js @sentinel-auth/react
+    npm install @sentinel-auth/js @sentinel-auth/react @react-oauth/google
     ```
 
     ```tsx
-    import { SentinelAuthProvider, AuthGuard, useAuth } from '@sentinel-auth/react'
+    import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google'
+    import { AuthzProvider, useAuthz } from '@sentinel-auth/react'
 
     function App() {
       return (
-        <SentinelAuthProvider config={{ sentinelUrl: 'http://localhost:9003' }}>
-          <AuthGuard fallback={<LoginPage />}>
-            <Dashboard />
-          </AuthGuard>
-        </SentinelAuthProvider>
+        <GoogleOAuthProvider clientId="your-google-client-id">
+          <AuthzProvider config={{ sentinelUrl: 'http://localhost:9003' }}>
+            <LoginPage />
+          </AuthzProvider>
+        </GoogleOAuthProvider>
       )
     }
 
     function LoginPage() {
-      const { login } = useAuth()
-      return <button onClick={() => login('google')}>Sign in</button>
+      const { resolve, selectWorkspace, isAuthenticated, user } = useAuthz()
+
+      if (isAuthenticated) return <p>Welcome, {user?.name}!</p>
+
+      return (
+        <GoogleLogin onSuccess={async (r) => {
+          const result = await resolve(r.credential!, 'google')
+          if (result.workspaces?.length === 1) {
+            await selectWorkspace(r.credential!, 'google', result.workspaces[0].id)
+          }
+        }} />
+      )
     }
     ```
 
-=== "Next.js"
+=== "Next.js (AuthZ Mode)"
 
     ```bash
-    npm install @sentinel-auth/js @sentinel-auth/react @sentinel-auth/nextjs
+    npm install @sentinel-auth/js @sentinel-auth/nextjs @react-oauth/google
     ```
 
     ```typescript
     // middleware.ts
-    import { createSentinelMiddleware } from '@sentinel-auth/nextjs/middleware'
+    import { createSentinelAuthzMiddleware } from '@sentinel-auth/nextjs/authz-middleware'
 
-    export default createSentinelMiddleware({
-      jwksUrl: 'http://localhost:9003/.well-known/jwks.json',
-      publicPaths: ['/login', '/auth/callback'],
+    export default createSentinelAuthzMiddleware({
+      sentinelUrl: 'http://localhost:9003',
+      idpJwksUrl: 'https://www.googleapis.com/oauth2/v3/certs',
+      publicPaths: ['/login'],
     })
 
     export const config = { matcher: ['/((?!_next|favicon.ico).*)'] }
@@ -121,7 +137,8 @@ Edge Middleware and server helpers for Next.js applications:
 ## Next Steps
 
 - [Installation](installation.md) -- install the packages
-- [Auth Client](auth-client.md) -- configure the browser auth client
+- [AuthZ Client](authz-client.md) -- configure the authz-mode browser client (recommended)
+- [Auth Client](auth-client.md) -- configure the proxy-mode browser client
 - [React Integration](react.md) -- provider, hooks, and components
 - [Next.js Integration](nextjs.md) -- Edge Middleware and server helpers
 - [Server Utilities](server.md) -- JWT verification, permission and role clients

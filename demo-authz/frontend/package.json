@@ -9,14 +9,17 @@
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@react-oauth/google": "^0.12.0",
+    "react-router-dom": "^7.13.1",
+    "@tanstack/react-query": "^5.90.21",
     "@sentinel-auth/js": "file:../../sdks/js",
     "@sentinel-auth/react": "file:../../sdks/react"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.2.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.0.0",
+    "tailwindcss": "^4.2.1",
     "typescript": "^5.5.0",
     "vite": "^6.0.0"
   }

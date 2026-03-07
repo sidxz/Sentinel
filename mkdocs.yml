@@ -97,6 +97,7 @@ nav:
     - "Tutorial: Next.js Frontend": guide/tutorial-nextjs.md
     - Architecture: guide/architecture.md
     - Authentication: guide/authentication.md
+    - "AuthZ Architecture": architecture/authz-mode.md
     - JWT Tokens: guide/jwt.md
     - Workspaces: guide/workspaces.md
     - Groups: guide/groups.md
@@ -118,7 +119,8 @@ nav:
   - JS/TS SDK:
     - js-sdk/index.md
     - Installation: js-sdk/installation.md
-    - Auth Client: js-sdk/auth-client.md
+    - AuthZ Client: js-sdk/authz-client.md
+    - Auth Client (Proxy): js-sdk/auth-client.md
     - React Integration: js-sdk/react.md
     - Next.js Integration: js-sdk/nextjs.md
     - Server Utilities: js-sdk/server.md

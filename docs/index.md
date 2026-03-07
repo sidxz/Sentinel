@@ -1,13 +1,13 @@
 ---
 title: Sentinel Auth
-description: Authentication, workspace management, and Zanzibar-style permissions for your applications
+description: Authentication proxy and authorization service. Bring your own identity provider -- Sentinel handles authorization, workspace management, and Zanzibar-style permissions.
 ---
 
 ![Sentinel Auth](assets/images/splash.png)
 
 # Sentinel Auth
 
-**An open source identity service for Python applications.** Sentinel Auth handles OAuth2/OIDC authentication, multi-tenant workspace management, and fine-grained Zanzibar-style permissions so you can focus on your application logic.
+**An open source authorization service for Python applications.** Bring your own identity provider -- Sentinel Auth validates IdP tokens, issues authorization JWTs, manages multi-tenant workspaces, and provides fine-grained Zanzibar-style permissions so you can focus on your application logic.
 
 Built with **FastAPI**, **SQLAlchemy 2.0** (async), **PostgreSQL 16**, **Redis 7**, and **Authlib**.
 
@@ -17,11 +17,11 @@ Built with **FastAPI**, **SQLAlchemy 2.0** (async), **PostgreSQL 16**, **Redis 7
 
 <div class="grid cards" markdown>
 
--   :material-shield-lock:{ .lg .middle } **OAuth2 / OIDC Authentication**
+-   :material-shield-lock:{ .lg .middle } **Bring Your Own IdP**
 
     ---
 
-    Sign in with Google, GitHub, and Microsoft EntraID out of the box. PKCE S256 on supported providers, RS256 JWT tokens with refresh rotation and reuse detection.
+    Sign in with Google, GitHub, or Microsoft EntraID using their native SDKs. Sentinel validates IdP tokens and issues authorization JWTs with workspace roles and RBAC actions.
 
     [:octicons-arrow-right-24: Authentication guide](guide/authentication.md)
 
@@ -53,7 +53,7 @@ Built with **FastAPI**, **SQLAlchemy 2.0** (async), **PostgreSQL 16**, **Redis 7
 
     ---
 
-    Three npm packages for browser, React, and Next.js. PKCE auth flow, token management, auth-aware fetch, React hooks, Edge Middleware, and server-side JWT verification.
+    Three npm packages for browser, React, and Next.js. Google Sign-In with `AuthzProvider`, token management, auth-aware fetch, React hooks, and server-side JWT verification.
 
     [:octicons-arrow-right-24: JS/TS SDK](js-sdk/index.md)
 
@@ -83,11 +83,19 @@ Choose your path based on what you need to do:
 
 <div class="grid cards" markdown>
 
+-   :material-rocket-launch:{ .lg .middle } **Quickstart**
+
+    ---
+
+    Set up Sentinel, configure Google Sign-In, and run the demo app end to end.
+
+    [:octicons-arrow-right-24: Quickstart](getting-started/quickstart.md)
+
 -   :material-puzzle:{ .lg .middle } **I want to integrate the SDK**
 
     ---
 
-    Add authentication and permission checks to your application using the Sentinel Auth SDKs.
+    Add authorization and permission checks to your application using the Sentinel Auth SDKs.
 
     **Python** -- `pip install sentinel-auth-sdk` [:octicons-arrow-right-24: Python SDK](sdk/index.md)
 
@@ -97,52 +105,52 @@ Choose your path based on what you need to do:
 
     ---
 
-    Deploy Sentinel Auth as your authentication and authorization backend.
+    Deploy Sentinel Auth as your authorization backend.
 
     1. Generate RS256 key pair for JWT signing
     2. Create `.env` from the template
     3. `docker compose -f docker-compose.prod.yml up -d`
-    4. Register OAuth2 credentials with your identity providers
-    5. Register client apps and service apps via the admin panel
+    4. Configure your identity provider (Google, GitHub, or EntraID)
+    5. Register service apps via the admin panel
 
     [:octicons-arrow-right-24: Getting started](getting-started/index.md)
 
 </div>
 
 ---
-> **BETA SOFTWARE WARNING**  
+> **BETA SOFTWARE WARNING**
 > This software is currently in beta and **not fully production ready**. While functional and actively developed, it may contain bugs, incomplete features, or breaking changes. Use in production environments at your own risk. Contributions and feedback are welcome!
 
 ## Architecture at a Glance
 
-Sentinel Auth sits between your frontend applications and your backend microservices:
+Your frontend authenticates users directly with their identity provider. Sentinel validates the IdP token and issues an authorization JWT:
 
 ```
-Frontend App          Sentinel Auth                  Your Microservices
------------           -----------------------          ------------------
-                      +---------------------+
-  Login via    -----> | OAuth2/OIDC (Authlib)|
-  Google/GitHub/      | Session + PKCE       |
-  EntraID             +---------------------+
-                              |
-                      +---------------------+
-  JWT in Auth  <----- | JWT Issuance (RS256) |
-  header              | Access + Refresh     |
-                      +---------------------+
-                              |
-  API calls    -----> +---------------------+          +------------------+
-  with Bearer         | User / Workspace /  | -------> | Permission checks|
-  token               | Group Management    |          | via SDK or API   |
-                      +---------------------+          +------------------+
-                              |
-                      +---------------------+
-                      | Zanzibar Permissions |
-                      | register / check /   |
-                      | share / accessible   |
-                      +---------------------+
+Frontend App          Sentinel Auth                  Your Backend
+-----------           -----------------------        ------------------
+
+  Sign in with   ->   (not involved -- client
+  Google/GitHub/       handles IdP directly)
+  EntraID directly
+
+  Got IdP token  ->   POST /authz/resolve
+                      { idp_token, provider }
+                      Validates IdP token
+                      JIT provisions user
+                 <-   { authz_token, workspaces }
+
+  API calls with ->                                  Validates both:
+  both tokens:                                        - IdP token (IdP key)
+  Authorization:                                      - Authz token (Sentinel key)
+  Bearer <idp>                                        - idp_sub binding
+  X-Authz-Token:
+  <authz>
+
+  Permissions,                                       Uses SDK:
+  Roles, ACLs    ->   Zanzibar permissions   ->      sentinel.permissions.can()
+                      RBAC actions                   sentinel.require_action()
 ```
 
-**No local passwords.** Users always authenticate through external identity providers. Sentinel Auth manages their identity, workspace membership, group assignments, and fine-grained resource permissions.
+**No local passwords.** Users always authenticate through external identity providers. Sentinel manages their authorization, workspace membership, group assignments, and fine-grained resource permissions.
 
 ---
-

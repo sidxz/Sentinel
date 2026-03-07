@@ -1,6 +1,6 @@
 # Getting Started
 
-This section walks you through setting up Sentinel Auth from scratch to a running instance with OAuth login.
+This section walks you through setting up Sentinel Auth from scratch to a running instance with IdP-based authentication and authorization.
 
 ## Prerequisites
 
@@ -23,11 +23,11 @@ All of the above, plus:
 
 You will also need **OAuth credentials** from at least one identity provider (Google is the easiest to set up) to enable user authentication.
 
-!!! note "Client app registration"
-    Before any frontend can authenticate through Sentinel, you must register it as a **client app** with its redirect URI. The [Quickstart](quickstart.md) covers this step.
+!!! note "Google Sign-In setup"
+    Your frontend authenticates users directly with Google (or another IdP). To set this up, go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an **OAuth 2.0 Client ID** (Web application), and add your frontend's URL (e.g. `http://localhost:5174`) to the **Authorized JavaScript origins**. The [Quickstart](quickstart.md) covers this in detail.
 
 ## What's Covered
 
 - **[Installation](installation.md)** -- Pull the Docker image (or clone the repo for development), generate JWT keys, and start the full stack.
-- **[Quickstart](quickstart.md)** -- Configure an OAuth provider, register client and service apps, and verify everything works end to end.
+- **[Quickstart](quickstart.md)** -- Configure an identity provider, register a service app, and run the demo app end to end.
 - **[Configuration](configuration.md)** -- Complete reference for every environment variable, organized by category.

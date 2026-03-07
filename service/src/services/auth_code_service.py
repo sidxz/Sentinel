@@ -54,12 +54,12 @@ async def consume_auth_code(code: str) -> dict | None:
 
 def verify_code_challenge(code_verifier: str, code_challenge: str, method: str) -> bool:
     """Verify PKCE code_verifier against stored code_challenge."""
-    import base64
-    import hashlib
     import hmac
+
+    from authlib.oauth2.rfc7636 import create_s256_code_challenge
 
     if method != "S256":
         return False
-    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
-    computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    return hmac.compare_digest(computed, code_challenge)
+    return hmac.compare_digest(
+        create_s256_code_challenge(code_verifier), code_challenge
+    )

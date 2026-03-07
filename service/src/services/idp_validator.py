@@ -8,6 +8,7 @@ Supports:
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import httpx
@@ -48,34 +49,34 @@ _PROVIDER_CONFIG: dict[str, dict[str, Any]] = {
 }
 
 # ---------------------------------------------------------------------------
-# JWKS cache
+# JWKS cache (with TTL)
 # ---------------------------------------------------------------------------
 
-_jwks_cache: dict[str, list[dict]] = {}
+_JWKS_CACHE_TTL = 3600  # 1 hour — Google rotates keys roughly every 6 hours
+
+_jwks_cache: dict[str, tuple[list[dict], float]] = {}
 
 
 async def _fetch_jwks(provider: str) -> list[dict]:
     """Fetch and cache JWKS public keys for the given OIDC provider."""
-    if provider in _jwks_cache:
-        return _jwks_cache[provider]
+    cached = _jwks_cache.get(provider)
+    if cached:
+        keys, fetched_at = cached
+        if time.monotonic() - fetched_at < _JWKS_CACHE_TTL:
+            return keys
 
     config = _PROVIDER_CONFIG[provider]
     jwks_uri = config["jwks_uri"]
     if callable(jwks_uri):
         jwks_uri = jwks_uri()
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(jwks_uri)
         resp.raise_for_status()
         keys = resp.json()["keys"]
 
-    _jwks_cache[provider] = keys
+    _jwks_cache[provider] = (keys, time.monotonic())
     return keys
-
-
-def clear_jwks_cache() -> None:
-    """Clear the cached JWKS keys (useful for key rotation)."""
-    _jwks_cache.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +169,7 @@ async def _validate_github_token(idp_token: str) -> dict[str, Any]:
         "Accept": "application/vnd.github+json",
     }
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         # Fetch user profile
         profile_resp = await client.get("https://api.github.com/user", headers=headers)
         if profile_resp.status_code != 200:

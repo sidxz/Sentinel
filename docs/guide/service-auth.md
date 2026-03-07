@@ -187,3 +187,50 @@ The SDK's `_headers(token=None)` method builds the appropriate headers:
 
 - Always includes `X-Service-Key` if a `service_key` was provided.
 - Includes `Authorization: Bearer {token}` when a user token is passed.
+
+## Origin-Based Auth for Browser Clients
+
+For browser frontends that call Sentinel's `/authz/resolve` directly, service apps support **origin-based authentication** as an alternative to service keys.
+
+### How It Works
+
+When a browser makes a request to `/authz/resolve`, it includes an `Origin` header (enforced by the browser, cannot be forged in browser contexts). Sentinel matches this origin against the `allowed_origins` field of registered service apps.
+
+```
+Browser (https://app.acme.com)              Sentinel
+  │                                            │
+  │ POST /authz/resolve                        │
+  │ Origin: https://app.acme.com  ──────────►  │
+  │ { idp_token, provider }                    │ 1. Match Origin → ServiceApp.allowed_origins
+  │                                            │ 2. Validate IdP token
+  │                                            │ 3. Return workspaces / authz JWT
+  │ ◄────────────────────────────────────────  │
+```
+
+### Configuring Allowed Origins
+
+Add origins when creating or editing a service app:
+
+=== "Admin Panel"
+
+    Navigate to **Service Apps** → select your app → **Edit** → add origins to the **Allowed Origins** field (one per line).
+
+=== "Admin API"
+
+    ```bash
+    curl -X PATCH https://sentinel.example.com/admin/service-apps/{id} \
+      -H "Cookie: admin_token=..." \
+      -H "Content-Type: application/json" \
+      -H "X-Requested-With: XMLHttpRequest" \
+      -d '{"allowed_origins": ["https://app.acme.com", "https://staging.acme.com"]}'
+    ```
+
+### When to Use Which
+
+| Auth Method | When to Use |
+|-------------|-------------|
+| `X-Service-Key` | Backend-to-backend calls (permissions, roles, authz resolve from a server) |
+| `Origin` header | Browser frontends calling `/authz/resolve` directly |
+
+!!! note "IdP token still required"
+    Origin-based auth identifies the service app — it does not authenticate the user. A valid IdP token must still be provided in the request body. This is the same security model used by Firebase, Supabase, and Auth0.

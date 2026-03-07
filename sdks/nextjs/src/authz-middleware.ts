@@ -112,9 +112,10 @@ export function createSentinelAuthzMiddleware(config: SentinelAuthzMiddlewareCon
       }
 
       // Forward verified user info in request headers for server components / route handlers
+      // Identity (email, name) comes from IdP token; authorization from authz token
       requestHeaders.set('x-sentinel-user-id', String(authzPayload.sub))
-      requestHeaders.set('x-sentinel-email', String(authzPayload.email))
-      requestHeaders.set('x-sentinel-name', String(authzPayload.name))
+      requestHeaders.set('x-sentinel-email', String(idpPayload.email ?? ''))
+      requestHeaders.set('x-sentinel-name', String(idpPayload.name ?? ''))
       requestHeaders.set('x-sentinel-workspace-id', String(authzPayload.wid))
       requestHeaders.set('x-sentinel-workspace-slug', String(authzPayload.wslug))
       requestHeaders.set('x-sentinel-workspace-role', String(authzPayload.wrole))

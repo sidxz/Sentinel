@@ -1,10 +1,61 @@
 # Next.js Integration
 
-The `@sentinel-auth/nextjs` package provides Edge Middleware for JWT validation, server helpers for Server Components and Route Handlers, and client-side re-exports from `@sentinel-auth/react`.
+The `@sentinel-auth/nextjs` package provides Edge Middleware for JWT validation, server helpers for Server Components and Route Handlers, and client-side re-exports from `@sentinel-auth/react`. It supports both **authz mode** (recommended) and **proxy mode**.
 
-## Edge Middleware
+## AuthZ Mode Edge Middleware (Recommended)
 
-Protect all routes with JWT verification at the edge. The middleware verifies tokens via JWKS and forwards user info to downstream components via request headers.
+For apps using authz mode (direct IdP sign-in + Sentinel authorization), use `createSentinelAuthzMiddleware`. It validates both the IdP token and the Sentinel authz token at the edge.
+
+### Setup
+
+Create `middleware.ts` in your project root:
+
+```typescript
+// middleware.ts
+import { createSentinelAuthzMiddleware } from '@sentinel-auth/nextjs/authz-middleware'
+
+export default createSentinelAuthzMiddleware({
+  sentinelUrl: 'http://localhost:9003',
+  idpJwksUrl: 'https://www.googleapis.com/oauth2/v3/certs',
+  publicPaths: ['/login'],
+})
+
+export const config = { matcher: ['/((?!_next|favicon.ico).*)'] }
+```
+
+### Configuration
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `sentinelUrl` | `string` | *required* | Sentinel URL (derives JWKS endpoint) |
+| `idpJwksUrl` | `string` | *required* | IdP's JWKS URL for token validation |
+| `publicPaths` | `string[]` | `[]` | Paths that skip authentication |
+| `loginPath` | `string` | `"/login"` | Redirect for unauthenticated pages |
+
+### Behavior
+
+1. **Public paths** pass through
+2. Validates IdP token (`Authorization: Bearer`) against IdP JWKS
+3. Validates authz token (`X-Authz-Token`) against Sentinel JWKS
+4. Checks `idp_sub` binding between tokens
+5. Sets `x-sentinel-*` headers on success
+6. **API routes** (`/api/*`) get 401, **page routes** redirect to `loginPath`
+
+### Client Components
+
+The default import re-exports authz components from `@sentinel-auth/react`:
+
+```tsx
+'use client'
+
+import { useAuthz, useAuthzUser, AuthzGuard, AuthzProvider } from '@sentinel-auth/nextjs'
+```
+
+---
+
+## Full Proxy Mode Edge Middleware
+
+For apps using Sentinel's OAuth redirect flow instead of direct IdP sign-in.
 
 ### Setup
 
@@ -31,7 +82,7 @@ export const config = {
 | `publicPaths` | `string[]` | `[]` | Paths that skip authentication |
 | `loginPath` | `string` | `"/login"` | Redirect target for unauthenticated page requests |
 | `audience` | `string` | `"sentinel:access"` | Expected JWT audience |
-| `allowedWorkspaces` | `string[]` | — | Optional workspace ID allowlist |
+| `allowedWorkspaces` | `string[]` | -- | Optional workspace ID allowlist |
 
 ### Behavior
 
@@ -43,9 +94,11 @@ export const config = {
     - **API routes** (`/api/*`) receive a `401 Unauthorized` JSON response
     - **Page routes** are redirected to `loginPath`
 
-### Headers Set
+---
 
-The middleware sets these headers on successful verification, readable in Server Components and Route Handlers:
+## Headers Set
+
+Both middleware variants set these headers on successful verification, readable in Server Components and Route Handlers:
 
 | Header | Description |
 |--------|-------------|
@@ -58,7 +111,7 @@ The middleware sets these headers on successful verification, readable in Server
 
 ## Server Helpers
 
-Read user information set by the middleware in Server Components and Route Handlers.
+Read user information set by the middleware in Server Components and Route Handlers. These work with either middleware variant.
 
 ### `getUser`
 
@@ -120,15 +173,62 @@ The default import re-exports everything from `@sentinel-auth/react` with `'use 
 'use client'
 
 import { useAuth, useUser, AuthGuard, AuthCallback } from '@sentinel-auth/nextjs'
+import { useAuthz, useAuthzUser, AuthzGuard, AuthzProvider } from '@sentinel-auth/nextjs'
 ```
 
 See the [React Integration](react.md) docs for full details on these exports.
 
 ## Full Example
 
-=== "middleware.ts"
+=== "AuthZ Mode"
 
     ```typescript
+    // middleware.ts
+    import { createSentinelAuthzMiddleware } from '@sentinel-auth/nextjs/authz-middleware'
+
+    export default createSentinelAuthzMiddleware({
+      sentinelUrl: process.env.SENTINEL_URL!,
+      idpJwksUrl: 'https://www.googleapis.com/oauth2/v3/certs',
+      publicPaths: ['/login'],
+    })
+
+    export const config = { matcher: ['/((?!_next|favicon.ico).*)'] }
+    ```
+
+    ```tsx
+    // app/login/page.tsx
+    'use client'
+
+    import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google'
+    import { AuthzProvider, useAuthz } from '@sentinel-auth/nextjs'
+
+    function LoginButton() {
+      const { resolve, selectWorkspace } = useAuthz()
+      return (
+        <GoogleLogin onSuccess={async (r) => {
+          const result = await resolve(r.credential!, 'google')
+          if (result.workspaces?.length === 1) {
+            await selectWorkspace(r.credential!, 'google', result.workspaces[0].id)
+          }
+        }} />
+      )
+    }
+
+    export default function LoginPage() {
+      return (
+        <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!}>
+          <AuthzProvider config={{ sentinelUrl: process.env.NEXT_PUBLIC_SENTINEL_URL! }}>
+            <LoginButton />
+          </AuthzProvider>
+        </GoogleOAuthProvider>
+      )
+    }
+    ```
+
+=== "Proxy Mode"
+
+    ```typescript
+    // middleware.ts
     import { createSentinelMiddleware } from '@sentinel-auth/nextjs/middleware'
 
     export default createSentinelMiddleware({
@@ -141,27 +241,8 @@ See the [React Integration](react.md) docs for full details on these exports.
     }
     ```
 
-=== "app/layout.tsx (Server)"
-
     ```tsx
-    import { getUser } from '@sentinel-auth/nextjs/server'
-
-    export default async function RootLayout({ children }) {
-      const user = await getUser()
-      return (
-        <html>
-          <body>
-            <nav>{user ? `Hi, ${user.name}` : 'Not signed in'}</nav>
-            {children}
-          </body>
-        </html>
-      )
-    }
-    ```
-
-=== "app/login/page.tsx (Client)"
-
-    ```tsx
+    // app/login/page.tsx
     'use client'
 
     import { SentinelAuthProvider, useAuth } from '@sentinel-auth/nextjs'
@@ -180,9 +261,29 @@ See the [React Integration](react.md) docs for full details on these exports.
     }
     ```
 
-=== "app/api/notes/route.ts"
+=== "Server Component"
+
+    ```tsx
+    // app/layout.tsx
+    import { getUser } from '@sentinel-auth/nextjs/server'
+
+    export default async function RootLayout({ children }) {
+      const user = await getUser()
+      return (
+        <html>
+          <body>
+            <nav>{user ? `Hi, ${user.name}` : 'Not signed in'}</nav>
+            {children}
+          </body>
+        </html>
+      )
+    }
+    ```
+
+=== "Route Handler"
 
     ```typescript
+    // app/api/notes/route.ts
     import { withAuth } from '@sentinel-auth/nextjs/server'
 
     export const GET = withAuth(async (req, user) => {
@@ -197,5 +298,6 @@ See the [React Integration](react.md) docs for full details on these exports.
 
 - [Next.js Tutorial](../guide/tutorial-nextjs.md) -- step-by-step guide building a Team Notes app with Next.js
 - [React Integration](react.md) -- hooks, components, and provider
+- [AuthZ Client](authz-client.md) -- configure the authz-mode browser client
 - [Server Utilities](server.md) -- JWT verification and permission checks
-- [Auth Client](auth-client.md) -- underlying browser auth client
+- [Auth Client](auth-client.md) -- proxy-mode browser auth client

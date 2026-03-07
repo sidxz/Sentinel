@@ -21,7 +21,10 @@ app = FastAPI(
     lifespan=sentinel.lifespan,
 )
 
-# CORS for the demo frontend
+# Dual-token authentication (IdP token + Sentinel authz token)
+sentinel.protect(app, exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"])
+
+# CORS must be added AFTER auth middleware so it wraps it (outermost)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url],
@@ -29,9 +32,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Dual-token authentication (IdP token + Sentinel authz token)
-sentinel.protect(app, exclude_paths=["/health", "/docs", "/openapi.json", "/redoc", "/auth/resolve"])
 
 # Mount routes
 from src.routes import router  # noqa: E402

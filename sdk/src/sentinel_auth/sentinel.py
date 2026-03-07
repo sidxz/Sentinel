@@ -37,7 +37,11 @@ class Sentinel:
         service_key: Service API key (from admin panel).
         mode: ``"authz"`` (default) or ``"proxy"``.
         idp_public_key: PEM-encoded public key for validating IdP tokens.
-            Required when ``mode="authz"``.
+            One of ``idp_public_key`` or ``idp_jwks_url`` is required when
+            ``mode="authz"``.
+        idp_jwks_url: JWKS endpoint URL for IdP token validation (e.g.
+            ``https://www.googleapis.com/oauth2/v3/certs``).  Preferred
+            over ``idp_public_key`` as it handles key rotation automatically.
         actions: Optional list of RBAC action dicts to register on startup.
         allowed_workspaces: Optional set of workspace IDs permitted to access
             this service. ``None`` allows all. Only used in proxy mode.
@@ -50,6 +54,7 @@ class Sentinel:
         service_key: str,
         mode: str = "authz",
         idp_public_key: str | None = None,
+        idp_jwks_url: str | None = None,
         actions: list[dict] | None = None,
         allowed_workspaces: set[str] | None = None,
     ):
@@ -60,14 +65,15 @@ class Sentinel:
             )
         if mode not in ("authz", "proxy"):
             raise ValueError(f"mode must be 'authz' or 'proxy', got '{mode}'")
-        if mode == "authz" and not idp_public_key:
-            raise ValueError("idp_public_key is required when mode='authz'")
+        if mode == "authz" and not idp_public_key and not idp_jwks_url:
+            raise ValueError("idp_public_key or idp_jwks_url is required when mode='authz'")
 
         self.base_url = base_url.rstrip("/")
         self.service_name = service_name
         self.service_key = service_key
         self.mode = mode
         self.idp_public_key = idp_public_key
+        self.idp_jwks_url = idp_jwks_url
         self.actions = actions
         self.allowed_workspaces = allowed_workspaces
 
@@ -75,6 +81,11 @@ class Sentinel:
         self._roles: RoleClient | None = None
         self._authz: AuthzClient | None = None
         self._sentinel_public_key: str | None = None
+
+    @property
+    def sentinel_public_key(self) -> str | None:
+        """Sentinel's public key, fetched during lifespan startup."""
+        return self._sentinel_public_key
 
         warn_if_insecure(self.base_url, "Sentinel")
 
@@ -120,17 +131,15 @@ class Sentinel:
 
         In authz mode: adds ``AuthzMiddleware`` (validates IdP + authz tokens).
         In proxy mode: adds ``JWTAuthMiddleware`` (validates Sentinel JWT).
+
+        In authz mode, the middleware reads keys lazily from this ``Sentinel``
+        instance, so ``protect()`` can safely be called at module level before
+        the lifespan fetches Sentinel's public key.
         """
         if self.mode == "authz":
-            if not self._sentinel_public_key:
-                raise RuntimeError(
-                    "Sentinel public key not loaded. Use sentinel.lifespan "
-                    "or call await sentinel.fetch_sentinel_public_key() first."
-                )
             app.add_middleware(
                 AuthzMiddleware,
-                idp_public_key=self.idp_public_key,
-                sentinel_public_key=self._sentinel_public_key,
+                sentinel_instance=self,
                 exclude_paths=exclude_paths,
             )
         else:

@@ -25,6 +25,7 @@ export type {
 export { SentinelAuthz } from './authz-client'
 export { AuthzLocalStorageStore, AuthzMemoryStore } from './authz-storage'
 
+export { IdpConfigs } from './authz-types'
 export type {
   SentinelAuthzConfig,
   AuthzTokenStore,
@@ -32,4 +33,5 @@ export type {
   AuthzUserInfo,
   AuthzWorkspaceOption,
   AuthzWorkspaceInfo,
+  IdpConfig,
 } from './authz-types'

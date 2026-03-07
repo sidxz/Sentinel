@@ -1,45 +1,41 @@
-import { useState } from 'react'
-import { useAuthz } from '@sentinel-auth/react'
-import type { AuthzWorkspaceOption } from '@sentinel-auth/js'
-import { Login } from './components/Login'
-import { WorkspacePicker } from './components/WorkspacePicker'
-import { Notes } from './components/Notes'
+import { AuthzGuard } from "@sentinel-auth/react";
+import { Route, Routes } from "react-router-dom";
+import { Layout } from "./components/Layout";
+import { AuthCallback } from "./pages/AuthCallback";
+import { Export } from "./pages/Export";
+import { Login } from "./pages/Login";
+import { NoteDetail } from "./pages/NoteDetail";
+import { NoteList } from "./pages/NoteList";
 
 export function App() {
-  const { isAuthenticated, user, logout } = useAuthz()
-  const [workspaces, setWorkspaces] = useState<AuthzWorkspaceOption[] | null>(null)
-  const [idpToken, setIdpToken] = useState<string | null>(null)
-
-  if (isAuthenticated && user) {
-    return (
-      <div style={{ maxWidth: 600, margin: '2rem auto', fontFamily: 'system-ui' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <div>
-            <strong>{user.name}</strong> — {user.workspaceSlug} ({user.workspaceRole})
-          </div>
-          <button onClick={logout}>Logout</button>
-        </header>
-        <Notes />
-      </div>
-    )
-  }
-
-  if (workspaces && idpToken) {
-    return (
-      <WorkspacePicker
-        workspaces={workspaces}
-        idpToken={idpToken}
-        onBack={() => { setWorkspaces(null); setIdpToken(null) }}
-      />
-    )
-  }
-
   return (
-    <Login
-      onResolved={(token, ws) => {
-        setIdpToken(token)
-        setWorkspaces(ws)
-      }}
-    />
-  )
+    <Routes>
+      {/* OAuth callback — outside AuthzGuard since user isn't authenticated yet */}
+      <Route path="/auth/callback" element={<AuthCallback />} />
+
+      {/* Authenticated routes */}
+      <Route
+        path="*"
+        element={
+          <AuthzGuard
+            fallback={<Login />}
+            loading={
+              <div className="flex h-screen items-center justify-center bg-zinc-950">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
+              </div>
+            }
+          >
+            <Layout>
+              <Routes>
+                <Route path="/" element={<NoteList />} />
+                <Route path="/notes" element={<NoteList />} />
+                <Route path="/notes/export" element={<Export />} />
+                <Route path="/notes/:id" element={<NoteDetail />} />
+              </Routes>
+            </Layout>
+          </AuthzGuard>
+        }
+      />
+    </Routes>
+  );
 }

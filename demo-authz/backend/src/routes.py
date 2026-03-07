@@ -1,6 +1,6 @@
 """Team Notes API routes — AuthZ mode demo.
 
-In AuthZ mode, the middleware validates two tokens on each request:
+Demonstrates all three authorization tiers using Sentinel's AuthZ mode:
   - IdP token (Authorization: Bearer <idp_token>) — proves identity
   - Authz token (X-Authz-Token: <authz_token>) — proves authorization
 
@@ -17,30 +17,10 @@ from pydantic import BaseModel
 from sentinel_auth.types import AuthenticatedUser
 
 from src.config import sentinel
-from src.deps import get_current_user, get_workspace_id, require_role
+from src.deps import get_current_user, get_token, get_workspace_id, require_role
 from src.models import notes
 
 router = APIRouter()
-
-
-# ---------------------------------------------------------------------------
-# Auth — proxy to Sentinel's /authz/resolve (no authz token needed yet)
-# ---------------------------------------------------------------------------
-class ResolveRequest(BaseModel):
-    idp_token: str
-    provider: str
-    workspace_id: str | None = None
-
-
-@router.post("/auth/resolve")
-async def auth_resolve(body: ResolveRequest):
-    """Proxy to Sentinel's /authz/resolve. Adds service key server-side."""
-    result = await sentinel.authz.resolve(
-        idp_token=body.idp_token,
-        provider=body.provider,
-        workspace_id=uuid.UUID(body.workspace_id) if body.workspace_id else None,
-    )
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +58,19 @@ async def whoami(user: AuthenticatedUser = Depends(get_current_user)):
 
 
 # ---------------------------------------------------------------------------
+# RBAC actions — uses RoleClient to list available actions (Tier 2)
+# ---------------------------------------------------------------------------
+@router.get("/me/actions")
+async def my_actions(
+    user: AuthenticatedUser = Depends(get_current_user),
+    token: str = Depends(get_token),
+):
+    """List all RBAC actions available to the current user."""
+    actions = await sentinel.roles.get_user_actions(token, user.workspace_id)
+    return {"actions": actions}
+
+
+# ---------------------------------------------------------------------------
 # Tier 1: Workspace role — list notes (any authenticated user)
 # ---------------------------------------------------------------------------
 @router.get("/notes")
@@ -88,6 +81,7 @@ async def list_notes(workspace_id: uuid.UUID = Depends(get_workspace_id)):
 
 # ---------------------------------------------------------------------------
 # Tier 2: Custom RBAC — export notes (requires notes:export action)
+# NOTE: Must be defined before /notes/{note_id} to avoid path conflict
 # ---------------------------------------------------------------------------
 @router.get("/notes/export")
 async def export_notes(
@@ -133,6 +127,60 @@ async def create_note(
 
 
 # ---------------------------------------------------------------------------
+# Tier 3: Entity ACL — view a single note (checks 'view' permission)
+# ---------------------------------------------------------------------------
+@router.get("/notes/{note_id}")
+async def get_note(
+    note_id: uuid.UUID,
+    user: AuthenticatedUser = Depends(get_current_user),
+    token: str = Depends(get_token),
+):
+    """View a note. Checks entity-level 'view' permission."""
+    note = notes.get(note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    allowed = await sentinel.permissions.can(
+        token=token,
+        resource_type="note",
+        resource_id=note_id,
+        action="view",
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return asdict(note)
+
+
+# ---------------------------------------------------------------------------
+# Tier 3: Entity ACL — update a note (checks 'edit' permission)
+# ---------------------------------------------------------------------------
+@router.patch("/notes/{note_id}")
+async def update_note(
+    note_id: uuid.UUID,
+    body: UpdateNoteRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    token: str = Depends(get_token),
+):
+    """Update a note. Checks entity-level 'edit' permission."""
+    note = notes.get(note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    allowed = await sentinel.permissions.can(
+        token=token,
+        resource_type="note",
+        resource_id=note_id,
+        action="edit",
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    updated = notes.update(note_id, title=body.title, content=body.content)
+    return asdict(updated)
+
+
+# ---------------------------------------------------------------------------
 # Tier 1: Workspace role — delete note (admin+)
 # ---------------------------------------------------------------------------
 @router.delete("/notes/{note_id}")
@@ -144,3 +192,35 @@ async def delete_note(
     if not notes.delete(note_id):
         raise HTTPException(status_code=404, detail="Note not found")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Tier 3: Entity ACL — share a note (owner grants permission to another user)
+# ---------------------------------------------------------------------------
+@router.post("/notes/{note_id}/share")
+async def share_note(
+    note_id: uuid.UUID,
+    body: ShareNoteRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    token: str = Depends(get_token),
+):
+    """Share a note with another user. Only the note owner can share."""
+    note = notes.get(note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    if note.owner_id != user.user_id:
+        raise HTTPException(status_code=403, detail="Only the owner can share")
+
+    try:
+        await sentinel.permissions.share(
+            token=token,
+            resource_type="note",
+            resource_id=note_id,
+            grantee_type="user",
+            grantee_id=body.user_id,
+            permission=body.permission,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return {"ok": True, "shared_with": str(body.user_id), "permission": body.permission}
