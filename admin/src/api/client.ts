@@ -345,7 +345,11 @@ export const deleteClientApp = (id: string) =>
 export const getServiceApps = () =>
   request<ServiceApp[]>("/admin/service-apps");
 
-export const createServiceApp = (body: { name: string; service_name: string }) =>
+export const createServiceApp = (body: {
+  name: string;
+  service_name: string;
+  allowed_origins?: string[];
+}) =>
   request<ServiceAppCreateResponse>("/admin/service-apps", {
     method: "POST",
     body: JSON.stringify(body),
@@ -356,7 +360,7 @@ export const getServiceApp = (id: string) =>
 
 export const updateServiceApp = (
   id: string,
-  body: { name?: string; is_active?: boolean },
+  body: { name?: string; is_active?: boolean; allowed_origins?: string[] },
 ) =>
   request<ServiceApp>(`/admin/service-apps/${id}`, {
     method: "PATCH",

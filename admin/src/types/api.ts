@@ -216,6 +216,7 @@ export interface ServiceApp {
   service_name: string;
   key_prefix: string;
   is_active: boolean;
+  allowed_origins: string[];
   last_used_at: string | null;
   created_by: string | null;
   created_at: string;

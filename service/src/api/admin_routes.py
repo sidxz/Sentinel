@@ -1219,7 +1219,11 @@ async def create_service_app(
     actor_id = uuid.UUID(admin["sub"])
     try:
         app, plaintext_key = await service_app_service.create_service_app(
-            db, name=body.name, service_name=body.service_name, created_by=actor_id
+            db,
+            name=body.name,
+            service_name=body.service_name,
+            created_by=actor_id,
+            allowed_origins=body.allowed_origins,
         )
     except Exception as e:
         logger.error("create_service_app failed", error=str(e), exc_info=True)
@@ -1269,7 +1273,11 @@ async def update_service_app(
 ):
     try:
         app = await service_app_service.update_service_app(
-            db, app_id, name=body.name, is_active=body.is_active
+            db,
+            app_id,
+            name=body.name,
+            is_active=body.is_active,
+            allowed_origins=body.allowed_origins,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
