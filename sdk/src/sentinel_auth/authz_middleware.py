@@ -111,10 +111,7 @@ class AuthzMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if request.method == "OPTIONS":
             return await call_next(request)
-        if any(
-            request.url.path == p or request.url.path.startswith(p + "/")
-            for p in self.exclude_paths
-        ):
+        if any(request.url.path == p or request.url.path.startswith(p + "/") for p in self.exclude_paths):
             return await call_next(request)
 
         # 1. Extract IdP token from Authorization header

@@ -77,9 +77,12 @@ async def update_workspace(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    return await workspace_service.update_workspace(
-        db, workspace_id, name=body.name, description=body.description
-    )
+    try:
+        return await workspace_service.update_workspace(
+            db, workspace_id, name=body.name, description=body.description
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.delete("/{workspace_id}", status_code=204)
@@ -119,13 +122,16 @@ async def invite_member(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    membership = await workspace_service.invite_member(
-        db,
-        workspace_id,
-        email=body.email,
-        role=body.role,
-        actor_role=user.workspace_role,
-    )
+    try:
+        membership = await workspace_service.invite_member(
+            db,
+            workspace_id,
+            email=body.email,
+            role=body.role,
+            actor_role=user.workspace_role,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return membership
 
 
@@ -139,9 +145,15 @@ async def update_member_role(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    return await workspace_service.update_member_role(
-        db, workspace_id, user_id, role=body.role, actor_role=user.workspace_role
-    )
+    try:
+        return await workspace_service.update_member_role(
+            db, workspace_id, user_id, role=body.role, actor_role=user.workspace_role
+        )
+    except ValueError as e:
+        detail = str(e)
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=403, detail=detail)
 
 
 @router.delete("/{workspace_id}/members/{user_id}", status_code=204)
@@ -153,6 +165,12 @@ async def remove_member(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    await workspace_service.remove_member(
-        db, workspace_id, user_id, actor_role=user.workspace_role
-    )
+    try:
+        await workspace_service.remove_member(
+            db, workspace_id, user_id, actor_role=user.workspace_role
+        )
+    except ValueError as e:
+        detail = str(e)
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=403, detail=detail)

@@ -51,6 +51,8 @@ async def get_current_user(request: Request) -> CurrentUser:
     if not auth or not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     token = auth.removeprefix("Bearer ")
+    if len(token) > 8192:
+        raise HTTPException(status_code=401, detail="Token too large")
     try:
         # Security: only accept access tokens — authz tokens must not be usable here
         payload = decode_token(token, audience=_AUD_ACCESS)
@@ -60,6 +62,10 @@ async def get_current_user(request: Request) -> CurrentUser:
     # Security: enforce token type to prevent cross-type confusion
     if payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token type")
+
+    # Security: reject tokens missing required claims
+    if not all(k in payload for k in ("sub", "wid", "wrole")):
+        raise HTTPException(status_code=401, detail="Token missing required claims")
 
     # Check token revocation (jti denylist)
     if jti := payload.get("jti"):
@@ -96,6 +102,8 @@ async def get_user_for_service_call(request: Request) -> CurrentUser:
     if not auth or not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     token = auth.removeprefix("Bearer ")
+    if len(token) > 8192:
+        raise HTTPException(status_code=401, detail="Token too large")
     try:
         payload = decode_token(token, audience=[_AUD_ACCESS, _AUD_AUTHZ])
     except Exception:
@@ -104,6 +112,10 @@ async def get_user_for_service_call(request: Request) -> CurrentUser:
     token_type = payload.get("type")
     if token_type not in ("access", "authz"):
         raise HTTPException(status_code=401, detail="Invalid token type")
+
+    # Security: reject tokens missing required claims
+    if not all(k in payload for k in ("sub", "wid", "wrole")):
+        raise HTTPException(status_code=401, detail="Token missing required claims")
 
     # For access tokens, check revocation and deactivation
     if token_type == "access":
@@ -118,7 +130,9 @@ async def get_user_for_service_call(request: Request) -> CurrentUser:
             from src.services.token_service import is_user_deactivated
 
             if await is_user_deactivated(user_id):
-                raise HTTPException(status_code=401, detail="User account is deactivated")
+                raise HTTPException(
+                    status_code=401, detail="User account is deactivated"
+                )
 
     return CurrentUser(
         user_id=uuid.UUID(payload["sub"]),

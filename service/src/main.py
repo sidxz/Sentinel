@@ -172,8 +172,10 @@ app = FastAPI(
 # Reject oversized request bodies (10 MB)
 app.add_middleware(MaxBodySizeMiddleware, max_bytes=10_485_760)
 
-# Global rate limiting (30 req/min per IP, all endpoints)
-app.add_middleware(GlobalRateLimitMiddleware, requests_per_minute=30)
+# Global rate limiting (configurable via RATE_LIMIT_RPM, default 30 req/min per IP)
+app.add_middleware(
+    GlobalRateLimitMiddleware, requests_per_minute=settings.rate_limit_rpm
+)
 
 # Security headers on every response
 app.add_middleware(SecurityHeadersMiddleware, hsts=settings.cookie_secure)

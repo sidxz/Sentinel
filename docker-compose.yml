@@ -56,8 +56,7 @@ services:
 
   sentinel:
     build:
-      context: .
-      dockerfile: service/Dockerfile
+      context: service
     ports:
       - "9003:9003"
     env_file:
@@ -68,6 +67,7 @@ services:
       REDIS_URL: "rediss://:sentinel_dev@identity-redis:6379/0"
       REDIS_TLS_CA_CERT: "/keys/tls/ca.crt"
       ALLOWED_HOSTS: "localhost,sentinel"
+      RATE_LIMIT_RPM: 10000
     volumes:
       - ./keys:/keys:ro
     depends_on:

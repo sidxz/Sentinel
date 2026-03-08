@@ -118,10 +118,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Skip auth for excluded paths (exact match or path prefix with boundary)
-        if any(
-            request.url.path == p or request.url.path.startswith(p + "/")
-            for p in self.exclude_paths
-        ):
+        if any(request.url.path == p or request.url.path.startswith(p + "/") for p in self.exclude_paths):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization")

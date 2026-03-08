@@ -11,7 +11,7 @@ class TokenResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(max_length=4096)
 
 
 class TokenPayload(BaseModel):

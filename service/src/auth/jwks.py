@@ -21,7 +21,10 @@ def build_jwks() -> dict:
     Result is cached with a TTL to support key rotation without full restart.
     """
     global _jwks_cache, _jwks_cache_time
-    if _jwks_cache is not None and (time.monotonic() - _jwks_cache_time) < _JWKS_CACHE_TTL:
+    if (
+        _jwks_cache is not None
+        and (time.monotonic() - _jwks_cache_time) < _JWKS_CACHE_TTL
+    ):
         return _jwks_cache
 
     pub_key = load_pem_public_key(get_public_key().encode())

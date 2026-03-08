@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: help setup start admin seed create-admin status clean nuke docs docs-serve lint fmt release pentest pentest-custom pentest-setup pentest-kali pentest-kali-stop
+.PHONY: help setup start admin seed create-admin status clean nuke docs docs-serve lint fmt release docker pentest pentest-setup pentest-kali
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -106,6 +106,13 @@ docs: ## Build documentation site
 docs-serve: ## Serve documentation site with live reload
 	uv run --extra docs mkdocs serve
 
+docker: ## Start full stack in Docker (service + postgres + redis)
+	docker compose up -d --build
+	@until [ "$$(docker compose ps identity-postgres --format '{{.Health}}')" = "healthy" ]; do sleep 1; done
+	@echo ""
+	@echo "  Service: http://localhost:9003"
+	@echo "  Stop:    docker compose down"
+
 clean: ## Stop containers and wipe database
 	docker compose down -v
 
@@ -120,26 +127,21 @@ ifndef VERSION
 endif
 	@./scripts/release.sh $(VERSION)
 
-pentest-setup: ## Install pentest tools (ZAP, Nuclei, Nikto, jwt_tool)
+pentest: ## Run pentest suite (usage: make pentest [ARGS="--sast|--custom|--zap|..."])
+	@cd pentest && python run_all.py $(or $(ARGS),--all)
+
+pentest-fast: ## Run pentest suite with relaxed rate limits (RATE_LIMIT_RPM=1000, 5s cooldown)
+	@cd pentest && PENTEST_FAST=1 python run_all.py $(or $(ARGS),--all)
+
+pentest-setup: ## Install pentest tools
 	cd pentest && bash setup_tools.sh
 
-pentest: ## Run full pentest suite (tools + custom scripts)
-	cd pentest && python run_all.py --all
-
-pentest-custom: ## Run custom pentest scripts only
-	cd pentest && python run_all.py --custom
-
-pentest-kali: ## Launch Kali Linux container on sentinel network
+pentest-kali: ## Launch Kali container (stop: make pentest-kali ARGS=stop)
+ifeq ($(ARGS),stop)
+	docker compose -f docker-compose.yml -f docker-compose.pentest.yml down kali
+else
 	docker compose -f docker-compose.yml -f docker-compose.pentest.yml up -d kali
 	@echo ""
-	@echo "  Kali container ready. Connect with:"
-	@echo "    docker exec -it sentinel-kali bash"
-	@echo ""
-	@echo "  Inside the container:"
-	@echo "    nmap -sV sentinel -p 9003"
-	@echo "    nikto -h http://sentinel:9003"
-	@echo "    cd /pentest && pip3 install -r requirements.txt"
-	@echo "    BASE_URL=http://sentinel:9003 python3 run_all.py --custom"
-
-pentest-kali-stop: ## Stop and remove Kali container
-	docker compose -f docker-compose.yml -f docker-compose.pentest.yml down kali
+	@echo "  Kali ready: docker exec -it sentinel-kali bash"
+	@echo "  Stop:       make pentest-kali ARGS=stop"
+endif
