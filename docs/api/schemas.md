@@ -1,426 +1,285 @@
-# Schema Reference
+# Request & Response Schemas
 
-> **Tip:** For interactive API exploration, visit `/docs` (Swagger UI) when the service is running.
-
-This page consolidates all Pydantic request and response models used by the Sentinel Auth API. Each schema is presented as a table with field details.
+Pydantic models used across the Sentinel API. All UUIDs are v4 strings. Timestamps are ISO 8601.
 
 ---
 
-## Auth Schemas
+## Auth
 
 ### TokenResponse
 
 Returned by `POST /auth/token` and `POST /auth/refresh`.
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `access_token` | `string` | Yes | RS256-signed JWT access token |
-| `refresh_token` | `string` | Yes | Opaque refresh token for obtaining new access tokens |
-| `token_type` | `string` | Yes | Always `"bearer"` |
-| `expires_in` | `integer` | Yes | Access token TTL in seconds |
+| Field | Type | Description |
+|---|---|---|
+| `access_token` | string | RS256-signed JWT |
+| `refresh_token` | string | Opaque refresh token |
+| `token_type` | string | Always `"bearer"` |
+| `expires_in` | int | Access token TTL in seconds |
 
 ### RefreshRequest
 
-Request body for `POST /auth/refresh`.
+| Field | Type | Description |
+|---|---|---|
+| `refresh_token` | string | Refresh token to exchange |
+
+### SelectWorkspaceRequest
+
+| Field | Type | Description |
+|---|---|---|
+| `code` | string | Authorization code from OAuth callback |
+| `workspace_id` | UUID | Workspace to authenticate into |
+| `code_verifier` | string | PKCE verifier (43--128 chars) |
+
+### TokenPayload (JWT Claims)
+
+Not returned directly. Describes the access token payload.
+
+| Claim | Type | Description |
+|---|---|---|
+| `sub` | UUID | User ID |
+| `email` | string | User email |
+| `name` | string | Display name |
+| `wid` | UUID | Active workspace ID |
+| `wslug` | string | Workspace slug |
+| `wrole` | string | Workspace role: `owner`, `admin`, `editor`, `viewer` |
+| `groups` | UUID[] | Group IDs in the active workspace |
+
+### AuthzResolveRequest
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `refresh_token` | `string` | Yes | The refresh token to exchange |
+| `idp_token` | string | Yes | Raw IdP token |
+| `provider` | string | Yes | `google`, `github`, `entra_id` |
+| `workspace_id` | UUID | No | Omit to get workspace list |
 
-### TokenPayload
+### AuthzResolveResponse
 
-Internal JWT payload structure. Not directly returned by any endpoint, but useful for understanding JWT claims.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `sub` | `UUID` | Yes | User ID |
-| `email` | `string` | Yes | User email address |
-| `name` | `string` | Yes | User display name |
-| `wid` | `UUID` | Yes | Active workspace ID |
-| `wslug` | `string` | Yes | Active workspace slug |
-| `wrole` | `string` | Yes | User's role in the active workspace (`viewer`, `editor`, `admin`, `owner`) |
-| `groups` | `list[UUID]` | Yes | List of group IDs the user belongs to in the active workspace |
-
-### ProviderListResponse
-
-Returned by `GET /auth/providers`.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `providers` | `list[string]` | Yes | List of configured OAuth provider names (e.g., `["google", "github"]`) |
+| Field | Type | Description |
+|---|---|---|
+| `user` | object | `{id, email, name}` |
+| `workspace` | object or null | `{id, slug, role}` (when workspace_id provided) |
+| `authz_token` | string or null | Signed authz JWT (when workspace_id provided) |
+| `expires_in` | int or null | Token TTL in seconds |
+| `workspaces` | array or null | `[{id, name, slug, role}]` (when workspace_id omitted) |
 
 ---
 
-## User Schemas
+## Users
 
 ### UserResponse
 
-Returned by `GET /users/me` and `PATCH /users/me`.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `id` | `UUID` | Yes | User ID |
-| `email` | `string` | Yes | User email address |
-| `name` | `string` | Yes | User display name |
-| `avatar_url` | `string \| null` | Yes | URL to user's avatar image, or `null` |
-| `is_active` | `boolean` | Yes | Whether the user account is active |
-| `created_at` | `datetime` | Yes | Account creation timestamp (ISO 8601) |
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | User ID |
+| `email` | string | Email address |
+| `name` | string | Display name |
+| `avatar_url` | string or null | Avatar URL |
+| `is_active` | bool | Account active status |
+| `created_at` | datetime | Creation timestamp |
 
 ### UserUpdateRequest
 
-Request body for `PATCH /users/me`.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `name` | `string \| null` | No | New display name |
-| `avatar_url` | `string \| null` | No | New avatar URL |
+| Field | Type | Description |
+|---|---|---|
+| `name` | string or null | New display name |
+| `avatar_url` | string or null | New avatar URL (http/https only) |
 
 ---
 
-## Workspace Schemas
+## Workspaces
 
 ### WorkspaceCreateRequest
 
-Request body for `POST /workspaces`.
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `name` | `string` | Yes | 1-255 characters | Workspace display name |
-| `slug` | `string` | Yes | 1-100 chars, pattern: `^[a-z0-9][a-z0-9-]*[a-z0-9]$` | URL-safe workspace identifier. Must start and end with a lowercase alphanumeric character; hyphens allowed in between. |
-| `description` | `string \| null` | No | -- | Optional workspace description |
-
-### WorkspaceUpdateRequest
-
-Request body for `PATCH /workspaces/{id}`.
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `name` | `string \| null` | No | 1-255 characters | New workspace name |
-| `description` | `string \| null` | No | -- | New workspace description |
+| Field | Type | Constraints | Description |
+|---|---|---|---|
+| `name` | string | 1--255 chars | Display name |
+| `slug` | string | 1--100, `^[a-z0-9][a-z0-9-]*[a-z0-9]$` | URL-safe identifier |
+| `description` | string or null | -- | Optional description |
 
 ### WorkspaceResponse
 
-Returned by workspace CRUD endpoints.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `id` | `UUID` | Yes | Workspace ID |
-| `slug` | `string` | Yes | URL-safe workspace identifier |
-| `name` | `string` | Yes | Workspace display name |
-| `description` | `string \| null` | Yes | Workspace description, or `null` |
-| `created_by` | `UUID` | Yes | ID of the user who created the workspace |
-| `created_at` | `datetime` | Yes | Creation timestamp (ISO 8601) |
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | Workspace ID |
+| `slug` | string | URL-safe identifier |
+| `name` | string | Display name |
+| `description` | string or null | Description |
+| `created_by` | UUID or null | Creator user ID |
+| `created_at` | datetime | Creation timestamp |
 
 ### WorkspaceMemberResponse
 
-Returned by member listing and invite endpoints.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `user_id` | `UUID` | Yes | Member's user ID |
-| `email` | `string` | Yes | Member's email address |
-| `name` | `string` | Yes | Member's display name |
-| `avatar_url` | `string \| null` | Yes | Member's avatar URL, or `null` |
-| `role` | `string` | Yes | Workspace role: `viewer`, `editor`, `admin`, or `owner` |
-| `joined_at` | `datetime` | Yes | When the member joined the workspace (ISO 8601) |
+| Field | Type | Description |
+|---|---|---|
+| `user_id` | UUID | Member's user ID |
+| `email` | string | Email |
+| `name` | string | Display name |
+| `avatar_url` | string or null | Avatar URL |
+| `role` | string | `owner`, `admin`, `editor`, or `viewer` |
+| `joined_at` | datetime | Join timestamp |
 
 ### InviteMemberRequest
 
-Request body for `POST /workspaces/{id}/members/invite`.
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `email` | `string` | Yes | -- | Email address of the user to invite |
-| `role` | `string` | No | Pattern: `^(owner\|admin\|editor\|viewer)$`. Default: `viewer` | Role to assign to the invited member |
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `email` | string | -- | Email of user to invite |
+| `role` | string | `"viewer"` | One of: `owner`, `admin`, `editor`, `viewer` |
 
 ### UpdateMemberRoleRequest
 
-Request body for `PATCH /workspaces/{id}/members/{user_id}`.
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `role` | `string` | Yes | Pattern: `^(owner\|admin\|editor\|viewer)$` | New role for the member |
+| Field | Type | Description |
+|---|---|---|
+| `role` | string | One of: `owner`, `admin`, `editor`, `viewer` |
 
 ---
 
-## Group Schemas
+## Groups
 
 ### GroupCreateRequest
 
-Request body for `POST /workspaces/{workspace_id}/groups`.
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `name` | `string` | Yes | 1-255 characters | Group display name |
-| `description` | `string \| null` | No | -- | Optional group description |
-
-### GroupUpdateRequest
-
-Request body for `PATCH /workspaces/{workspace_id}/groups/{group_id}`.
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `name` | `string \| null` | No | 1-255 characters | New group name |
-| `description` | `string \| null` | No | -- | New group description |
+| Field | Type | Constraints | Description |
+|---|---|---|---|
+| `name` | string | 1--255 chars | Group name |
+| `description` | string or null | -- | Optional description |
 
 ### GroupResponse
 
-Returned by group CRUD endpoints.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `id` | `UUID` | Yes | Group ID |
-| `workspace_id` | `UUID` | Yes | Parent workspace ID |
-| `name` | `string` | Yes | Group display name |
-| `description` | `string \| null` | Yes | Group description, or `null` |
-| `created_by` | `UUID` | Yes | ID of the user who created the group |
-| `created_at` | `datetime` | Yes | Creation timestamp (ISO 8601) |
-
-### GroupMemberResponse
-
-Returned when listing group members.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `user_id` | `UUID` | Yes | Member's user ID |
-| `email` | `string` | Yes | Member's email address |
-| `name` | `string` | Yes | Member's display name |
-| `added_at` | `datetime` | Yes | When the member was added to the group (ISO 8601) |
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | Group ID |
+| `workspace_id` | UUID | Parent workspace ID |
+| `name` | string | Group name |
+| `description` | string or null | Description |
+| `created_by` | UUID | Creator user ID |
+| `created_at` | datetime | Creation timestamp |
 
 ---
 
-## Permission Schemas
-
-### PermissionCheckItem
-
-Individual permission check within a [PermissionCheckRequest](#permissioncheckrequest). Not used directly as a request body.
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `service_name` | `string` | Yes | -- | Name of the service that owns the resource |
-| `resource_type` | `string` | Yes | -- | Type of resource (e.g., `document`, `project`) |
-| `resource_id` | `UUID` | Yes | -- | Resource ID |
-| `action` | `string` | Yes | Pattern: `^(view\|edit)$` | Action to check |
+## Permissions
 
 ### PermissionCheckRequest
 
-Request body for `POST /permissions/check`.
+| Field | Type | Description |
+|---|---|---|
+| `checks` | PermissionCheckItem[] | Up to 100 items |
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `checks` | `list[PermissionCheckItem]` | Yes | List of permission checks to evaluate |
+Each `PermissionCheckItem`:
 
-### PermissionCheckResult
-
-Individual result within a [PermissionCheckResponse](#permissioncheckresponse).
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `service_name` | `string` | Yes | Service name from the check |
-| `resource_type` | `string` | Yes | Resource type from the check |
-| `resource_id` | `UUID` | Yes | Resource ID from the check |
-| `action` | `string` | Yes | Action that was checked |
-| `allowed` | `boolean` | Yes | Whether the action is permitted |
+| Field | Type | Description |
+|---|---|---|
+| `service_name` | string | Service name |
+| `resource_type` | string | Resource type |
+| `resource_id` | UUID | Resource ID |
+| `action` | string | `"view"` or `"edit"` |
 
 ### PermissionCheckResponse
 
-Returned by `POST /permissions/check`.
+| Field | Type | Description |
+|---|---|---|
+| `results` | PermissionCheckResult[] | One result per check item |
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `results` | `list[PermissionCheckResult]` | Yes | Results for each requested permission check |
+Each result has the same fields as the check item plus `allowed` (bool).
 
 ### RegisterResourceRequest
 
-Request body for `POST /permissions/register`.
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `service_name` | `string` | Yes | -- | Name of the service registering the resource |
-| `resource_type` | `string` | Yes | -- | Type of resource |
-| `resource_id` | `UUID` | Yes | -- | Unique resource identifier |
-| `workspace_id` | `UUID` | Yes | -- | Workspace the resource belongs to |
-| `owner_id` | `UUID` | Yes | -- | User ID of the resource owner |
-| `visibility` | `string` | No | Pattern: `^(private\|workspace)$`. Default: `workspace` | Resource visibility level |
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `service_name` | string | -- | Service name |
+| `resource_type` | string | -- | Resource type |
+| `resource_id` | UUID | -- | Resource ID |
+| `workspace_id` | UUID | -- | Workspace ID |
+| `owner_id` | UUID | -- | Owner user ID |
+| `visibility` | string | `"workspace"` | `"private"` or `"workspace"` |
 
 ### ShareRequest
 
-Request body for `POST /permissions/{id}/share` and `DELETE /permissions/{id}/share`.
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `grantee_type` | `string` | Yes | Pattern: `^(user\|group)$` | Whether sharing with a user or a group |
-| `grantee_id` | `UUID` | Yes | -- | ID of the user or group to share with |
-| `permission` | `string` | Yes | Pattern: `^(view\|edit)$` | Permission level to grant |
-
-### UpdateVisibilityRequest
-
-Request body for `PATCH /permissions/{id}/visibility`.
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `visibility` | `string` | Yes | Pattern: `^(private\|workspace)$` | New visibility level |
-
-### ResourcePermissionResponse
-
-Returned by resource registration, visibility update, and ACL retrieval endpoints.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `id` | `UUID` | Yes | Permission record ID |
-| `service_name` | `string` | Yes | Service that owns the resource |
-| `resource_type` | `string` | Yes | Type of the resource |
-| `resource_id` | `UUID` | Yes | Resource ID |
-| `workspace_id` | `UUID` | Yes | Workspace the resource belongs to |
-| `owner_id` | `UUID \| null` | No | User ID of the resource owner |
-| `visibility` | `string` | Yes | Current visibility: `private` or `workspace` |
-| `created_at` | `datetime` | Yes | When the resource was registered (ISO 8601) |
-| `shares` | `list[ResourceShareResponse]` | Yes | List of active shares for this resource |
-
-### ResourceShareResponse
-
-Nested within [ResourcePermissionResponse](#resourcepermissionresponse).
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `id` | `UUID` | Yes | Share record ID |
-| `grantee_type` | `string` | Yes | `user` or `group` |
-| `grantee_id` | `UUID` | Yes | ID of the user or group |
-| `permission` | `string` | Yes | `view` or `edit` |
-| `granted_by` | `UUID \| null` | No | User ID of who created the share |
-| `granted_at` | `datetime` | Yes | When the share was created (ISO 8601) |
+| Field | Type | Description |
+|---|---|---|
+| `grantee_type` | string | `"user"` or `"group"` |
+| `grantee_id` | UUID | User or group ID |
+| `permission` | string | `"view"` or `"edit"` |
 
 ### AccessibleResourcesRequest
 
-Request body for `POST /permissions/accessible`.
+| Field | Type | Description |
+|---|---|---|
+| `service_name` | string | Service to query |
+| `resource_type` | string | Resource type |
+| `action` | string | `"view"` or `"edit"` |
+| `workspace_id` | UUID | Must match JWT workspace |
+| `limit` | int or null | 1--10000, optional |
 
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `service_name` | `string` | Yes | -- | Service name to query |
-| `resource_type` | `string` | Yes | -- | Resource type to query |
-| `action` | `string` | Yes | Pattern: `^(view\|edit)$` | Action to check accessibility for |
-| `workspace_id` | `UUID` | Yes | -- | Workspace to scope the query to (must match JWT) |
-| `limit` | `integer \| null` | No | Min: 1, Max: 10000. Default: `null` (no limit) | Maximum number of resource IDs to return |
+### ResourcePermissionResponse
 
-### AccessibleResourcesResponse
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | Permission record ID |
+| `service_name` | string | Service name |
+| `resource_type` | string | Resource type |
+| `resource_id` | UUID | Resource ID |
+| `workspace_id` | UUID | Workspace ID |
+| `owner_id` | UUID or null | Owner user ID |
+| `visibility` | string | `"private"` or `"workspace"` |
+| `created_at` | datetime | Registration timestamp |
+| `shares` | ResourceShareResponse[] | Active shares |
 
-Returned by `POST /permissions/accessible`.
+Each `ResourceShareResponse`:
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `resource_ids` | `list[UUID]` | Yes | List of resource IDs the user can access |
-| `has_full_access` | `boolean` | Yes | `true` if the user's workspace role grants blanket access (no need to filter by individual shares) |
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | Share record ID |
+| `grantee_type` | string | `"user"` or `"group"` |
+| `grantee_id` | UUID | Grantee ID |
+| `permission` | string | `"view"` or `"edit"` |
+| `granted_by` | UUID or null | Who created the share |
+| `granted_at` | datetime | Share creation timestamp |
 
 ---
 
-## Role Schemas (RBAC)
-
-### ActionDefinition
-
-Individual action within a [RegisterActionsRequest](#registeractionsrequest).
-
-| Field | Type | Required | Constraints | Description |
-|---|---|---|---|---|
-| `action` | `string` | Yes | Pattern: `^[a-z][a-z0-9_.:-]*$` | Action identifier (e.g., `reports:export`) |
-| `description` | `string \| null` | No | -- | Human-readable description of the action |
+## Roles
 
 ### RegisterActionsRequest
 
-Request body for `POST /roles/actions/register`.
+| Field | Type | Description |
+|---|---|---|
+| `service_name` | string | Service registering actions |
+| `actions` | ActionDefinition[] | Actions to register |
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `service_name` | `string` | Yes | Name of the service registering actions |
-| `actions` | `list[ActionDefinition]` | Yes | List of actions to register |
+Each `ActionDefinition`:
 
-### CheckActionRequest
-
-Request body for `POST /roles/check-action`.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `service_name` | `string` | Yes | Service to check the action for |
-| `action` | `string` | Yes | Action identifier to check |
-| `workspace_id` | `UUID` | Yes | Workspace to check within (must match JWT) |
+| Field | Type | Description |
+|---|---|---|
+| `action` | string | Identifier matching `^[a-z][a-z0-9_.:-]*$` |
+| `description` | string or null | Human-readable description |
 
 ### ServiceActionResponse
 
-Returned by action registration and listing endpoints.
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | Action record ID |
+| `service_name` | string | Service name |
+| `action` | string | Action identifier |
+| `description` | string or null | Description |
+| `created_at` | datetime | Registration timestamp |
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `id` | `UUID` | Yes | Service action record ID |
-| `service_name` | `string` | Yes | Service that owns this action |
-| `action` | `string` | Yes | Action identifier |
-| `description` | `string \| null` | Yes | Human-readable description |
-| `created_at` | `datetime` | Yes | When the action was registered (ISO 8601) |
+### CheckActionRequest
 
-### RoleResponse
-
-Returned by role CRUD endpoints.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `id` | `UUID` | Yes | Role ID |
-| `workspace_id` | `UUID` | Yes | Parent workspace ID |
-| `name` | `string` | Yes | Role display name |
-| `description` | `string \| null` | Yes | Role description |
-| `created_by` | `UUID \| null` | Yes | ID of the user who created the role |
-| `created_at` | `datetime` | Yes | Creation timestamp (ISO 8601) |
-| `action_count` | `integer` | Yes | Number of actions assigned to this role |
-| `member_count` | `integer` | Yes | Number of users assigned to this role |
-
-### RoleCreateRequest
-
-Request body for `POST /admin/workspaces/{id}/roles`.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `name` | `string` | Yes | Role display name |
-| `description` | `string \| null` | No | Optional role description |
-
-### RoleUpdateRequest
-
-Request body for `PATCH /admin/roles/{id}`.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `name` | `string \| null` | No | New role name |
-| `description` | `string \| null` | No | New role description |
-
-### AddRoleActionsRequest
-
-Request body for `POST /admin/roles/{id}/actions`.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `service_action_ids` | `list[UUID]` | Yes | List of service action IDs to add to the role |
-
-### RoleMemberResponse
-
-Returned when listing role members.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `user_id` | `UUID` | Yes | Member's user ID |
-| `email` | `string` | Yes | Member's email address |
-| `name` | `string` | Yes | Member's display name |
-| `assigned_at` | `datetime` | Yes | When the member was assigned to the role (ISO 8601) |
-| `assigned_by` | `UUID \| null` | Yes | User ID of who assigned the member |
+| Field | Type | Description |
+|---|---|---|
+| `service_name` | string | Service to check |
+| `action` | string | Action identifier |
+| `workspace_id` | UUID | Must match JWT workspace |
 
 ### CheckActionResponse
 
-Returned by `POST /roles/check-action`.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `allowed` | `boolean` | Yes | Whether the action is permitted |
-| `roles` | `list[string]` | Yes | Names of roles that grant this action |
+| Field | Type | Description |
+|---|---|---|
+| `allowed` | bool | Whether the action is permitted |
+| `roles` | string[] | Role names that grant this action |
 
 ### UserActionsResponse
 
-Returned by `GET /roles/user-actions`.
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `actions` | `list[string]` | Yes | List of action identifiers the user can perform |
+| Field | Type | Description |
+|---|---|---|
+| `actions` | string[] | Action identifiers the user can perform |

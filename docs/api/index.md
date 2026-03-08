@@ -1,94 +1,44 @@
 # API Reference
 
-> **Tip:** For interactive API exploration, visit `/docs` (Swagger UI) when the service is running.
+Base URL: `http://localhost:9003` (development). Set `BASE_URL` in production.
 
-This is the complete API reference for the Sentinel Auth. All endpoints are documented with their authentication requirements, request/response schemas, and usage examples.
-
-## Base URL
-
-| Environment | URL |
-|---|---|
-| Development | `http://localhost:9003` |
-| Production | Set via `BASE_URL` environment variable |
+Interactive docs available at `/docs` (Swagger UI) when the service is running.
 
 ## Authentication Methods
 
-The API uses four authentication tiers depending on the endpoint group:
+| Method | Header / Mechanism | Used By |
+|---|---|---|
+| Bearer JWT | `Authorization: Bearer <access_token>` | User-facing endpoints (users, workspaces, groups) |
+| Service Key | `X-Service-Key: <key>` | Service-to-service calls (permissions, roles) |
+| Service Key + JWT | Both headers above | Dual-auth endpoints that act on behalf of a user |
+| Admin Cookie | `admin_token` HttpOnly cookie | Admin panel backend |
 
-| Endpoint Group | Auth Method | Route Prefix | Description |
-|---|---|---|---|
-| Auth | None / JWT | `/auth` | OAuth login flows (public) and logout (JWT) |
-| Users | JWT (Bearer token) | `/users` | Current user profile management |
-| Workspaces | JWT (Bearer token) | `/workspaces` | Workspace CRUD and member management |
-| Groups | JWT (Bearer token) | `/workspaces/{id}/groups` | Group CRUD and membership |
-| Permissions | Service Key [+ JWT] | `/permissions` | Resource permission checks and ACL management |
-| Roles | Service Key [+ JWT] | `/roles` | RBAC action registration and checks |
-| Admin | Admin Cookie | `/admin` | Admin panel backend endpoints |
+Dual-auth endpoints also accept authz tokens (from `/authz/resolve`) in the `Authorization` header alongside the service key.
 
-### JWT Bearer Token
+## Error Format
 
-Include the access token in the `Authorization` header:
-
-```
-Authorization: Bearer <access_token>
-```
-
-### Service Key
-
-Include the service API key in the `X-Service-Key` header. Some permission endpoints also require a JWT alongside the service key (dual auth):
-
-```
-X-Service-Key: <your_service_key>
-Authorization: Bearer <access_token>
-```
-
-### Admin Cookie
-
-Admin endpoints authenticate via an `admin_token` cookie set during the admin OAuth login flow. This is an HttpOnly, Secure, SameSite=strict cookie.
-
-## Rate Limits
-
-The following rate limits are enforced per client IP:
-
-| Endpoint | Limit |
-|---|---|
-| `GET /auth/login/{provider}` | 10 requests/minute |
-| `GET /auth/callback/{provider}` | 10 requests/minute |
-| `GET /auth/workspaces` | 10 requests/minute |
-| `POST /auth/token` | 10 requests/minute |
-| `POST /auth/refresh` | 10 requests/minute |
-| `GET /auth/admin/login/{provider}` | 5 requests/minute |
-| `GET /auth/admin/callback/{provider}` | 5 requests/minute |
-
-When a rate limit is exceeded, the API returns `429 Too Many Requests`.
-
-## Standard Error Format
-
-All error responses follow a consistent JSON structure:
+All errors return JSON:
 
 ```json
-{
-  "detail": "error message"
-}
+{"detail": "error message"}
 ```
-
-Common HTTP status codes:
 
 | Code | Meaning |
 |---|---|
-| `400` | Bad request (invalid input, misconfigured provider) |
-| `401` | Unauthorized (missing or invalid token) |
-| `403` | Forbidden (insufficient role or workspace mismatch) |
+| `400` | Invalid input or misconfigured provider |
+| `401` | Missing or invalid credentials |
+| `403` | Insufficient role or workspace mismatch |
 | `404` | Resource not found |
 | `429` | Rate limit exceeded |
-| `500` | Internal server error |
 
-## API Sections
+## Rate Limits
 
-- [Auth](auth.md) -- OAuth login, token refresh, logout, and admin auth
-- [Users](users.md) -- Current user profile retrieval and updates
-- [Workspaces](workspaces.md) -- Workspace CRUD, member invitations, and role management
-- [Groups](groups.md) -- Group CRUD and group membership
-- [Permissions](permissions.md) -- Resource registration, permission checks, sharing, and ACLs
-- [Roles](roles.md) -- RBAC action registration, action checks, and user action queries
-- [Schemas](schemas.md) -- Consolidated reference for all request/response models
+Per-IP limits enforced via slowapi. Auth endpoints: 10/min (5/min for admin login). Returns `429` when exceeded.
+
+## Sections
+
+- [Authentication](auth.md) -- OAuth login flows, authz mode, token lifecycle
+- [Users, Workspaces & Groups](resources.md) -- User profiles, workspace CRUD, group management
+- [Permissions](permissions.md) -- Zanzibar-style resource ACLs
+- [Roles](roles.md) -- RBAC action registration and checks
+- [Schemas](schemas.md) -- Request and response model reference
