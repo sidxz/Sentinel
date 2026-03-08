@@ -56,3 +56,4 @@ Key dependencies: `pyjwt[crypto]`, `httpx`, `starlette`, `fastapi`.
 - [FastAPI Dependencies](dependencies.md) -- dependency injection helpers
 - [PermissionClient](permissions.md) -- entity-level access control
 - [RoleClient](roles.md) -- RBAC action checks
+- [DDD / Clean Architecture](ddd.md) -- integration with layered architectures

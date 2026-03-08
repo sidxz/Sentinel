@@ -100,6 +100,7 @@ nav:
     - Dependencies: sdk/dependencies.md
     - Permissions: sdk/permissions.md
     - Roles: sdk/roles.md
+    - DDD / Clean Architecture: sdk/ddd.md
   - JS/TS SDK:
     - js-sdk/index.md
     - AuthZ Client: js-sdk/authz-client.md
