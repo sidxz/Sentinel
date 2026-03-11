@@ -1,7 +1,11 @@
 """AuthZ Mode endpoints — IdP token validation + authorization JWT issuance."""
 
+import uuid
+
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +29,87 @@ from src.services.role_service import get_user_actions
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/authz", tags=["authz"])
+
+
+@router.get("/idp/{provider}/login")
+@limiter.limit("10/minute")
+async def idp_login(request: Request, provider: str, redirect_uri: str, nonce: str):
+    """Redirect to an OAuth provider that requires server-side code exchange (e.g. GitHub).
+
+    Stores redirect_uri and nonce in the session, then redirects to the
+    provider's authorization URL. The callback endpoint exchanges the code
+    and redirects back with the token in the URL hash.
+    """
+    if provider != "github":
+        raise HTTPException(
+            status_code=400, detail=f"Proxy login not supported for {provider}"
+        )
+    if not settings.github_client_id or not settings.github_client_secret:
+        raise HTTPException(status_code=400, detail="GitHub OAuth is not configured")
+
+    request.session["authz_idp_redirect_uri"] = redirect_uri
+    request.session["authz_idp_nonce"] = nonce
+
+    params = (
+        f"client_id={settings.github_client_id}"
+        f"&redirect_uri={settings.base_url}/authz/idp/github/callback"
+        f"&scope=read:user user:email"
+        f"&state={uuid.uuid4().hex}"
+    )
+    return RedirectResponse(
+        url=f"https://github.com/login/oauth/authorize?{params}",
+        status_code=302,
+    )
+
+
+@router.get("/idp/{provider}/callback")
+@limiter.limit("10/minute")
+async def idp_callback(request: Request, provider: str, code: str):
+    """Exchange authorization code for access token and redirect back to the frontend.
+
+    Exchanges GitHub's authorization code for an access token, then redirects
+    to the stored redirect_uri with the access token in the URL hash as
+    `id_token` (matching the implicit flow format the SDK expects).
+    """
+    if provider != "github":
+        raise HTTPException(
+            status_code=400, detail=f"Proxy callback not supported for {provider}"
+        )
+
+    redirect_uri = request.session.pop("authz_idp_redirect_uri", None)
+    nonce = request.session.pop("authz_idp_nonce", None)
+    if not redirect_uri:
+        raise HTTPException(
+            status_code=400,
+            detail="No redirect_uri in session — start from /authz/idp/{provider}/login",
+        )
+
+    # Exchange code for access token
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            "https://github.com/login/oauth/access_token",
+            data={
+                "client_id": settings.github_client_id,
+                "client_secret": settings.github_client_secret,
+                "code": code,
+            },
+            headers={"Accept": "application/json"},
+        )
+    if resp.status_code != 200:
+        logger.warning("github_code_exchange_failed", status=resp.status_code)
+        raise HTTPException(status_code=502, detail="GitHub code exchange failed")
+
+    token_data = resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        error = token_data.get("error_description", token_data.get("error", "unknown"))
+        raise HTTPException(status_code=400, detail=f"GitHub OAuth error: {error}")
+
+    # Redirect back with token in hash (matches SDK's handleCallback expectations)
+    fragment = f"id_token={access_token}"
+    if nonce:
+        fragment += f"&nonce={nonce}"
+    return RedirectResponse(url=f"{redirect_uri}#{fragment}", status_code=302)
 
 
 @router.post("/resolve", response_model=AuthzResolveResponse)

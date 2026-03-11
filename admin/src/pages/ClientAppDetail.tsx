@@ -167,7 +167,7 @@ export function ClientAppDetail() {
                   setRevokeOnDeactivate(false);
                   setShowDeactivate(true);
                 } else {
-                  update.mutate();
+                  update.mutate({});
                 }
               }}
               disabled={update.isPending}

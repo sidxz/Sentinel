@@ -29,7 +29,7 @@ if [[ -n $(git status --porcelain) ]]; then
 fi
 
 # Check tags don't already exist
-for TAG in "js-sdk-v${VERSION}" "sdk-v${VERSION}" "service-v${VERSION}"; do
+for TAG in "js-sdk-v${VERSION}" "sdk-v${VERSION}" "service-v${VERSION}" "admin-v${VERSION}"; do
   if git rev-parse "$TAG" >/dev/null 2>&1; then
     echo "Error: tag '$TAG' already exists" >&2
     exit 1
@@ -54,6 +54,9 @@ sed -i '' "s/^version = \".*\"/version = \"${VERSION}\"/" service/pyproject.toml
 for PKG in sdks/js/package.json sdks/react/package.json sdks/nextjs/package.json; do
   sed -i '' "s/\"version\": \".*\"/\"version\": \"${VERSION}\"/" "$PKG"
 done
+
+# Admin panel
+sed -i '' "s/\"version\": \".*\"/\"version\": \"${VERSION}\"/" admin/package.json
 
 # Update peer dependency ranges for @sentinel-auth/* packages
 sed -i '' "s/\"@sentinel-auth\/js\": \"\\^.*\"/\"@sentinel-auth\/js\": \"^${VERSION}\"/" sdks/react/package.json
@@ -80,21 +83,24 @@ git add \
   service/pyproject.toml \
   sdks/js/package.json \
   sdks/react/package.json \
-  sdks/nextjs/package.json
+  sdks/nextjs/package.json \
+  admin/package.json
 
 git commit -m "chore: bump all packages to ${VERSION}"
 
 git tag "js-sdk-v${VERSION}"
 git tag "sdk-v${VERSION}"
 git tag "service-v${VERSION}"
+git tag "admin-v${VERSION}"
 
 git push origin main
-git push origin "js-sdk-v${VERSION}" "sdk-v${VERSION}" "service-v${VERSION}"
+git push origin "js-sdk-v${VERSION}" "sdk-v${VERSION}" "service-v${VERSION}" "admin-v${VERSION}"
 
 echo ""
 echo "Released v${VERSION}:"
 echo "  js-sdk-v${VERSION}  → Publish JS SDK (npm)"
 echo "  sdk-v${VERSION}     → Publish Python SDK (PyPI)"
 echo "  service-v${VERSION} → Publish Docker image (GHCR)"
+echo "  admin-v${VERSION}   → Publish Admin Docker image (GHCR)"
 echo ""
 echo "Check workflows: gh run list --limit 5"

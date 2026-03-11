@@ -96,3 +96,20 @@ jobs:
           format: table
           severity: CRITICAL,HIGH
           exit-code: 1
+
+  admin-container-scan:
+    name: Admin Container Scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build admin image
+        run: docker build -t daikon/sentinel-admin:ci admin/
+
+      - name: Scan admin container image
+        uses: aquasecurity/trivy-action@0.34.2
+        with:
+          image-ref: daikon/sentinel-admin:ci
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 1

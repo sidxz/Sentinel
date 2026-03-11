@@ -142,6 +142,30 @@ services:
           memory: 512M
           cpus: "1.0"
 
+  sentinel-admin:
+    image: ghcr.io/sidxz/sentinel-admin:latest
+    environment:
+      SENTINEL_BACKEND: sentinel:9003
+    ports:
+      - "${ADMIN_PORT:-9004}:80"
+    depends_on:
+      sentinel:
+        condition: service_healthy
+    networks:
+      - sentinel
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
+
 secrets:
   jwt_private_key:
     file: ./keys/private.pem

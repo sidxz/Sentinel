@@ -89,19 +89,29 @@ export function AuthzCallback({
       return
     }
 
-    // Verify nonce to prevent token replay attacks
+    // Verify nonce to prevent token replay attacks.
+    // Nonce may come from URL hash params (proxy flow, e.g. GitHub) or JWT claims (implicit flow, e.g. Google).
     const expectedNonce = sessionStorage.getItem('sentinel_authz_nonce')
-    try {
-      const claims = parseJwt(idToken)
-      if (!expectedNonce || (claims as unknown as Record<string, unknown>).nonce !== expectedNonce) {
-        throw new Error('Nonce mismatch — possible token replay')
+    if (expectedNonce) {
+      const hashNonce = params.get('nonce')
+      try {
+        if (hashNonce) {
+          if (hashNonce !== expectedNonce) {
+            throw new Error('Nonce mismatch — possible token replay')
+          }
+        } else {
+          const claims = parseJwt(idToken)
+          if ((claims as unknown as Record<string, unknown>).nonce !== expectedNonce) {
+            throw new Error('Nonce mismatch — possible token replay')
+          }
+        }
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error('Nonce verification failed')
+        setError(err)
+        setLoading(false)
+        onError?.(err)
+        return
       }
-    } catch (e) {
-      const err = e instanceof Error ? e : new Error('Nonce verification failed')
-      setError(err)
-      setLoading(false)
-      onError?.(err)
-      return
     }
 
     // Clean up session storage only after successful nonce verification

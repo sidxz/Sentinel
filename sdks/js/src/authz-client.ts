@@ -88,11 +88,21 @@ export class SentinelAuthz {
     }
     if (!idpToken) return null
 
-    // Verify nonce to prevent token replay attacks
+    // Verify nonce to prevent token replay attacks.
+    // Nonce may come from URL hash params (proxy flow, e.g. GitHub) or JWT claims (implicit flow, e.g. Google).
     const expectedNonce = sessionStorage.getItem('sentinel_authz_nonce')
-    const claims = parseJwt(idpToken) as unknown as Record<string, unknown>
-    if (!expectedNonce || claims.nonce !== expectedNonce) {
-      throw new Error('Nonce mismatch — possible token replay')
+    if (expectedNonce) {
+      const hashNonce = params.get('nonce')
+      if (hashNonce) {
+        if (hashNonce !== expectedNonce) {
+          throw new Error('Nonce mismatch — possible token replay')
+        }
+      } else {
+        const claims = parseJwt(idpToken) as unknown as Record<string, unknown>
+        if (claims.nonce !== expectedNonce) {
+          throw new Error('Nonce mismatch — possible token replay')
+        }
+      }
     }
 
     // Clean the URL

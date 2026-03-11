@@ -1,14 +1,14 @@
-name: Publish Service Image
+name: Publish Admin Image
 
 on:
   push:
     tags:
-      - "service-v*"
+      - "admin-v*"
   workflow_dispatch:
 
 jobs:
   publish:
-    name: Build & Push Docker Image
+    name: Build & Push Admin Docker Image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -25,16 +25,13 @@ jobs:
 
       - name: Extract version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#service-v}" >> "$GITHUB_OUTPUT"
-
-      - name: Copy workspace lockfile into service context
-        run: cp uv.lock service/uv.lock
+        run: echo "VERSION=${GITHUB_REF_NAME#admin-v}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: service/
+          context: admin/
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/sentinel:${{ steps.version.outputs.VERSION }}
-            ghcr.io/${{ github.repository_owner }}/sentinel:latest
+            ghcr.io/${{ github.repository_owner }}/sentinel-admin:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/sentinel-admin:latest
