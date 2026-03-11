@@ -1,6 +1,6 @@
 [project]
 name = "sentinel-auth-sdk"
-version = "0.9.2"
+version = "0.9.3"
 description = "Sentinel Auth SDK — JWT middleware, FastAPI dependencies, permission client"
 requires-python = ">=3.12"
 dependencies = [
