@@ -46,12 +46,19 @@ export interface SentinelAuthzConfig {
   refreshBuffer?: number
 }
 
+export interface UserIdentity {
+  email: string
+  name: string
+}
+
 export interface AuthzTokenStore {
   getIdpToken(): string | null
   getAuthzToken(): string | null
   getProvider(): string | null
   getWorkspaceId(): string | null
+  getUserIdentity(): UserIdentity | null
   setTokens(idpToken: string, authzToken: string, provider: string, workspaceId: string): void
+  setUserIdentity(identity: UserIdentity): void
   clear(): void
 }
 

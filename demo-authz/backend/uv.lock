@@ -463,7 +463,7 @@ wheels = [
 
 [[package]]
 name = "sentinel-auth-sdk"
-version = "0.9.0"
+version = "0.9.5"
 source = { editable = "../../sdk" }
 dependencies = [
     { name = "cryptography" },

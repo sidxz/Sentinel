@@ -13,6 +13,7 @@ describe('AuthzMemoryStore', () => {
     expect(store.getAuthzToken()).toBeNull()
     expect(store.getProvider()).toBeNull()
     expect(store.getWorkspaceId()).toBeNull()
+    expect(store.getUserIdentity()).toBeNull()
   })
 
   it('stores and retrieves all tokens', () => {
@@ -23,13 +24,20 @@ describe('AuthzMemoryStore', () => {
     expect(store.getWorkspaceId()).toBe('ws-1')
   })
 
-  it('clear removes all tokens', () => {
+  it('stores and retrieves user identity', () => {
+    store.setUserIdentity({ email: 'alice@acme.com', name: 'Alice' })
+    expect(store.getUserIdentity()).toEqual({ email: 'alice@acme.com', name: 'Alice' })
+  })
+
+  it('clear removes all tokens and identity', () => {
     store.setTokens('idp-jwt', 'authz-jwt', 'google', 'ws-1')
+    store.setUserIdentity({ email: 'alice@acme.com', name: 'Alice' })
     store.clear()
     expect(store.getIdpToken()).toBeNull()
     expect(store.getAuthzToken()).toBeNull()
     expect(store.getProvider()).toBeNull()
     expect(store.getWorkspaceId()).toBeNull()
+    expect(store.getUserIdentity()).toBeNull()
   })
 })
 
@@ -57,11 +65,25 @@ describe('AuthzLocalStorageStore', () => {
     expect(localStorage.getItem('sentinel_idp_token')).toBe('idp-jwt')
   })
 
+  it('stores and retrieves user identity', () => {
+    store.setUserIdentity({ email: 'alice@acme.com', name: 'Alice' })
+    expect(store.getUserIdentity()).toEqual({ email: 'alice@acme.com', name: 'Alice' })
+    expect(localStorage.setItem).toHaveBeenCalledWith('sentinel_user_email', 'alice@acme.com')
+    expect(localStorage.setItem).toHaveBeenCalledWith('sentinel_user_name', 'Alice')
+  })
+
+  it('getUserIdentity returns null when not set', () => {
+    expect(store.getUserIdentity()).toBeNull()
+  })
+
   it('clear removes from localStorage', () => {
     store.setTokens('idp-jwt', 'authz-jwt', 'google', 'ws-1')
+    store.setUserIdentity({ email: 'alice@acme.com', name: 'Alice' })
     store.clear()
     expect(localStorage.getItem('sentinel_idp_token')).toBeNull()
     expect(localStorage.getItem('sentinel_authz_token')).toBeNull()
+    expect(localStorage.getItem('sentinel_user_email')).toBeNull()
+    expect(localStorage.getItem('sentinel_user_name')).toBeNull()
   })
 
   it('uses sentinel_ prefix in localStorage keys', () => {

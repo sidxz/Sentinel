@@ -1,4 +1,5 @@
-import type { JWTPayload, SentinelUser } from './types'
+import type { AuthzJWTPayload, JWTPayload, SentinelUser } from './types'
+import type { UserIdentity } from './authz-types'
 
 /**
  * Decode a JWT payload without verifying the signature.
@@ -26,7 +27,7 @@ export function isTokenExpired(token: string, bufferSeconds = 0): boolean {
   }
 }
 
-/** Map JWT claims to a SentinelUser object. */
+/** Map access token JWT claims to a SentinelUser object. */
 export function tokenToUser(token: string): SentinelUser {
   const p = parseJwt(token)
   return {
@@ -37,5 +38,19 @@ export function tokenToUser(token: string): SentinelUser {
     workspaceSlug: p.wslug,
     workspaceRole: p.wrole,
     groups: p.groups ?? [],
+  }
+}
+
+/** Map authz token claims + cached identity to a SentinelUser object. */
+export function authzTokenToUser(token: string, identity: UserIdentity | null): SentinelUser {
+  const p = parseJwt(token) as unknown as AuthzJWTPayload
+  return {
+    userId: p.sub,
+    email: identity?.email ?? '',
+    name: identity?.name ?? '',
+    workspaceId: p.wid,
+    workspaceSlug: p.wslug,
+    workspaceRole: p.wrole,
+    groups: [],
   }
 }

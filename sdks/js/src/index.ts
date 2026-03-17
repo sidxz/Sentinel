@@ -2,7 +2,7 @@
 export { SentinelAuth } from './client'
 export { generateCodeVerifier, deriveCodeChallenge } from './pkce'
 export { LocalStorageStore, SessionStorageStore, MemoryStore } from './storage'
-export { parseJwt, isTokenExpired, tokenToUser } from './jwt-utils'
+export { parseJwt, isTokenExpired, tokenToUser, authzTokenToUser } from './jwt-utils'
 
 export type {
   SentinelConfig,
@@ -12,6 +12,7 @@ export type {
   SentinelUser,
   WorkspaceRole,
   JWTPayload,
+  AuthzJWTPayload,
   PermissionCheck,
   PermissionResult,
   RegisterResourceRequest,
@@ -34,4 +35,5 @@ export type {
   AuthzWorkspaceOption,
   AuthzWorkspaceInfo,
   IdpConfig,
+  UserIdentity,
 } from './authz-types'

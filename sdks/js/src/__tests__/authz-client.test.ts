@@ -12,19 +12,18 @@ function makeJwt(payload: Record<string, unknown>): string {
 
 const authzPayload = {
   sub: 'user-1',
-  email: 'alice@acme.com',
-  name: 'Alice',
   wid: 'ws-1',
   wslug: 'acme',
   wrole: 'editor',
   idp_sub: 'google|123',
-  groups: [],
+  svc: 'notes',
   actions: ['notes:create'],
   aud: 'sentinel:authz',
   iss: 'sentinel',
   exp: Math.floor(Date.now() / 1000) + 300,
   iat: Math.floor(Date.now() / 1000),
   jti: 'jti-authz-1',
+  type: 'authz',
 }
 
 const resolveResponse = {
@@ -94,17 +93,32 @@ describe('SentinelAuthz', () => {
     expect(store.getAuthzToken()).toBe(selectResponse.authz_token)
     expect(store.getProvider()).toBe('google')
     expect(store.getWorkspaceId()).toBe('ws-1')
+    expect(store.getUserIdentity()).toEqual({ email: 'alice@acme.com', name: 'Alice' })
     expect(listener).toHaveBeenCalledTimes(1)
     expect(listener.mock.calls[0][0]).not.toBeNull()
   })
 
-  it('getUser returns user from authz token', () => {
+  it('getUser returns user from authz token with cached identity', () => {
     const authzToken = makeJwt(authzPayload)
+    store.setUserIdentity({ email: 'alice@acme.com', name: 'Alice' })
     store.setTokens('idp-token', authzToken, 'google', 'ws-1')
     const user = client.getUser()
     expect(user).not.toBeNull()
     expect(user!.userId).toBe('user-1')
     expect(user!.email).toBe('alice@acme.com')
+    expect(user!.name).toBe('Alice')
+    expect(user!.workspaceRole).toBe('editor')
+    expect(user!.groups).toEqual([])
+  })
+
+  it('getUser returns empty strings for identity when not cached', () => {
+    const authzToken = makeJwt(authzPayload)
+    store.setTokens('idp-token', authzToken, 'google', 'ws-1')
+    const user = client.getUser()
+    expect(user).not.toBeNull()
+    expect(user!.userId).toBe('user-1')
+    expect(user!.email).toBe('')
+    expect(user!.name).toBe('')
     expect(user!.workspaceRole).toBe('editor')
   })
 

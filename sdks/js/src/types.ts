@@ -69,6 +69,24 @@ export interface JWTPayload {
   jti: string
 }
 
+// ── AuthZ JWT payload (authorization-only, no identity claims) ──────
+
+export interface AuthzJWTPayload {
+  sub: string
+  idp_sub: string
+  svc: string
+  wid: string
+  wslug: string
+  wrole: WorkspaceRole
+  actions: string[]
+  aud: string | string[]
+  iss: string
+  exp: number
+  iat: number
+  jti: string
+  type: 'authz'
+}
+
 // ── Permissions ─────────────────────────────────────────────────────
 
 export interface PermissionCheck {

@@ -1,5 +1,5 @@
 import { AuthzMemoryStore } from './authz-storage'
-import { isTokenExpired, parseJwt, tokenToUser } from './jwt-utils'
+import { authzTokenToUser, isTokenExpired, parseJwt } from './jwt-utils'
 import { warnIfInsecure } from './warn-insecure'
 import type {
   SentinelAuthzConfig,
@@ -152,6 +152,9 @@ export class SentinelAuthz {
       throw new Error('No authz token in response')
     }
 
+    if (data.user) {
+      this.store.setUserIdentity({ email: data.user.email, name: data.user.name })
+    }
     this.store.setTokens(idpToken, data.authz_token, provider, workspaceId)
     this.notify()
     if (this.autoRefresh) this.scheduleRefresh()
@@ -159,13 +162,13 @@ export class SentinelAuthz {
 
   // ── Token access ──────────────────────────────────────────────────
 
-  /** Parse the current authz token into a SentinelUser, or null. */
+  /** Parse the current authz token + cached identity into a SentinelUser, or null. */
   getUser(): SentinelUser | null {
     const token = this.store.getAuthzToken()
     if (!token) return null
     try {
       if (isTokenExpired(token)) return null
-      return tokenToUser(token)
+      return authzTokenToUser(token, this.store.getUserIdentity())
     } catch {
       return null
     }
