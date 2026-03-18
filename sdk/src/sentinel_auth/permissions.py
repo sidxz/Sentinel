@@ -131,6 +131,18 @@ class PermissionClient:
         self._check(response)
         return response.json()
 
+    async def deregister_resource(
+        self,
+        resource_type: str,
+        resource_id: uuid.UUID,
+    ) -> None:
+        """Delete a resource permission and all its shares (service-key only)."""
+        response = await self._client.delete(
+            f"/permissions/resource/{self.service_name}/{resource_type}/{resource_id}",
+            headers=self._headers(),
+        )
+        self._check(response)
+
     async def share(
         self,
         token: str,

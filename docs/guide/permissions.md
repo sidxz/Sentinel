@@ -142,8 +142,10 @@ Shares grant access to individual users or [groups](groups.md):
 
 ### Creating Shares
 
+The grantee must belong to the same workspace as the resource. Sharing with a user who isn't a workspace member or a group from another workspace returns `400 Bad Request`.
+
 ```python
-# Share with a user
+# Share with a user (must be a workspace member)
 await sentinel.permissions.share(
     token=token,
     resource_type="document",

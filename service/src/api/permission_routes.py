@@ -221,6 +221,32 @@ async def revoke_share(
     return {"status": "ok"}
 
 
+@router.delete(
+    "/resource/{service_name}/{resource_type}/{resource_id}", status_code=204
+)
+async def deregister_resource(
+    service_name: str,
+    resource_type: str,
+    resource_id: uuid.UUID,
+    svc: ServiceKeyContext = Depends(require_service_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a resource permission and all its shares."""
+    verify_service_scope(svc, service_name)
+    try:
+        await permission_service.deregister_resource(
+            db, service_name, resource_type, resource_id
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    logger.info(
+        "permission_deregistered",
+        service=svc.service_name,
+        resource_type=resource_type,
+        resource_id=str(resource_id),
+    )
+
+
 @router.get(
     "/resource/{service_name}/{resource_type}/{resource_id}",
     response_model=ResourcePermissionResponse,

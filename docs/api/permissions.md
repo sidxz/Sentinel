@@ -16,6 +16,7 @@ Two auth tiers:
 | DELETE | `/permissions/{id}/share` | Service-only | Revoke a share |
 | PATCH | `/permissions/{id}/visibility` | Service-only | Update visibility |
 | GET | `/permissions/resource/{svc}/{type}/{id}` | Service-only | Get resource ACL |
+| GET | `/permissions/resource/{svc}/{type}/{id}/enriched` | Service-only | Get resource ACL with user profiles |
 
 ---
 
@@ -134,6 +135,11 @@ Returns resource IDs the user can access. If the user's workspace role grants bl
 
 Grants a user or group access to a resource. Caller must be the resource owner or a workspace admin/owner.
 
+The grantee must belong to the same workspace as the resource:
+
+- **User grantee:** must be a workspace member
+- **Group grantee:** group must belong to the workspace
+
 **Auth:** Dual.
 
 **Request Body:**
@@ -149,6 +155,8 @@ Grants a user or group access to a resource. Caller must be the resource owner o
 `grantee_type`: `"user"` or `"group"`. `permission`: `"view"` or `"edit"`.
 
 **Response:** `201 Created` -- `{"status": "ok"}`.
+
+**Errors:** `400` grantee is not a member of the workspace (user) or group does not belong to the workspace. `403` caller is not the resource owner or workspace admin. `404` permission not found.
 
 ```bash
 curl -X POST http://localhost:9003/permissions/e5f6a7b8-.../share \
@@ -215,5 +223,50 @@ Retrieves the full permission record including all shares.
 
 ```bash
 curl http://localhost:9003/permissions/resource/docu-store/document/c3d4e5f6-... \
+  -H "X-Service-Key: sk_your_key"
+```
+
+---
+
+## GET /permissions/resource/{service_name}/{resource_type}/{resource_id}/enriched
+
+Retrieves the full permission record with user profiles resolved inline (names and emails for owner, grantees, and granters). Rate limited to **30 requests/minute**.
+
+**Auth:** Service key only.
+
+**Response:** `200 OK` -- `EnrichedResourcePermissionResponse`.
+
+```json
+{
+  "id": "e5f6a7b8-...",
+  "service_name": "docu-store",
+  "resource_type": "document",
+  "resource_id": "c3d4e5f6-...",
+  "workspace_id": "a1b2c3d4-...",
+  "owner_id": "550e8400-...",
+  "owner_name": "Jane Doe",
+  "owner_email": "jane@example.com",
+  "visibility": "workspace",
+  "created_at": "2025-07-01T14:00:00Z",
+  "shares": [
+    {
+      "id": "f6a7b8c9-...",
+      "grantee_type": "user",
+      "grantee_id": "660e8400-...",
+      "grantee_name": "Bob Smith",
+      "grantee_email": "bob@example.com",
+      "permission": "edit",
+      "granted_by": "550e8400-...",
+      "granted_by_name": "Jane Doe",
+      "granted_at": "2025-07-02T10:00:00Z"
+    }
+  ]
+}
+```
+
+**Errors:** `404` resource not found.
+
+```bash
+curl http://localhost:9003/permissions/resource/docu-store/document/c3d4e5f6-.../enriched \
   -H "X-Service-Key: sk_your_key"
 ```

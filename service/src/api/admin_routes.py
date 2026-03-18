@@ -893,6 +893,34 @@ async def revoke_permission_share(
     return {"status": "ok"}
 
 
+@router.delete("/permissions/service/{service_name}", status_code=200)
+@limiter.limit("5/minute")
+async def purge_service_permissions(
+    request: Request,
+    service_name: str,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete ALL resource permissions for a service. Destructive."""
+    count = await permission_service.purge_service_permissions(db, service_name)
+    await activity_service.log_activity(
+        db,
+        action="permissions_purged",
+        target_type="service",
+        target_id=uuid.UUID(int=0),
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={"service_name": service_name, "deleted_count": count},
+    )
+    await db.commit()
+    logger.info(
+        "permissions_purged",
+        service_name=service_name,
+        deleted_count=count,
+        actor=admin["sub"],
+    )
+    return {"status": "ok", "deleted_count": count}
+
+
 # ── Roles (RBAC) ─────────────────────────────────────────────────────
 
 
@@ -1393,6 +1421,15 @@ async def delete_service_app(
         actor_id=uuid.UUID(admin["sub"]),
         detail={"name": app.name, "service_name": app.service_name},
     )
+    perm_count = await permission_service.purge_service_permissions(
+        db, app.service_name
+    )
+    if perm_count:
+        logger.info(
+            "service_permissions_purged_on_delete",
+            service_name=app.service_name,
+            deleted_count=perm_count,
+        )
     await service_app_service.delete_service_app(db, app_id)
     await db.commit()
     await refresh_origins(db)

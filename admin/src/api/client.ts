@@ -375,6 +375,12 @@ export const rotateServiceAppKey = (id: string) =>
 export const deleteServiceApp = (id: string) =>
   request(`/admin/service-apps/${id}`, { method: "DELETE" });
 
+export const purgeServicePermissions = (serviceName: string) =>
+  request<{ status: string; deleted_count: number }>(
+    `/admin/permissions/service/${encodeURIComponent(serviceName)}`,
+    { method: "DELETE" },
+  );
+
 // ── CSV Import ───────────────────────────────────────────────────────
 
 export const csvPreview = (file: File) =>

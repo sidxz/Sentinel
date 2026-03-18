@@ -69,6 +69,18 @@ export class PermissionClient {
     return res.json()
   }
 
+  /** Delete a resource permission and all its shares (service-key only). */
+  async deregisterResource(
+    resourceType: string,
+    resourceId: string,
+  ): Promise<void> {
+    const res = await fetch(
+      `${this.baseUrl}/permissions/resource/${this.serviceName}/${resourceType}/${resourceId}`,
+      { method: 'DELETE', headers: this.headers() },
+    )
+    if (!res.ok) throw new Error(`Deregister resource failed: ${res.status}`)
+  }
+
   /** Share a resource with a user or group. */
   async share(
     token: string,

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   deleteServiceApp,
   getServiceApp,
+  purgeServicePermissions,
   rotateServiceAppKey,
   updateServiceApp,
 } from "../api/client";
@@ -67,7 +68,9 @@ export function ServiceAppDetail() {
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [showRotate, setShowRotate] = useState(false);
+  const [showPurge, setShowPurge] = useState(false);
   const [deleteName, setDeleteName] = useState("");
+  const [purgeName, setPurgeName] = useState("");
   const [editForm, setEditForm] = useState({ name: "", is_active: true, allowed_origins: "" });
   const [revealKey, setRevealKey] = useState<string | null>(null);
 
@@ -112,8 +115,19 @@ export function ServiceAppDetail() {
     onSuccess: () => {
       setShowDelete(false);
       queryClient.invalidateQueries({ queryKey: ["service-apps"] });
-      toast.success("Service app deleted");
+      toast.success("Service app and all its permissions deleted");
       navigate("/service-apps");
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const purge = useMutation({
+    mutationFn: () => purgeServicePermissions(app!.service_name),
+    onSuccess: (data) => {
+      setShowPurge(false);
+      setPurgeName("");
+      queryClient.invalidateQueries({ queryKey: ["admin-permissions"] });
+      toast.success(`Purged ${data.deleted_count} permission(s) for ${app!.service_name}`);
     },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -184,6 +198,12 @@ export function ServiceAppDetail() {
               className="px-3 py-1.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 ring-1 ring-amber-500/20 transition-colors"
             >
               Rotate Key
+            </button>
+            <button
+              onClick={() => { setShowPurge(true); setPurgeName(""); }}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 ring-1 ring-red-500/20 transition-colors"
+            >
+              Purge Permissions
             </button>
             <button
               onClick={() => { setShowDelete(true); setDeleteName(""); }}
@@ -261,13 +281,28 @@ export function ServiceAppDetail() {
         onClose={() => setShowDelete(false)}
         onConfirm={() => remove.mutate()}
         title="Delete Service App"
-        message={`This will permanently delete "${app.name}" and invalidate its API key.`}
+        message={`This will permanently delete "${app.name}", invalidate its API key, and purge all stored permissions for service "${app.service_name}". Type the service name to confirm.`}
         confirmLabel="Delete Service App"
         danger
         isPending={remove.isPending}
-        confirmInput={app.name}
+        confirmInput={app.service_name}
         confirmInputValue={deleteName}
         onConfirmInputChange={setDeleteName}
+      />
+
+      {/* Purge permissions confirmation */}
+      <ConfirmModal
+        open={showPurge}
+        onClose={() => setShowPurge(false)}
+        onConfirm={() => purge.mutate()}
+        title="Purge All Permissions"
+        message={`This will delete ALL resource permissions and shares for service "${app.service_name}". This cannot be undone. Type the service name to confirm.`}
+        confirmLabel="Purge Permissions"
+        danger
+        isPending={purge.isPending}
+        confirmInput={app.service_name}
+        confirmInputValue={purgeName}
+        onConfirmInputChange={setPurgeName}
       />
 
       {/* Key reveal */}

@@ -5,6 +5,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.models.group import Group
 from src.models.permission import ResourcePermission, ResourceShare
 from src.models.user import User
 
@@ -90,6 +91,39 @@ async def update_visibility(
     return perm
 
 
+async def deregister_resource(
+    db: AsyncSession,
+    service_name: str,
+    resource_type: str,
+    resource_id: uuid.UUID,
+) -> None:
+    """Delete a resource permission and all its shares (FK cascade)."""
+    perm = await get_resource_permission(db, service_name, resource_type, resource_id)
+    if not perm:
+        raise ValueError("Resource permission not found")
+    await db.delete(perm)
+    await db.commit()
+
+
+async def purge_service_permissions(
+    db: AsyncSession,
+    service_name: str,
+) -> int:
+    """Delete all resource permissions for a service. Returns count deleted.
+
+    Does NOT commit — caller is responsible for committing the transaction.
+    This allows atomic composition with other operations (e.g. deleting the service app).
+    """
+    from sqlalchemy import delete
+
+    result = await db.execute(
+        delete(ResourcePermission).where(
+            ResourcePermission.service_name == service_name,
+        )
+    )
+    return result.rowcount
+
+
 async def share_resource(
     db: AsyncSession,
     permission_id: uuid.UUID,
@@ -161,13 +195,16 @@ async def get_enriched_resource_permission(
     if not perm:
         return None
 
-    # Collect all user IDs to resolve in one query
+    # Collect IDs to resolve in batch queries
     user_ids: set[uuid.UUID] = set()
+    group_ids: set[uuid.UUID] = set()
     if perm.owner_id:
         user_ids.add(perm.owner_id)
     for share in perm.shares:
         if share.grantee_type == "user":
             user_ids.add(share.grantee_id)
+        elif share.grantee_type == "group":
+            group_ids.add(share.grantee_id)
         if share.granted_by:
             user_ids.add(share.granted_by)
 
@@ -179,20 +216,36 @@ async def get_enriched_resource_permission(
         for u in result.scalars().all():
             profiles[u.id] = u
 
+    # Batch resolve group names
+    group_names: dict[uuid.UUID, str] = {}
+    if group_ids:
+        stmt = select(Group).where(Group.id.in_(group_ids))
+        result = await db.execute(stmt)
+        for g in result.scalars().all():
+            group_names[g.id] = g.name
+
     owner = profiles.get(perm.owner_id) if perm.owner_id else None
     enriched_shares = []
     for share in perm.shares:
-        grantee = (
-            profiles.get(share.grantee_id) if share.grantee_type == "user" else None
-        )
+        if share.grantee_type == "user":
+            grantee_user = profiles.get(share.grantee_id)
+            grantee_name = grantee_user.name if grantee_user else None
+            grantee_email = grantee_user.email if grantee_user else None
+        elif share.grantee_type == "group":
+            grantee_name = group_names.get(share.grantee_id)
+            grantee_email = None  # groups don't have emails
+        else:
+            grantee_name = None
+            grantee_email = None
+
         granter = profiles.get(share.granted_by) if share.granted_by else None
         enriched_shares.append(
             {
                 "id": share.id,
                 "grantee_type": share.grantee_type,
                 "grantee_id": share.grantee_id,
-                "grantee_name": grantee.name if grantee else None,
-                "grantee_email": grantee.email if grantee else None,
+                "grantee_name": grantee_name,
+                "grantee_email": grantee_email,
                 "permission": share.permission,
                 "granted_by": share.granted_by,
                 "granted_by_name": granter.name if granter else None,

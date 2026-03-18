@@ -233,6 +233,9 @@ Two layers:
 | `POST /auth/refresh` | 10/min | Prevents refresh token brute-force |
 | `GET /auth/admin/login/{provider}` | 5/min | Stricter limit on admin login |
 | `GET /auth/admin/callback/{provider}` | 5/min | Stricter limit on admin callback |
+| `GET /workspaces/{id}/members` | 60/min | Member search/listing |
+| `GET /workspaces/{wid}/groups/{gid}/members` | 60/min | Group member listing |
+| `GET /permissions/resource/.../enriched` | 30/min | Enriched ACL with user profiles |
 
 When `BEHIND_PROXY=true`, the rate limiter reads client IP from `X-Forwarded-For` instead of the TCP connection address.
 

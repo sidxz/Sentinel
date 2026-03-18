@@ -53,7 +53,7 @@ Updates the authenticated user's profile. Both fields are optional.
 | GET | `/workspaces/{id}` | any | Get workspace details |
 | PATCH | `/workspaces/{id}` | admin | Update workspace |
 | DELETE | `/workspaces/{id}` | owner | Delete workspace |
-| GET | `/workspaces/{id}/members` | any | List members |
+| GET | `/workspaces/{id}/members` | any | List/search members |
 | POST | `/workspaces/{id}/members/invite` | admin | Invite member |
 | PATCH | `/workspaces/{id}/members/{user_id}` | admin | Change member role |
 | DELETE | `/workspaces/{id}/members/{user_id}` | admin | Remove member |
@@ -91,6 +91,24 @@ Returns all workspaces the authenticated user belongs to.
 ### DELETE /workspaces/{id}
 
 **Response:** `204 No Content`.
+
+### GET /workspaces/{id}/members
+
+Lists workspace members. Supports optional search and pagination. Rate limited to **60 requests/minute**.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `q` | string (optional) | Search by name or email (max 100 characters) |
+| `limit` | integer (optional) | Max results to return (1--50) |
+
+**Response:** `200 OK` -- `WorkspaceMemberResponse[]`.
+
+```bash
+curl "http://localhost:9003/workspaces/a1b2c3d4-.../members?q=jane&limit=10" \
+  -H "Authorization: Bearer eyJhbGciOi..."
+```
 
 ### POST /workspaces/{id}/members/invite
 
@@ -133,6 +151,7 @@ Groups are scoped to a workspace. All routes are under `/workspaces/{workspace_i
 | PATCH | `/workspaces/{wid}/groups/{gid}` | admin | Update group |
 | DELETE | `/workspaces/{wid}/groups/{gid}` | admin | Delete group |
 | POST | `/workspaces/{wid}/groups/{gid}/members/{uid}` | admin | Add member |
+| GET | `/workspaces/{wid}/groups/{gid}/members` | any | List group members |
 | DELETE | `/workspaces/{wid}/groups/{gid}/members/{uid}` | admin | Remove member |
 
 ### POST /workspaces/{workspace_id}/groups
@@ -154,6 +173,19 @@ Groups are scoped to a workspace. All routes are under `/workspaces/{workspace_i
 ```
 
 **Response:** `200 OK` -- updated `GroupResponse`.
+
+### GET /workspaces/{workspace_id}/groups/{group_id}/members
+
+Lists members of a group. The group must belong to the specified workspace. Rate limited to **60 requests/minute**.
+
+**Response:** `200 OK` -- `GroupMemberResponse[]`.
+
+**Errors:** `404` group not found in this workspace.
+
+```bash
+curl http://localhost:9003/workspaces/a1b2c3d4-.../groups/b2c3d4e5-.../members \
+  -H "Authorization: Bearer eyJhbGciOi..."
+```
 
 ### POST /workspaces/{workspace_id}/groups/{group_id}/members/{user_id}
 
