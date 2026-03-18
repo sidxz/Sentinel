@@ -1,6 +1,6 @@
 {
   "name": "@sentinel-auth/js",
-  "version": "0.9.8",
+  "version": "0.9.9",
   "type": "module",
   "description": "Sentinel Auth SDK for JavaScript/TypeScript — browser auth client & server utilities",
   "license": "MIT",
