@@ -61,7 +61,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Scan service dependencies
-        uses: aquasecurity/trivy-action@0.34.2
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           scan-type: fs
           scan-ref: service/
@@ -70,7 +70,7 @@ jobs:
           exit-code: 1
 
       - name: Scan SDK dependencies
-        uses: aquasecurity/trivy-action@0.34.2
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           scan-type: fs
           scan-ref: sdk/
@@ -90,7 +90,7 @@ jobs:
           docker build -t daikon/sentinel-auth:ci service/
 
       - name: Scan container image
-        uses: aquasecurity/trivy-action@0.34.2
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: daikon/sentinel-auth:ci
           format: table
@@ -107,7 +107,7 @@ jobs:
         run: docker build -t daikon/sentinel-admin:ci admin/
 
       - name: Scan admin container image
-        uses: aquasecurity/trivy-action@0.34.2
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: daikon/sentinel-admin:ci
           format: table

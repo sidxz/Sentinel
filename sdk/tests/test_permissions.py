@@ -179,7 +179,7 @@ class TestTTLCache:
     def test_invalidate_by_prefix(self):
         cache = _TTLCache(ttl=60)
         cache.set(("can", "tok1", "doc", "123", "view"), True)
-        cache.set(("accessible", "tok1", "doc", "view", "ws1", None), ([],True))
+        cache.set(("accessible", "tok1", "doc", "view", "ws1", None), ([], True))
         cache.set(("other", "x"), "keep")
         cache.invalidate("can", "accessible")
         assert cache.get(("can", "tok1", "doc", "123", "view")) is None
