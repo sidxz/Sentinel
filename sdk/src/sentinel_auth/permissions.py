@@ -1,5 +1,9 @@
 """Async HTTP client for checking permissions against the identity service."""
 
+from __future__ import annotations
+
+import hashlib
+import time
 import uuid
 from dataclasses import dataclass
 
@@ -7,6 +11,58 @@ import httpx
 
 from sentinel_auth._utils import warn_if_insecure
 from sentinel_auth.types import SentinelError
+
+
+class _TTLCache:
+    """Minimal TTL cache using stdlib only.  Thread-safe enough for async
+    single-threaded event loops (no locks needed).
+
+    Entries are evicted lazily on read. A periodic ``_evict()`` runs when
+    the cache exceeds ``maxsize * 1.5`` to bound memory.
+    """
+
+    __slots__ = ("_store", "_ttl", "_maxsize")
+
+    def __init__(self, ttl: float, maxsize: int = 2048):
+        self._store: dict[tuple, tuple[float, object]] = {}
+        self._ttl = ttl
+        self._maxsize = maxsize
+
+    def get(self, key: tuple) -> object | None:
+        entry = self._store.get(key)
+        if entry is None:
+            return None
+        ts, value = entry
+        if time.monotonic() - ts > self._ttl:
+            self._store.pop(key, None)
+            return None
+        return value
+
+    def set(self, key: tuple, value: object) -> None:
+        self._store[key] = (time.monotonic(), value)
+        if len(self._store) > int(self._maxsize * 1.5):
+            self._evict()
+
+    def invalidate(self, *key_prefixes: str) -> None:
+        """Remove all entries whose key starts with any of the given prefixes."""
+        if not key_prefixes:
+            self._store.clear()
+            return
+        to_remove = [k for k in self._store if k[0] in key_prefixes]
+        for k in to_remove:
+            del self._store[k]
+
+    def clear(self) -> None:
+        self._store.clear()
+
+    def _evict(self) -> None:
+        now = time.monotonic()
+        expired = [k for k, (ts, _) in self._store.items() if now - ts > self._ttl]
+        for k in expired:
+            del self._store[k]
+
+    def __len__(self) -> int:
+        return len(self._store)
 
 
 @dataclass
@@ -27,17 +83,38 @@ class PermissionResult:
 
 
 class PermissionClient:
-    """Client for the identity service's permission API."""
+    """Client for the identity service's permission API.
 
-    def __init__(self, base_url: str, service_name: str, service_key: str | None = None):
+    Args:
+        base_url: Root URL of the Sentinel service.
+        service_name: Registered service name.
+        service_key: Service API key.
+        cache_ttl: Seconds to cache ``accessible()`` and ``can()`` results.
+            ``0`` (default) disables caching.  Recommended: ``30``–``60`` for
+            apps where permission changes are infrequent.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        service_name: str,
+        service_key: str | None = None,
+        cache_ttl: float = 0,
+    ):
         self.base_url = base_url.rstrip("/")
         self.service_name = service_name
         self.service_key = service_key
         self._client = httpx.AsyncClient(base_url=self.base_url, timeout=5.0)
+        self._cache: _TTLCache | None = _TTLCache(ttl=cache_ttl) if cache_ttl > 0 else None
         warn_if_insecure(self.base_url, "PermissionClient")
 
     def __repr__(self) -> str:
         return f"PermissionClient(base_url={self.base_url!r}, service_name={self.service_name!r})"
+
+    @staticmethod
+    def _token_key(token: str) -> str:
+        """Truncated hash of the token for use as a cache key component."""
+        return hashlib.sha256(token.encode()).hexdigest()[:16]
 
     def _headers(self, token: str | None = None) -> dict[str, str]:
         """Build request headers with service key and optional user JWT."""
@@ -100,12 +177,28 @@ class PermissionClient:
         resource_id: uuid.UUID,
         action: str,
     ) -> bool:
-        """Convenience: check a single permission."""
+        """Convenience: check a single permission.
+
+        Results are cached when ``cache_ttl > 0``.
+        """
+        if self._cache is not None:
+            key = ("can", self._token_key(token), resource_type, str(resource_id), action)
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached
         results = await self.check(
             token,
             [PermissionCheck(self.service_name, resource_type, resource_id, action)],
         )
-        return results[0].allowed if results else False
+        allowed = results[0].allowed if results else False
+        if self._cache is not None:
+            self._cache.set(key, allowed)
+        return allowed
+
+    def _invalidate_cache(self) -> None:
+        """Clear cached ``accessible`` and ``can`` results after a write operation."""
+        if self._cache is not None:
+            self._cache.invalidate("accessible", "can")
 
     async def register_resource(
         self,
@@ -129,6 +222,7 @@ class PermissionClient:
             },
         )
         self._check(response)
+        self._invalidate_cache()
         return response.json()
 
     async def deregister_resource(
@@ -142,6 +236,7 @@ class PermissionClient:
             headers=self._headers(),
         )
         self._check(response)
+        self._invalidate_cache()
 
     async def share(
         self,
@@ -175,6 +270,7 @@ class PermissionClient:
             },
         )
         self._check(response)
+        self._invalidate_cache()
         return response.json()
 
     async def accessible(
@@ -190,7 +286,15 @@ class PermissionClient:
         Returns (resource_ids, has_full_access). When has_full_access is True
         and no limit was set, resource_ids is empty — the caller should skip
         filtering entirely.
+
+        Results are cached when ``cache_ttl > 0``.
         """
+        if self._cache is not None:
+            key = ("accessible", self._token_key(token), resource_type, action, str(workspace_id), limit)
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached
+
         payload: dict = {
             "service_name": self.service_name,
             "resource_type": resource_type,
@@ -206,10 +310,13 @@ class PermissionClient:
         )
         self._check(response)
         data = response.json()
-        return (
+        result = (
             [uuid.UUID(rid) for rid in data["resource_ids"]],
             data["has_full_access"],
         )
+        if self._cache is not None:
+            self._cache.set(key, result)
+        return result
 
     async def unshare(
         self,
@@ -242,6 +349,7 @@ class PermissionClient:
             },
         )
         self._check(response)
+        self._invalidate_cache()
         return response.json()
 
     async def update_visibility(
@@ -268,6 +376,7 @@ class PermissionClient:
             json={"visibility": visibility},
         )
         self._check(response)
+        self._invalidate_cache()
         return response.json()
 
     async def get_resource_acl(

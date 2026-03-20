@@ -18,8 +18,31 @@ perms = PermissionClient(
     base_url="http://localhost:9003",
     service_name="my-service",
     service_key="sk_...",
+    cache_ttl=60,  # optional: cache accessible()/can() results for 60 seconds
 )
 ```
+
+## Response Caching
+
+`PermissionClient` supports opt-in TTL caching for `accessible()` and `can()` results. This eliminates redundant HTTP calls when the same permission is checked multiple times within the TTL window (e.g. across search, browse, and list endpoints in a single user session).
+
+```python
+# Via Sentinel constructor (recommended)
+sentinel = Sentinel(base_url="...", service_name="...", service_key="...", cache_ttl=120)
+
+# Or directly on PermissionClient
+perms = PermissionClient(base_url="...", service_name="...", service_key="...", cache_ttl=120)
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `cache_ttl` | `0` | Seconds to cache results. `0` disables caching entirely (default, backward compatible). |
+
+**Cache keys** include a truncated hash of the JWT token, so different users never share cached results.
+
+**Automatic invalidation**: write operations (`share()`, `unshare()`, `update_visibility()`, `register_resource()`, `deregister_resource()`) automatically clear the cache, so subsequent reads reflect the change immediately.
+
+**Staleness window**: if permissions are changed externally (e.g. admin panel, another service instance), cached results may be stale for up to `cache_ttl` seconds. This is acceptable for most workspace-scoped applications where permission changes are infrequent.
 
 ## `register_resource()`
 

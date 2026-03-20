@@ -45,6 +45,11 @@ class Sentinel:
         actions: Optional list of RBAC action dicts to register on startup.
         allowed_workspaces: Optional set of workspace IDs permitted to access
             this service. ``None`` allows all. Only used in proxy mode.
+        cache_ttl: Seconds to cache ``accessible()`` and ``can()`` results
+            in the ``PermissionClient``.  ``0`` (default) disables caching.
+            Recommended: ``30``–``60`` for apps where permission changes are
+            infrequent.  Write operations (share, unshare, visibility changes)
+            automatically invalidate the cache.
     """
 
     def __init__(
@@ -57,6 +62,7 @@ class Sentinel:
         idp_jwks_url: str | None = None,
         actions: list[dict] | None = None,
         allowed_workspaces: set[str] | None = None,
+        cache_ttl: float = 0,
     ):
         if not service_key:
             raise ValueError(
@@ -77,6 +83,7 @@ class Sentinel:
         self.idp_jwks_url = idp_jwks_url
         self.actions = actions
         self.allowed_workspaces = allowed_workspaces
+        self.cache_ttl = cache_ttl
 
         self._permissions: PermissionClient | None = None
         self._roles: RoleClient | None = None
@@ -101,6 +108,7 @@ class Sentinel:
                 base_url=self.base_url,
                 service_name=self.service_name,
                 service_key=self.service_key,
+                cache_ttl=self.cache_ttl,
             )
         return self._permissions
 

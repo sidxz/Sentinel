@@ -236,3 +236,88 @@ class TestTokenNotExposed:
     def test_repr_hides_token(self):
         auth = RequestAuth(user=_make_user(), _token=TOKEN)
         assert TOKEN not in repr(auth)
+
+
+class TestRequestDedup:
+    """RequestAuth should deduplicate identical calls within the same request."""
+
+    @respx.mock
+    async def test_accessible_deduped(self):
+        pc = PermissionClient("https://auth.test", "docu-store", service_key="sk-test")
+        r1 = uuid.uuid4()
+        route = respx.post("https://auth.test/permissions/accessible").mock(
+            return_value=httpx.Response(
+                200,
+                json={"resource_ids": [str(r1)], "has_full_access": False},
+            )
+        )
+        auth = RequestAuth(user=_make_user(), _token=TOKEN, _permissions=pc)
+
+        # Two identical calls within the same request
+        ids1, _ = await auth.accessible("document", "view")
+        ids2, _ = await auth.accessible("document", "view")
+        assert ids1 == ids2
+        assert route.call_count == 1  # only one HTTP call
+
+    @respx.mock
+    async def test_can_deduped(self):
+        pc = PermissionClient("https://auth.test", "docu-store", service_key="sk-test")
+        route = respx.post("https://auth.test/permissions/check").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "service_name": "docu-store",
+                            "resource_type": "document",
+                            "resource_id": str(RES_ID),
+                            "action": "view",
+                            "allowed": True,
+                        }
+                    ]
+                },
+            )
+        )
+        auth = RequestAuth(user=_make_user(), _token=TOKEN, _permissions=pc)
+
+        assert await auth.can("document", RES_ID, "view") is True
+        assert await auth.can("document", RES_ID, "view") is True
+        assert route.call_count == 1
+
+    @respx.mock
+    async def test_different_args_not_deduped(self):
+        pc = PermissionClient("https://auth.test", "docu-store", service_key="sk-test")
+        r1, r2 = uuid.uuid4(), uuid.uuid4()
+        route = respx.post("https://auth.test/permissions/check").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "service_name": "docu-store",
+                            "resource_type": "document",
+                            "resource_id": str(r1),
+                            "action": "view",
+                            "allowed": True,
+                        }
+                    ]
+                },
+            )
+        )
+        auth = RequestAuth(user=_make_user(), _token=TOKEN, _permissions=pc)
+
+        await auth.can("document", r1, "view")
+        await auth.can("document", r2, "view")
+        assert route.call_count == 2  # different resource IDs → different calls
+
+    @respx.mock
+    async def test_check_action_deduped(self):
+        rc = RoleClient("https://auth.test", "docu-store", service_key="sk-test")
+        route = respx.post("https://auth.test/roles/check-action").mock(
+            return_value=httpx.Response(200, json={"allowed": True})
+        )
+        auth = RequestAuth(user=_make_user(), _token=TOKEN, _roles=rc)
+
+        assert await auth.check_action("reports:export") is True
+        assert await auth.check_action("reports:export") is True
+        assert route.call_count == 1

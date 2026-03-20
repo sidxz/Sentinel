@@ -35,6 +35,7 @@ class RequestAuth:
     _token: str = field(repr=False)
     _permissions: PermissionClient | None = field(default=None, repr=False, compare=False)
     _roles: RoleClient | None = field(default=None, repr=False, compare=False)
+    _request_cache: dict = field(default_factory=dict, repr=False, compare=False)
 
     # -- Forwarded identity properties -----------------------------------------
 
@@ -82,16 +83,29 @@ class RequestAuth:
         resource_id: uuid.UUID,
         action: str,
     ) -> bool:
-        """Check entity-level permission via Sentinel's Zanzibar API."""
+        """Check entity-level permission via Sentinel's Zanzibar API.
+
+        Results are deduplicated within the same request — calling ``can()``
+        twice with the same arguments makes only one HTTP call.
+        """
         if self._permissions is None:
             raise SentinelError("PermissionClient not configured on this RequestAuth")
-        return await self._permissions.can(self._token, resource_type, resource_id, action)
+        key = ("can", resource_type, resource_id, action)
+        if key not in self._request_cache:
+            self._request_cache[key] = await self._permissions.can(self._token, resource_type, resource_id, action)
+        return self._request_cache[key]
 
     async def check_action(self, action: str) -> bool:
-        """Check RBAC action via Sentinel's role API."""
+        """Check RBAC action via Sentinel's role API.
+
+        Results are deduplicated within the same request.
+        """
         if self._roles is None:
             raise SentinelError("RoleClient not configured on this RequestAuth")
-        return await self._roles.check_action(self._token, action, self.user.workspace_id)
+        key = ("check_action", action)
+        if key not in self._request_cache:
+            self._request_cache[key] = await self._roles.check_action(self._token, action, self.user.workspace_id)
+        return self._request_cache[key]
 
     async def accessible(
         self,
@@ -101,17 +115,21 @@ class RequestAuth:
     ) -> tuple[list[uuid.UUID], bool]:
         """Get accessible resource IDs for list filtering.
 
-        Returns ``(resource_ids, has_full_access)``.
+        Returns ``(resource_ids, has_full_access)``.  Results are deduplicated
+        within the same request.
         """
         if self._permissions is None:
             raise SentinelError("PermissionClient not configured on this RequestAuth")
-        return await self._permissions.accessible(
-            self._token,
-            resource_type,
-            action,
-            self.user.workspace_id,
-            limit,
-        )
+        key = ("accessible", resource_type, action, limit)
+        if key not in self._request_cache:
+            self._request_cache[key] = await self._permissions.accessible(
+                self._token,
+                resource_type,
+                action,
+                self.user.workspace_id,
+                limit,
+            )
+        return self._request_cache[key]
 
     async def register_resource(
         self,

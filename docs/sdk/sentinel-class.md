@@ -25,6 +25,7 @@ sentinel = Sentinel(
 | `idp_jwks_url` | `str \| None` | `None` | JWKS endpoint for IdP token validation (preferred -- handles key rotation) |
 | `actions` | `list[dict] \| None` | `None` | RBAC actions to register on startup |
 | `allowed_workspaces` | `set[str] \| None` | `None` | Workspace IDs permitted to access this service. `None` allows all. Proxy mode only. |
+| `cache_ttl` | `float` | `0` | Seconds to cache `accessible()` and `can()` results in the `PermissionClient`. `0` disables caching. Recommended: `30`–`120` for apps where permission changes are infrequent. Write operations (share, unshare, visibility changes) automatically invalidate the cache. |
 
 In authz mode, one of `idp_public_key` or `idp_jwks_url` is required.
 

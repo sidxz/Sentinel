@@ -24,7 +24,9 @@ Wraps three things in one object:
 |------|-----|---------------|
 | **Identity** | `user_id`, `workspace_id`, `workspace_role`, `email`, `name`, `groups`, `is_admin`, `is_editor` | No |
 | **Role checks** | `has_role(minimum_role)` — local hierarchy check | No |
-| **Authorization** | `can()`, `check_action()`, `accessible()`, `register_resource()` — calls Sentinel API | Yes |
+| **Authorization** | `can()`, `check_action()`, `accessible()`, `register_resource()` — calls Sentinel API | Yes (deduplicated) |
+
+**Per-request deduplication**: `can()`, `check_action()`, and `accessible()` results are automatically cached within the same `RequestAuth` instance. If multiple code paths call `auth.accessible("document", "view")` during the same request, only one HTTP call is made. Since `RequestAuth` is created fresh per request, there is zero risk of cross-request leakage.
 
 ```python
 from sentinel_auth import RequestAuth
