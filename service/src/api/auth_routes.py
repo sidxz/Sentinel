@@ -196,7 +196,7 @@ async def callback(
         else:
             # OIDC providers (Google, EntraID) — parse ID token
             userinfo = token.get("userinfo", {})
-            if not userinfo.get("email_verified", False):
+            if not auth_service.is_email_verified_claim(userinfo):
                 return _error_page(
                     403,
                     "Email Not Verified",
@@ -481,7 +481,7 @@ async def admin_callback(
             avatar_url = profile.get("avatar_url")
         else:
             userinfo = token.get("userinfo", {})
-            if not userinfo.get("email_verified", False):
+            if not auth_service.is_email_verified_claim(userinfo):
                 return RedirectResponse(
                     url=f"{settings.admin_url}/login?error=email_not_verified",
                     status_code=302,

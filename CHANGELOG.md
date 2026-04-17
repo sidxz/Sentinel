@@ -16,9 +16,10 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ---
 
-## [0.11.0] – 2026-04-16 — Security hardening
+## [0.11.0] – 2026-04-17 — Security hardening
 
-A co-ordinated fix for 14 findings from a deep security audit of AuthZ mode.
+A co-ordinated fix for 17 findings across two rounds of deep security audit of
+AuthZ mode (V1–V15 from round 1; V16–V18 from a follow-up round-2 review).
 Core invariant reinforced: **clients cannot bypass IdP authentication**.
 
 ### Security
@@ -42,6 +43,9 @@ required on the caller side.
 - **V14** — `POST /authz/resolve` accepts an optional `nonce` — when present, must match the IdP token's nonce claim. Enables replay protection for leaked IdP tokens.
 - **V15** — Demo-authz backend CORS tightened (explicit methods + headers instead of `*`).
 - **V5** — `POST /authz/resolve` no longer mints authz tokens for Origin-authenticated callers. Minting now requires an `X-Service-Key`. Origin-auth is still allowed for workspace discovery (no credential issued). Closes the "browser can mint authz tokens at will as long as the IdP token is valid" window. (See Breaking changes for migration.)
+- **V16** — Refresh-family revocation now blacklists the paired access token's `jti`. `token_service.store_refresh_token`'s `access_jti` slot was always empty because `auth_service.issue_tokens` and `rotate_refresh_token` never forwarded it, leaving the access-token blacklist loop in `revoke_token_family` as dead code. On theft detection, the attacker's minted access token stayed valid for up to `access_token_expire_minutes` (default 15 min) after the family was killed. Fixed by decoding the minted access JWT and plumbing its `jti` into the refresh record.
+- **V17** — `GET /authz/idp/github/callback` now validates the OAuth `state` parameter against the session value stored at login start (constant-time compare, rejected first). The login endpoint generated `state` but never stored it, and the callback did not accept a `state` query parameter — the GitHub-proxy AuthZ flow had no CSRF protection on the callback. Restores parity with proxy mode (which enforces state via Authlib).
+- **V18** — Proxy-mode OAuth callbacks (`/auth/callback/{provider}` and `/auth/admin/callback/{provider}`) now use the same strict `is True` `email_verified` check as authz mode. V13 patched the helper in `idp_validator.py` but the two proxy-mode callbacks used an inline `not userinfo.get("email_verified", False)` that still accepted stringified booleans. Consolidated into a single `auth_service.is_email_verified_claim` helper used by all three paths.
 
 ### Breaking changes
 

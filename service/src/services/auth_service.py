@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.jwt import (
+    _AUD_ACCESS,
     _AUD_REFRESH,
     create_access_token,
     create_refresh_token,
@@ -19,6 +20,18 @@ from src.services import token_service
 
 class CrossProviderEmailConflict(Exception):
     """Raised when an IdP login's email matches a user from a different provider."""
+
+
+def is_email_verified_claim(userinfo: dict) -> bool:
+    """Strictly check that an OIDC ``email_verified`` claim is the boolean True.
+
+    Per OIDC Core 1.0 §5.1, ``email_verified`` is a boolean. Some IdPs emit
+    stringified booleans (``"true"``/``"false"``); the string ``"false"`` is
+    truthy in Python and would bypass a naive ``not userinfo.get(...)`` check,
+    letting an attacker sign in with a claimed-but-unverified email. Strictly
+    compare against ``True`` so any non-boolean value fails closed.
+    """
+    return userinfo.get("email_verified") is True
 
 
 async def find_or_create_user(
@@ -129,8 +142,12 @@ async def issue_tokens(
     # family_id is generated inside create_refresh_token and embedded in the JWT
     refresh_token = create_refresh_token(user_id=user.id)
 
-    # Store refresh token in Redis for rotation tracking
+    # Store refresh token in Redis for rotation tracking. access_jti is bound
+    # to the refresh record so revoke_token_family can blacklist the paired
+    # access token on reuse detection — without this, the access token remains
+    # valid for the remainder of its TTL after a theft signal fires.
     rt_payload = decode_token(refresh_token, audience=_AUD_REFRESH)
+    at_payload = decode_token(access_token, audience=_AUD_ACCESS)
     family_id = rt_payload["fid"]
     await token_service.store_refresh_token(
         jti=rt_payload["jti"],
@@ -138,6 +155,7 @@ async def issue_tokens(
         family_id=family_id,
         workspace_id=workspace_id,
         client_app_id=client_app_id,
+        access_jti=at_payload["jti"],
     )
 
     return {
@@ -220,14 +238,17 @@ async def rotate_refresh_token(
     )
     new_refresh = create_refresh_token(user_id=user.id, family_id=family_id)
 
-    # Store new refresh token in same family
+    # Store new refresh token in same family, binding paired access jti so
+    # family revocation can blacklist it.
     new_rt_payload = decode_token(new_refresh, audience=_AUD_REFRESH)
+    new_at_payload = decode_token(new_access, audience=_AUD_ACCESS)
     await token_service.store_refresh_token(
         jti=new_rt_payload["jti"],
         user_id=user.id,
         family_id=family_id,
         workspace_id=workspace_id,
         client_app_id=client_app_id,
+        access_jti=new_at_payload["jti"],
     )
 
     return {

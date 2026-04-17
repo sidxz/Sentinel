@@ -72,9 +72,7 @@ async def test_valid_google_token(rsa_keypair, make_token):
         }
     )
 
-    result = await validate_idp_token(
-        token, "google", _override_key=public_key
-    )
+    result = await validate_idp_token(token, "google", _override_key=public_key)
 
     assert result["sub"] == "google-user-123"
     assert result["email"] == "user@example.com"

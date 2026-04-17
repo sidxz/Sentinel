@@ -1,5 +1,6 @@
 """AuthZ Mode endpoints — IdP token validation + authorization JWT issuance."""
 
+import hmac
 import uuid
 from urllib.parse import urlparse
 
@@ -89,14 +90,22 @@ async def idp_login(
     # trust root.
     await _validate_authz_redirect_uri(db, redirect_uri)
 
+    # Security: ``state`` is the OAuth anti-CSRF token. We generate it here,
+    # store it in the session, and echo it to GitHub. On callback we compare
+    # the value GitHub returns against the session-stored value. Without this
+    # binding, an attacker can pre-mint a GitHub code for their own account
+    # and force the victim's session to exchange it — logging the victim in
+    # as the attacker.
+    state = uuid.uuid4().hex
     request.session["authz_idp_redirect_uri"] = redirect_uri
     request.session["authz_idp_nonce"] = nonce
+    request.session["authz_idp_state"] = state
 
     params = (
         f"client_id={settings.github_client_id}"
         f"&redirect_uri={settings.base_url}/authz/idp/github/callback"
         f"&scope=read:user user:email"
-        f"&state={uuid.uuid4().hex}"
+        f"&state={state}"
     )
     return RedirectResponse(
         url=f"https://github.com/login/oauth/authorize?{params}",
@@ -107,7 +116,11 @@ async def idp_login(
 @router.get("/idp/{provider}/callback")
 @limiter.limit("10/minute")
 async def idp_callback(
-    request: Request, provider: str, code: str, db: AsyncSession = Depends(get_db)
+    request: Request,
+    provider: str,
+    code: str,
+    state: str | None = None,
+    db: AsyncSession = Depends(get_db),
 ):
     """Exchange authorization code for access token and redirect back to the frontend.
 
@@ -122,6 +135,17 @@ async def idp_callback(
 
     redirect_uri = request.session.pop("authz_idp_redirect_uri", None)
     nonce = request.session.pop("authz_idp_nonce", None)
+    session_state = request.session.pop("authz_idp_state", None)
+
+    # Security: validate OAuth state BEFORE any downstream work (DB lookups,
+    # code exchange) so a CSRF'd callback fails fast with no side effects.
+    # Constant-time compare to avoid leaking the valid state via timing.
+    if not state or not session_state or not hmac.compare_digest(state, session_state):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or missing OAuth state — start from /authz/idp/{provider}/login",
+        )
+
     if not redirect_uri:
         raise HTTPException(
             status_code=400,

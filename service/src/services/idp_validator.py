@@ -16,6 +16,7 @@ import jwt
 from jwt.algorithms import RSAAlgorithm
 
 from src.config import settings
+from src.services.auth_service import is_email_verified_claim
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -146,7 +147,7 @@ async def _validate_oidc_token(
             )
 
     # Require verified email — strict True (rejects stringified "true"/"false" from buggy IdPs)
-    if payload.get("email_verified") is not True:
+    if not is_email_verified_claim(payload):
         raise IdpValidationError("Email not verified")
 
     # Replay protection: if caller supplied a nonce, require the IdP token to carry it.
