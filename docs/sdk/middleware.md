@@ -20,25 +20,28 @@ from sentinel_auth.authz_middleware import AuthzMiddleware
 
 app.add_middleware(
     AuthzMiddleware,
+    service_name="my-service",
+    idp_audience="123-abc.apps.googleusercontent.com",
+    idp_issuer="https://accounts.google.com",
     idp_jwks_url="https://www.googleapis.com/oauth2/v3/certs",
     sentinel_public_key=sentinel_pem,
     exclude_paths=["/health", "/docs", "/openapi.json"],
 )
 ```
 
-Or pass a `Sentinel` instance (keys are read lazily -- safe to call before lifespan):
+Or pass a `Sentinel` instance (keys are read lazily -- safe to call before lifespan). In that case `service_name`, `idp_audience`, and `idp_issuer` are picked up from the Sentinel instance:
 
 ```python
-app.add_middleware(
-    AuthzMiddleware,
-    sentinel_instance=sentinel,
-)
+sentinel.protect(app)  # preferred
 ```
 
 ### Constructor Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `service_name` | `str` | **required** | Binds this middleware to a single service. The authz token's `svc` claim MUST equal this. Prevents a token minted for another service from being replayed here. |
+| `idp_audience` | `str \| list[str]` | **required** | The IdP token's expected `aud` claim — typically your OAuth client_id. Without this check, any valid token from any OAuth client of the same IdP authenticates. |
+| `idp_issuer` | `str \| None` | `None` | Expected IdP `iss` claim. Strongly recommended. |
 | `idp_public_key` | `str \| None` | `None` | PEM key for IdP token validation |
 | `idp_jwks_url` | `str \| None` | `None` | JWKS endpoint for IdP tokens (handles key rotation) |
 | `sentinel_public_key` | `str \| None` | `None` | PEM key for authz token validation |
@@ -64,10 +67,11 @@ After successful validation, the middleware sets:
 
 1. Extract IdP token from `Authorization: Bearer ...`
 2. Extract authz token from `X-Authz-Token`
-3. Validate IdP token (signature, expiry) via JWKS or static key
-4. Validate authz token (signature, expiry, audience `sentinel:authz`)
-5. Verify binding: IdP `sub` must match authz `idp_sub`
-6. Build `AuthenticatedUser` and set on `request.state`
+3. Validate IdP token: signature, expiry, `aud == idp_audience` (+ `iss == idp_issuer` if configured) via JWKS or static key
+4. Validate authz token: signature, expiry, `aud == "sentinel:authz"`
+5. Verify binding: IdP `sub` must equal authz `idp_sub` (both must be non-empty)
+6. Verify service binding: authz `svc` must equal `service_name`
+7. Build `AuthenticatedUser` and set on `request.state`
 
 OPTIONS requests are passed through without validation.
 
@@ -140,5 +144,6 @@ Both middleware classes return JSON errors:
 | 401 | `Invalid IdP token` / `Invalid token` | Bad signature, malformed, wrong audience |
 | 401 | `Token binding mismatch: idp_sub does not match` | IdP sub != authz idp_sub (authz mode) |
 | 401 | `Invalid token claims` | Missing required claims in payload |
+| 403 | `Authz token was issued for a different service` | authz `svc` claim != `service_name` (authz mode) |
 | 403 | `Workspace not permitted for this service` | Workspace not in `allowed_workspaces` |
 | 500 | `Authentication service unavailable` | JWKS fetch failed (proxy mode) |

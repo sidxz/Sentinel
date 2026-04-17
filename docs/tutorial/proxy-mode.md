@@ -79,15 +79,23 @@ import { SentinelAuth } from "@sentinel-auth/js";
 
 const SENTINEL_URL = import.meta.env.VITE_SENTINEL_URL || "http://localhost:9003";
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:9200";
+const CLIENT_ID = import.meta.env.VITE_SENTINEL_CLIENT_ID;
+if (!CLIENT_ID) {
+  throw new Error("VITE_SENTINEL_CLIENT_ID is required — get it from the Sentinel admin panel");
+}
 
 export const sentinelClient = new SentinelAuth({
   sentinelUrl: SENTINEL_URL,
+  clientId: CLIENT_ID,
 });
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return sentinelClient.fetchJson<T>(`${BACKEND_URL}${path}`, options);
 }
 ```
+
+!!! tip "Why `clientId` is required"
+    `clientId` is the ClientApp UUID you get from the Sentinel admin panel. Sentinel uses it to bind a login to a specific registered app — a crafted link cannot redirect the OAuth flow to another app's callback. See [Vuln 7](../../../security.md) for background.
 
 `sentinelClient.fetchJson()` attaches a single `Authorization: Bearer <token>` header (no `X-Authz-Token`).
 

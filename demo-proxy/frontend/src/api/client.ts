@@ -2,10 +2,17 @@ import { SentinelAuth } from "@sentinel-auth/js";
 
 const SENTINEL_URL =
   import.meta.env.VITE_SENTINEL_URL || "http://localhost:9003";
+const CLIENT_ID = import.meta.env.VITE_SENTINEL_CLIENT_ID;
+if (!CLIENT_ID) {
+  throw new Error(
+    "VITE_SENTINEL_CLIENT_ID is required — get the ClientApp id from the Sentinel admin panel and set it in .env",
+  );
+}
 
 /** Shared SentinelAuth client instance used by both the React provider and apiFetch. */
 export const sentinelClient = new SentinelAuth({
   sentinelUrl: SENTINEL_URL,
+  clientId: CLIENT_ID,
 });
 
 /**

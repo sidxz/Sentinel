@@ -22,8 +22,16 @@ export function Login() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("error") === "not_admin") {
-      setError("Your account does not have admin access.");
+    const errorCode = params.get("error");
+    const errorMessages: Record<string, string> = {
+      not_admin: "Your account does not have admin access.",
+      email_not_verified:
+        "Your identity provider did not confirm your email. Verify it and try again.",
+      email_conflict:
+        "An account with this email already exists under a different sign-in provider. Sign in with your original provider.",
+    };
+    if (errorCode && errorMessages[errorCode]) {
+      setError(errorMessages[errorCode]);
       window.history.replaceState({}, "", "/login");
     }
     getAuthProviders()

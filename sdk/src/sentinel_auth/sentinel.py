@@ -60,6 +60,8 @@ class Sentinel:
         mode: str = "authz",
         idp_public_key: str | None = None,
         idp_jwks_url: str | None = None,
+        idp_audience: str | list[str] | None = None,
+        idp_issuer: str | None = None,
         actions: list[dict] | None = None,
         allowed_workspaces: set[str] | None = None,
         cache_ttl: float = 0,
@@ -71,8 +73,15 @@ class Sentinel:
             )
         if mode not in ("authz", "proxy"):
             raise ValueError(f"mode must be 'authz' or 'proxy', got '{mode}'")
-        if mode == "authz" and not idp_public_key and not idp_jwks_url:
-            raise ValueError("idp_public_key or idp_jwks_url is required when mode='authz'")
+        if mode == "authz":
+            if not idp_public_key and not idp_jwks_url:
+                raise ValueError("idp_public_key or idp_jwks_url is required when mode='authz'")
+            if not idp_audience:
+                raise ValueError(
+                    "idp_audience is required when mode='authz' — the IdP token's "
+                    "aud claim must be verified to prevent accepting tokens minted "
+                    "for other OAuth clients of the same IdP."
+                )
 
         self.base_url = base_url.rstrip("/")
         warn_if_insecure(self.base_url, "Sentinel")
@@ -81,6 +90,8 @@ class Sentinel:
         self.mode = mode
         self.idp_public_key = idp_public_key
         self.idp_jwks_url = idp_jwks_url
+        self.idp_audience = idp_audience
+        self.idp_issuer = idp_issuer
         self.actions = actions
         self.allowed_workspaces = allowed_workspaces
         self.cache_ttl = cache_ttl
@@ -150,6 +161,9 @@ class Sentinel:
             app.add_middleware(
                 AuthzMiddleware,
                 sentinel_instance=self,
+                service_name=self.service_name,
+                idp_audience=self.idp_audience,
+                idp_issuer=self.idp_issuer,
                 exclude_paths=exclude_paths,
             )
         else:

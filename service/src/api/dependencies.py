@@ -8,206 +8,12 @@ from src.auth.jwt import _AUD_ACCESS, _AUD_ADMIN, _AUD_AUTHZ, decode_token
 from src.database import get_db
 
 
-async def require_admin(request: Request) -> dict:
-    """FastAPI dependency that requires a valid admin JWT cookie."""
-    token = request.cookies.get("admin_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        payload = decode_token(token, audience=_AUD_ADMIN)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    if not payload.get("admin"):
-        raise HTTPException(status_code=403, detail="Not an admin")
-
-    # Check admin token revocation (jti denylist)
-    if jti := payload.get("jti"):
-        from src.services.token_service import is_access_token_blacklisted
-
-        if await is_access_token_blacklisted(jti):
-            raise HTTPException(status_code=401, detail="Token has been revoked")
-
-    # CSRF: require X-Requested-With header on state-changing methods
-    if request.method in ("POST", "PATCH", "PUT", "DELETE"):
-        if not request.headers.get("X-Requested-With"):
-            raise HTTPException(
-                status_code=403, detail="Missing X-Requested-With header"
-            )
-
-    return payload
-
-
 @dataclass(frozen=True)
 class CurrentUser:
     user_id: uuid.UUID
     workspace_id: uuid.UUID
     workspace_role: str
     groups: list[uuid.UUID]
-
-
-async def get_current_user(request: Request) -> CurrentUser:
-    """FastAPI dependency: extract user context from Bearer JWT."""
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
-    token = auth.removeprefix("Bearer ")
-    if len(token) > 8192:
-        raise HTTPException(status_code=401, detail="Token too large")
-    try:
-        # Security: only accept access tokens — authz tokens must not be usable here
-        payload = decode_token(token, audience=_AUD_ACCESS)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    # Security: enforce token type to prevent cross-type confusion
-    if payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Invalid token type")
-
-    # Security: reject tokens missing required claims
-    if not all(k in payload for k in ("sub", "wid", "wrole")):
-        raise HTTPException(status_code=401, detail="Token missing required claims")
-
-    # Check token revocation (jti denylist)
-    if jti := payload.get("jti"):
-        from src.services.token_service import is_access_token_blacklisted
-
-        if await is_access_token_blacklisted(jti):
-            raise HTTPException(status_code=401, detail="Token has been revoked")
-
-    # Security: reject deactivated users even if JWT is still valid
-    user_id = payload.get("sub")
-    if user_id:
-        from src.services.token_service import is_user_deactivated
-
-        if await is_user_deactivated(user_id):
-            raise HTTPException(status_code=401, detail="User account is deactivated")
-
-    return CurrentUser(
-        user_id=uuid.UUID(payload["sub"]),
-        workspace_id=uuid.UUID(payload["wid"]),
-        workspace_role=payload["wrole"],
-        groups=[uuid.UUID(g) for g in payload.get("groups", [])],
-    )
-
-
-async def get_user_for_service_call(request: Request) -> CurrentUser:
-    """Extract user context from Bearer JWT — accepts access or authz tokens.
-
-    Use this ONLY on endpoints that also require service key auth (dual-auth).
-    In proxy mode, services forward the user's access token.
-    In authz mode, services forward the authz token instead.
-    The service key establishes trust; this just extracts user identity.
-    """
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
-    token = auth.removeprefix("Bearer ")
-    if len(token) > 8192:
-        raise HTTPException(status_code=401, detail="Token too large")
-    try:
-        payload = decode_token(token, audience=[_AUD_ACCESS, _AUD_AUTHZ])
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    token_type = payload.get("type")
-    if token_type not in ("access", "authz"):
-        raise HTTPException(status_code=401, detail="Invalid token type")
-
-    # Security: reject tokens missing required claims
-    if not all(k in payload for k in ("sub", "wid", "wrole")):
-        raise HTTPException(status_code=401, detail="Token missing required claims")
-
-    # For access tokens, check revocation and deactivation
-    if token_type == "access":
-        if jti := payload.get("jti"):
-            from src.services.token_service import is_access_token_blacklisted
-
-            if await is_access_token_blacklisted(jti):
-                raise HTTPException(status_code=401, detail="Token has been revoked")
-
-        user_id = payload.get("sub")
-        if user_id:
-            from src.services.token_service import is_user_deactivated
-
-            if await is_user_deactivated(user_id):
-                raise HTTPException(
-                    status_code=401, detail="User account is deactivated"
-                )
-
-    return CurrentUser(
-        user_id=uuid.UUID(payload["sub"]),
-        workspace_id=uuid.UUID(payload["wid"]),
-        workspace_role=payload["wrole"],
-        groups=[uuid.UUID(g) for g in payload.get("groups", [])],
-    )
-
-
-async def get_current_user_flexible(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> CurrentUser:
-    """Extract user context — accepts access tokens always, authz tokens only with valid service key.
-
-    Use this on endpoints that need to work in both proxy mode (browser → access token)
-    and authz mode (backend → service key + authz token).
-
-    Security: authz tokens are only accepted when X-Service-Key is present AND validated
-    against the database. A fake/invalid service key is rejected, and the caller falls back
-    to access-token-only mode.
-    """
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
-    token = auth.removeprefix("Bearer ")
-    if len(token) > 8192:
-        raise HTTPException(status_code=401, detail="Token too large")
-
-    # Validate the service key against the database — not just check for presence
-    has_valid_service_key = False
-    raw_key = request.headers.get("X-Service-Key")
-    if raw_key:
-        from src.services import service_app_service
-
-        result = await service_app_service.validate_key(raw_key, db)
-        has_valid_service_key = result is not None
-
-    audiences = [_AUD_ACCESS, _AUD_AUTHZ] if has_valid_service_key else _AUD_ACCESS
-
-    try:
-        payload = decode_token(token, audience=audiences)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    token_type = payload.get("type")
-    valid_types = ("access", "authz") if has_valid_service_key else ("access",)
-    if token_type not in valid_types:
-        raise HTTPException(status_code=401, detail="Invalid token type")
-
-    if not all(k in payload for k in ("sub", "wid", "wrole")):
-        raise HTTPException(status_code=401, detail="Token missing required claims")
-
-    # For access tokens, check revocation and deactivation
-    if token_type == "access":
-        if jti := payload.get("jti"):
-            from src.services.token_service import is_access_token_blacklisted
-
-            if await is_access_token_blacklisted(jti):
-                raise HTTPException(status_code=401, detail="Token has been revoked")
-
-        user_id = payload.get("sub")
-        if user_id:
-            from src.services.token_service import is_user_deactivated
-
-            if await is_user_deactivated(user_id):
-                raise HTTPException(
-                    status_code=401, detail="User account is deactivated"
-                )
-
-    return CurrentUser(
-        user_id=uuid.UUID(payload["sub"]),
-        workspace_id=uuid.UUID(payload["wid"]),
-        workspace_role=payload["wrole"],
-        groups=[uuid.UUID(g) for g in payload.get("groups", [])],
-    )
 
 
 @dataclass(frozen=True)
@@ -276,3 +82,212 @@ async def require_service_key(
     if ctx.origin_authenticated:
         raise HTTPException(status_code=401, detail="Service key required")
     return ctx
+
+
+async def require_admin(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
+    """FastAPI dependency that requires a valid admin JWT cookie."""
+    token = request.cookies.get("admin_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = decode_token(token, audience=_AUD_ADMIN)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if not payload.get("admin"):
+        raise HTTPException(status_code=403, detail="Not an admin")
+
+    from src.services.token_service import (
+        is_access_token_blacklisted,
+        is_user_deactivated,
+    )
+
+    # Check admin token revocation (jti denylist)
+    if jti := payload.get("jti"):
+        if await is_access_token_blacklisted(jti):
+            raise HTTPException(status_code=401, detail="Token has been revoked")
+
+    # Re-check user is active + still admin at request time. Flipping is_admin or
+    # is_active must take effect immediately, not only after the cookie expires.
+    user_id = payload.get("sub")
+    if user_id:
+        if await is_user_deactivated(user_id):
+            raise HTTPException(status_code=401, detail="User account is deactivated")
+        from src.models.user import User
+
+        user = await db.get(User, uuid.UUID(user_id))
+        if user is None or not user.is_active or not user.is_admin:
+            raise HTTPException(status_code=401, detail="Admin privileges revoked")
+
+    # CSRF: require X-Requested-With header on state-changing methods
+    if request.method in ("POST", "PATCH", "PUT", "DELETE"):
+        if not request.headers.get("X-Requested-With"):
+            raise HTTPException(
+                status_code=403, detail="Missing X-Requested-With header"
+            )
+
+    return payload
+
+
+async def get_current_user(request: Request) -> CurrentUser:
+    """FastAPI dependency: extract user context from Bearer JWT."""
+    auth = request.headers.get("Authorization")
+    if not auth or not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    token = auth.removeprefix("Bearer ")
+    if len(token) > 8192:
+        raise HTTPException(status_code=401, detail="Token too large")
+    try:
+        # Security: only accept access tokens — authz tokens must not be usable here
+        payload = decode_token(token, audience=_AUD_ACCESS)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    # Security: enforce token type to prevent cross-type confusion
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    # Security: reject tokens missing required claims
+    if not all(k in payload for k in ("sub", "wid", "wrole")):
+        raise HTTPException(status_code=401, detail="Token missing required claims")
+
+    await _enforce_token_hygiene(payload)
+
+    return CurrentUser(
+        user_id=uuid.UUID(payload["sub"]),
+        workspace_id=uuid.UUID(payload["wid"]),
+        workspace_role=payload["wrole"],
+        groups=[uuid.UUID(g) for g in payload.get("groups", [])],
+    )
+
+
+async def _enforce_token_hygiene(payload: dict) -> None:
+    """Revocation + deactivation checks common to every user-bearing token.
+
+    Applies to both access and authz tokens. Historically the authz-token path
+    skipped these, leaving issued tokens valid until their TTL even after the
+    user was deactivated — now fixed.
+    """
+    from src.services.token_service import (
+        is_access_token_blacklisted,
+        is_user_deactivated,
+    )
+
+    if jti := payload.get("jti"):
+        if await is_access_token_blacklisted(jti):
+            raise HTTPException(status_code=401, detail="Token has been revoked")
+    if user_id := payload.get("sub"):
+        if await is_user_deactivated(user_id):
+            raise HTTPException(status_code=401, detail="User account is deactivated")
+
+
+async def get_user_for_service_call(
+    request: Request,
+    svc_ctx: ServiceKeyContext = Depends(require_service_key),
+) -> CurrentUser:
+    """Extract user context from Bearer JWT — accepts access or authz tokens.
+
+    Pair with dual-auth endpoints. In proxy mode, services forward the user's
+    access token; in authz mode, services forward the authz token instead. The
+    service key establishes trust; this extracts user identity and — for authz
+    tokens — enforces the ``svc`` claim matches the calling service so a token
+    minted for service A cannot be replayed on service B.
+    """
+    auth = request.headers.get("Authorization")
+    if not auth or not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    token = auth.removeprefix("Bearer ")
+    if len(token) > 8192:
+        raise HTTPException(status_code=401, detail="Token too large")
+    try:
+        payload = decode_token(token, audience=[_AUD_ACCESS, _AUD_AUTHZ])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    token_type = payload.get("type")
+    if token_type not in ("access", "authz"):
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    # Security: reject tokens missing required claims
+    if not all(k in payload for k in ("sub", "wid", "wrole")):
+        raise HTTPException(status_code=401, detail="Token missing required claims")
+
+    await _enforce_token_hygiene(payload)
+
+    if token_type == "authz":
+        token_svc = payload.get("svc")
+        if not token_svc or token_svc != svc_ctx.service_name:
+            raise HTTPException(
+                status_code=403,
+                detail="Authz token was issued for a different service",
+            )
+
+    return CurrentUser(
+        user_id=uuid.UUID(payload["sub"]),
+        workspace_id=uuid.UUID(payload["wid"]),
+        workspace_role=payload["wrole"],
+        groups=[uuid.UUID(g) for g in payload.get("groups", [])],
+    )
+
+
+async def get_current_user_flexible(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> CurrentUser:
+    """Extract user context — accepts access tokens always, authz tokens only with valid service key.
+
+    Use this on endpoints that need to work in both proxy mode (browser → access token)
+    and authz mode (backend → service key + authz token).
+
+    Security: authz tokens are only accepted when X-Service-Key is present AND
+    validated against the database. The service key's ``service_name`` MUST equal
+    the authz token's ``svc`` claim — otherwise the token was minted for a
+    different service and must not be accepted.
+    """
+    auth = request.headers.get("Authorization")
+    if not auth or not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    token = auth.removeprefix("Bearer ")
+    if len(token) > 8192:
+        raise HTTPException(status_code=401, detail="Token too large")
+
+    # Validate the service key against the database — not just check for presence
+    service_key_service_name: str | None = None
+    raw_key = request.headers.get("X-Service-Key")
+    if raw_key:
+        from src.services import service_app_service
+
+        result = await service_app_service.validate_key(raw_key, db)
+        if result is not None:
+            service_key_service_name = result[0]
+
+    has_valid_service_key = service_key_service_name is not None
+    audiences = [_AUD_ACCESS, _AUD_AUTHZ] if has_valid_service_key else _AUD_ACCESS
+
+    try:
+        payload = decode_token(token, audience=audiences)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    token_type = payload.get("type")
+    valid_types = ("access", "authz") if has_valid_service_key else ("access",)
+    if token_type not in valid_types:
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    if not all(k in payload for k in ("sub", "wid", "wrole")):
+        raise HTTPException(status_code=401, detail="Token missing required claims")
+
+    await _enforce_token_hygiene(payload)
+
+    if token_type == "authz":
+        token_svc = payload.get("svc")
+        if not token_svc or token_svc != service_key_service_name:
+            raise HTTPException(
+                status_code=403,
+                detail="Authz token was issued for a different service",
+            )
+
+    return CurrentUser(
+        user_id=uuid.UUID(payload["sub"]),
+        workspace_id=uuid.UUID(payload["wid"]),
+        workspace_role=payload["wrole"],
+        groups=[uuid.UUID(g) for g in payload.get("groups", [])],
+    )

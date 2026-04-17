@@ -21,6 +21,7 @@ type AuthStateListener = (user: SentinelUser | null) => void
  */
 export class SentinelAuth {
   private readonly url: string
+  private readonly clientId: string
   private readonly redirectUri: string
   private readonly store: TokenStore
   private readonly autoRefresh: boolean
@@ -31,6 +32,12 @@ export class SentinelAuth {
 
   constructor(config: SentinelConfig) {
     this.url = config.sentinelUrl.replace(/\/+$/, '')
+    if (!config.clientId) {
+      throw new Error(
+        'SentinelAuth: clientId is required — obtain it from the Sentinel admin panel.',
+      )
+    }
+    this.clientId = config.clientId
     this.redirectUri =
       config.redirectUri ??
       (typeof window !== 'undefined'
@@ -69,6 +76,7 @@ export class SentinelAuth {
     sessionStorage.setItem(STATE_KEY, state)
 
     const params = new URLSearchParams({
+      client_id: this.clientId,
       redirect_uri: this.redirectUri,
       code_challenge: challenge,
       code_challenge_method: 'S256',

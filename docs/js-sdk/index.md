@@ -37,6 +37,7 @@ import { SentinelAuthz, IdpConfigs } from '@sentinel-auth/js'
 
 const authz = new SentinelAuthz({
   sentinelUrl: 'http://localhost:9003',
+  mintEndpoint: '/api/auth/mint', // YOUR backend route — holds the service key
   idps: { google: IdpConfigs.google('your-google-client-id') },
 })
 

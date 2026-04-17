@@ -109,7 +109,7 @@ Tokens carry a `type` claim that prevents cross-use:
 | Access token | `access` | `sentinel:access` |
 | Refresh token | (Redis only) | N/A |
 | Admin token | `admin_access` | `sentinel:admin` |
-| Authz token | `authz_access` | `sentinel:authz` |
+| Authz token | `authz` | `sentinel:authz` |
 
 ### Token ID (`jti`)
 
@@ -257,11 +257,22 @@ PKCE prevents authorization code interception. Sentinel uses S256 where supporte
 
 PKCE is configured at the Authlib client registration level. Authlib generates `code_verifier` and `code_challenge` automatically.
 
-### Client App Allowlist
+### Client App Allowlist + `client_id` Binding
 
-Applications must be registered as client apps before using Sentinel. Each app defines allowed redirect URIs. Sentinel validates that `redirect_uri` on `GET /auth/login/{provider}` belongs to an active registered app.
+Applications must be registered as client apps before using Sentinel. `GET /auth/login/{provider}` requires a `client_id` query parameter naming the ClientApp initiating the flow. Sentinel validates that the supplied `redirect_uri` is listed on **that specific** app's `redirect_uris` — not any active app. The `client_id` is stored in the session and re-verified on callback before an auth code is issued.
 
-This prevents unauthorized usage and open redirector attacks.
+This prevents authorization-code interception where an attacker crafted a login URL with their own `code_challenge` and another app's `redirect_uri`, then redeemed the resulting code against their own verifier. Without `client_id` binding, a single compromised or attacker-controllable redirect URI anywhere in the allowlist would have been enough; with it, the `(client_id, redirect_uri)` pair must match.
+
+### Redirect URI Validation
+
+Redirect URIs (and ServiceApp origins) are parsed with `urlparse` and must have:
+
+- Scheme `http` or `https`
+- Non-empty host
+- No `@` userinfo, no fragment, no query (URIs); no path/query/fragment (origins)
+- No wildcards, no `"null"`, no malformed round-trip
+
+Stricter than a prefix check — rejects values like `https://good@evil.com/cb` or `https://` at write time.
 
 ### State Parameter
 
@@ -275,6 +286,75 @@ All OAuth2 flows use `state` (managed by Authlib via `SessionMiddleware`) to pre
 2. **Dynamic** -- derived from `client_apps.redirect_uris` in the database
 
 Policy: credentials enabled, methods `GET/POST/PUT/PATCH/DELETE/OPTIONS`, headers `Content-Type`, `Authorization`, `X-Service-Key`. No wildcards in production.
+
+---
+
+## AuthZ Mode Security
+
+AuthZ mode lets client apps authenticate users directly with their IdP and hand the resulting token to Sentinel, which issues a short-lived authorization JWT. Several defences ensure the IdP remains the sole authentication authority.
+
+### IdP Audience + Issuer Enforcement
+
+Both the Python and Next.js AuthZ middlewares require you to configure:
+
+- `idp_audience` — the OAuth client_id this app is registered as. The IdP token's `aud` must match.
+- `idp_issuer` — optional but strongly recommended; the IdP token's `iss` must match.
+
+Without `aud` validation, any token signed by the IdP for any OAuth client would authenticate — including one minted for an attacker's app. Sentinel's server-side `/authz/resolve` has always enforced audience; the middleware change brings client verification to parity.
+
+### Authz Token Bindings
+
+The authz JWT carries three binding claims that the middleware enforces on every request:
+
+| Claim | Bound to | Enforcement |
+|-------|----------|-------------|
+| `aud` | `sentinel:authz` | JWT decode |
+| `idp_sub` | IdP token's `sub` | Middleware asserts equality (both non-empty) |
+| `svc` | Calling service's `service_name` | Middleware asserts equality — stops cross-service token replay |
+
+Server-side dependencies (`get_user_for_service_call`, `get_current_user_flexible`) enforce the same `svc` binding when authz tokens are accepted alongside a service key.
+
+### Nonce Replay Protection
+
+`POST /authz/resolve` accepts an optional `nonce` field. When provided, the IdP token's `nonce` claim must match. Browsers generate a nonce at login-start and echo it here — a leaked IdP token cannot be replayed without the matching nonce.
+
+### AuthZ-mode Redirect Allowlist
+
+`GET /authz/idp/github/login` takes a caller-supplied `redirect_uri`. Sentinel validates the URI's origin (scheme + host + port) against `ServiceApp.allowed_origins` — attackers cannot point the GitHub proxy at their own domain to exfiltrate the access token. The allowlist is re-checked on callback.
+
+### Cross-Provider Email Linking — Disabled
+
+`find_or_create_user` keys identity strictly on `(provider, provider_user_id)`. A new IdP login whose email matches a user provisioned under a different provider is **rejected with `409 CrossProviderEmailConflict`** — the user is told to sign in with the original provider or contact an administrator. Previous versions auto-linked by email; attackers with a weaker IdP could take over accounts created under a stronger one.
+
+### Revocation for Authz Tokens
+
+Authz tokens carry `jti` and `sub` and go through the same revocation checks as access tokens:
+
+- `jti` on the denylist → 401
+- `sub` marked deactivated → 401
+
+Admin-driven user deactivation immediately invalidates outstanding authz tokens — previously the token remained usable for its full TTL.
+
+### Browser Storage (`AuthzLocalStorageStore`)
+
+The JS SDK's persistent store keeps the short-lived authz token in `localStorage` but **not** the long-lived IdP token — that stays in instance memory only. After a page reload the SDK has no IdP token, so silent refresh fails and the user re-authenticates via the IdP. This limits the XSS blast radius: an attacker reading `localStorage` gets a token that expires in minutes, not an IdP token that continues to mint new authz tokens for the next hour.
+
+### Nonce on the Callback
+
+`SentinelAuthz.handleCallback()` fails closed if `sessionStorage` does not contain a nonce from a login this tab initiated. This blocks login-CSRF where an attacker links a victim to `/auth/callback#id_token=<attacker_token>` to hijack the session.
+
+### Admin Stale-Privilege Protection
+
+`require_admin` re-checks `users.is_active` and `users.is_admin` against the database on every request. Flipping an admin's flag takes effect on the next request, not only after the cookie expires.
+
+### Minting Requires a Service Key
+
+`POST /authz/resolve` differentiates two trust levels:
+
+- **Discovery** (no `workspace_id`, returns the user's workspace list) — accepts either `X-Service-Key` or a registered `Origin` header. No credential issued, low sensitivity.
+- **Minting** (with `workspace_id`, returns a signed authz JWT) — **requires `X-Service-Key`**. Origin-authenticated callers are rejected with `403`. Credential issuance is a server-to-server trust step.
+
+Browsers therefore cannot call `/authz/resolve` to mint tokens. The `SentinelAuthz` SDK routes minting through a `mintEndpoint` on the downstream app's backend, which holds the service key. This closes the "XSS-window extension" attack where an attacker with a fleeting XSS could keep re-minting authz tokens for the IdP token's full TTL (~1 hour for Google). Post-fix, an XSS is bounded to replaying the one authz token already in memory (5-min TTL).
 
 ---
 

@@ -11,13 +11,15 @@ import { SentinelAuth } from '@sentinel-auth/js'
 
 const auth = new SentinelAuth({
   sentinelUrl: 'http://localhost:9003',
+  clientId: '00000000-0000-0000-0000-000000000000', // ClientApp id from admin panel
 })
 ```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `sentinelUrl` | `string` | required | Base URL of the Sentinel service |
-| `redirectUri` | `string` | `${origin}/auth/callback` | OAuth redirect URI |
+| `clientId` | `string` | **required** | ClientApp UUID from the Sentinel admin panel. Binds this login flow to a specific registered app — Sentinel rejects a login whose `redirect_uri` does not belong to this `client_id`. Prevents cross-app auth-code interception. |
+| `redirectUri` | `string` | `${origin}/auth/callback` | OAuth redirect URI. Must be listed on the ClientApp's registered `redirect_uris`. |
 | `storage` | `TokenStore` | `MemoryStore` | Token storage backend |
 | `autoRefresh` | `boolean` | `true` | Refresh tokens before expiry |
 | `refreshBuffer` | `number` | `60` | Seconds before expiry to trigger refresh |
@@ -109,7 +111,9 @@ auth.destroy()        // clean up timers
 ```typescript
 import { SentinelAuth, LocalStorageStore } from '@sentinel-auth/js'
 const auth = new SentinelAuth({
-  sentinelUrl: '...', storage: new LocalStorageStore(),
+  sentinelUrl: '...',
+  clientId: '00000000-0000-0000-0000-000000000000',
+  storage: new LocalStorageStore(),
 })
 ```
 
@@ -120,6 +124,7 @@ import { SentinelAuth, LocalStorageStore } from '@sentinel-auth/js'
 
 const auth = new SentinelAuth({
   sentinelUrl: 'http://localhost:9003',
+  clientId: '00000000-0000-0000-0000-000000000000',
   storage: new LocalStorageStore(),
 })
 

@@ -33,11 +33,16 @@ sentinel = Sentinel(
     service_key="sk_your_key_here",
     mode="authz",
     idp_jwks_url="https://www.googleapis.com/oauth2/v3/certs",
+    idp_audience="123-abc.apps.googleusercontent.com",  # your Google OAuth client_id
+    idp_issuer="https://accounts.google.com",
     actions=[
         {"action": "notes:export", "description": "Export notes as JSON"},
     ],
 )
 ```
+
+!!! warning "`idp_audience` is required"
+    Without it the middleware would accept any Google-signed token from any OAuth client — including one minted by an attacker for their own Google app. The value must equal your frontend's Google OAuth client_id.
 
 ```python
 # backend/main.py
@@ -207,6 +212,9 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 export const authzClient = new SentinelAuthz({
   sentinelUrl: SENTINEL_URL,
+  // Mint endpoint on YOUR backend — it holds the Sentinel service key and
+  // proxies the credential-issuance call. Browsers must not mint directly.
+  mintEndpoint: `${BACKEND_URL}/auth/mint`,
   idps: { google: IdpConfigs.google(GOOGLE_CLIENT_ID) },
 });
 

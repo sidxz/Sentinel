@@ -245,6 +245,10 @@ For Next.js, see `@sentinel-auth/nextjs` with Edge Middleware and server-side JW
 
 Defense-in-depth middleware, per-endpoint rate limiting, and a comprehensive penetration testing suite. See the [security documentation](https://sidxz.github.io/Sentinel/security/).
 
+## Changelog
+
+Notable changes — especially **breaking changes with before/after snippets for patching downstream apps** — are tracked in [`CHANGELOG.md`](./CHANGELOG.md).
+
 ## Contributing
 
 See the [contributing guide](https://sidxz.github.io/Sentinel/contributing/).

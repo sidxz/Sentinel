@@ -13,6 +13,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import sentinel, settings
 
+if not settings.frontend_url or settings.frontend_url.strip() in {"", "*"}:
+    raise RuntimeError(
+        "frontend_url must be a concrete URL (set FRONTEND_URL in .env) — "
+        "wildcards or empty values are unsafe with allow_credentials=True."
+    )
+
 app = FastAPI(
     title="Team Notes (AuthZ Mode)",
     description="Demo app showcasing Sentinel AuthZ mode — dual-token validation, "
@@ -21,21 +27,38 @@ app = FastAPI(
     lifespan=sentinel.lifespan,
 )
 
-# Dual-token authentication (IdP token + Sentinel authz token)
-sentinel.protect(app, exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"])
+# Dual-token authentication (IdP token + Sentinel authz token).
+# /auth/mint is excluded: it's the login step, hit BEFORE the user has an
+# authz token, so dual-token validation must not apply. The mint route itself
+# proxies to Sentinel's /authz/resolve using the backend's service key.
+sentinel.protect(
+    app,
+    exclude_paths=[
+        "/health",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+        "/auth/mint",
+    ],
+)
 
-# CORS must be added AFTER auth middleware so it wraps it (outermost)
+# CORS must be added AFTER auth middleware so it wraps it (outermost).
+# Methods and headers are listed explicitly rather than using ``*`` — combined
+# with ``allow_credentials=True`` wildcards grant more than intended and train
+# copy-paste callers into unsafe patterns.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Authz-Token"],
 )
 
 # Mount routes
+from src.auth_routes import router as auth_router  # noqa: E402
 from src.routes import router  # noqa: E402
 
+app.include_router(auth_router)
 app.include_router(router)
 
 

@@ -33,19 +33,24 @@ Create a shared `SentinelAuthz` instance. This is the same client from the React
 // lib/auth.ts
 import { SentinelAuthz, IdpConfigs } from "@sentinel-auth/js";
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:9200";
+
 export const authzClient = new SentinelAuthz({
   sentinelUrl: process.env.NEXT_PUBLIC_SENTINEL_URL || "http://localhost:9003",
+  // Mint endpoint on YOUR backend. Browsers do not hold the Sentinel service
+  // key; this route forwards the mint call server-to-server.
+  mintEndpoint: `${BACKEND_URL}/auth/mint`,
   idps: {
     google: IdpConfigs.google(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ""),
   },
 });
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:9200";
-
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return authzClient.fetchJson<T>(`${BACKEND_URL}${path}`, options);
 }
 ```
+
+Pair this with a Next.js Route Handler (or a FastAPI route on the team-notes backend) that accepts `POST /auth/mint` and proxies to Sentinel with the service key — see [AuthZ Client docs](../js-sdk/authz-client.md#backend-mint-route) for the full snippet.
 
 ## Step 3: Edge Middleware
 
@@ -53,9 +58,14 @@ Protect routes at the edge. Unauthenticated users are redirected to `/login`.
 
 ```typescript
 // middleware.ts
-import { withSentinelAuthz } from "@sentinel-auth/nextjs/middleware";
+import { createSentinelAuthzMiddleware } from "@sentinel-auth/nextjs/authz-middleware";
 
-export default withSentinelAuthz({
+export default createSentinelAuthzMiddleware({
+  sentinelUrl: process.env.SENTINEL_URL!,
+  idpJwksUrl: "https://www.googleapis.com/oauth2/v3/certs",
+  idpAudience: process.env.GOOGLE_CLIENT_ID!,
+  idpIssuer: "https://accounts.google.com",
+  serviceName: "team-notes",
   publicPaths: ["/login", "/auth/callback"],
   loginPath: "/login",
 });
@@ -64,6 +74,8 @@ export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
 ```
+
+`idpAudience` and `serviceName` are required: without them the middleware would accept any Google-signed token from any OAuth client, and any authz token minted for any service. See [Next.js middleware options](../js-sdk/nextjs.md#authz-middleware) for details.
 
 ## Step 4: Layout + Provider
 

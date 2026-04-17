@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from src.schemas.validators import SafeStr, SafeStrOptional
+from src.schemas.validators import SafeStr, SafeStrOptional, validate_origin_string
 
 
 class ServiceAppCreateRequest(BaseModel):
@@ -13,11 +13,23 @@ class ServiceAppCreateRequest(BaseModel):
     )
     allowed_origins: list[str] = Field(default_factory=list)
 
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def validate_origins(cls, v: list[str]) -> list[str]:
+        return [validate_origin_string(o) for o in v]
+
 
 class ServiceAppUpdateRequest(BaseModel):
     name: SafeStrOptional = None
     is_active: bool | None = None
     allowed_origins: list[str] | None = None
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def validate_origins(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        return [validate_origin_string(o) for o in v]
 
 
 class ServiceAppResponse(BaseModel):

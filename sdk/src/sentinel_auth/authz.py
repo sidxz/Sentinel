@@ -36,7 +36,8 @@ class AuthzClient:
         self,
         idp_token: str,
         provider: str,
-        workspace_id: uuid.UUID | None = None,
+        workspace_id: uuid.UUID | str | None = None,
+        nonce: str | None = None,
     ) -> dict:
         """Resolve an IdP token into authorization context.
 
@@ -44,6 +45,8 @@ class AuthzClient:
             idp_token: Raw token from the IdP (OIDC ID token or OAuth access token).
             provider: IdP provider name ("google", "github", "entra_id").
             workspace_id: Optional workspace to authorize for.
+            nonce: Optional replay-protection nonce. When provided, Sentinel
+                requires the IdP token's ``nonce`` claim (OIDC only) to match.
 
         Returns:
             Dict with user info. If workspace_id was provided, includes
@@ -53,6 +56,8 @@ class AuthzClient:
         body: dict = {"idp_token": idp_token, "provider": provider}
         if workspace_id:
             body["workspace_id"] = str(workspace_id)
+        if nonce:
+            body["nonce"] = nonce
         resp = await client.post(
             f"{self.base_url}/authz/resolve",
             json=body,

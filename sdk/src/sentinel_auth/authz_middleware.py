@@ -30,22 +30,28 @@ class AuthzMiddleware(BaseHTTPMiddleware):
 
     Both must be valid and their ``sub``/``idp_sub`` claims must match.
 
-    The middleware accepts either explicit key strings or a ``Sentinel``
-    instance.  When a ``Sentinel`` instance is provided the keys are read
-    lazily so the middleware can be registered at import time before the
-    lifespan fetches Sentinel's public key.
+    Required binding arguments:
+    - ``service_name``: the authz token's ``svc`` claim must equal this, so a
+      token minted for another service cannot be replayed here.
+    - ``idp_audience``: the IdP token's ``aud`` claim must equal this. In
+      OpenID Connect this is your OAuth client_id. Without this check, any
+      valid ID token from any client of the same IdP authenticates.
+    - ``idp_issuer`` (optional but recommended): the IdP token's ``iss`` claim
+      must equal this.
 
-    For IdP token validation, you can provide either:
-    - ``idp_public_key``: a single PEM-encoded public key
-    - ``idp_jwks_url``: a JWKS endpoint URL (e.g. Google's) for automatic
-      ``kid``-based key matching — handles key rotation gracefully
+    For IdP key material you must provide either ``idp_public_key`` (single PEM)
+    or ``idp_jwks_url`` (e.g. Google's JWKS — handles key rotation).
     """
 
     def __init__(
         self,
         app: ASGIApp,
+        *,
+        service_name: str,
+        idp_audience: str | list[str],
         idp_public_key: str | None = None,
         idp_jwks_url: str | None = None,
+        idp_issuer: str | None = None,
         sentinel_public_key: str | None = None,
         sentinel_instance: Sentinel | None = None,
         idp_algorithm: str = "RS256",
@@ -54,10 +60,20 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         exclude_paths: list[str] | None = None,
     ):
         super().__init__(app)
+        if not service_name:
+            raise ValueError("AuthzMiddleware requires service_name")
+        if not idp_audience:
+            raise ValueError("AuthzMiddleware requires idp_audience")
         if not sentinel_public_key and not sentinel_instance:
             raise ValueError(
                 "AuthzMiddleware requires either sentinel_public_key or sentinel_instance for authz token verification"
             )
+        if not idp_public_key and not idp_jwks_url and not (sentinel_instance and sentinel_instance.idp_jwks_url):
+            raise ValueError("AuthzMiddleware requires idp_public_key or idp_jwks_url for IdP token verification")
+
+        self.service_name = service_name
+        self.idp_audience = idp_audience
+        self.idp_issuer = idp_issuer
         self._idp_public_key = idp_public_key
         self._idp_jwks_url = idp_jwks_url
         self._sentinel_public_key = sentinel_public_key
@@ -67,7 +83,6 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         self.sentinel_audience = sentinel_audience
         self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json"]
 
-        # Build JWKS client for kid-based key lookup
         jwks_url = idp_jwks_url or (sentinel_instance.idp_jwks_url if sentinel_instance else None)
         self._idp_jwks_client: PyJWKClient | None = PyJWKClient(jwks_url) if jwks_url else None
 
@@ -92,21 +107,22 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         return key
 
     def _decode_idp_token(self, token: str) -> dict:
-        """Decode and validate an IdP token using JWKS or static key."""
+        """Decode and validate an IdP token.
+
+        Enforces ``aud`` and ``iss`` — these are the sole defences against
+        accepting a valid-but-wrong-client token from the same IdP.
+        """
+        decode_kwargs: dict = {
+            "algorithms": [self.idp_algorithm],
+            "audience": self.idp_audience,
+        }
+        if self.idp_issuer:
+            decode_kwargs["issuer"] = self.idp_issuer
+
         if self._idp_jwks_client:
             signing_key = self._idp_jwks_client.get_signing_key_from_jwt(token)
-            return jwt.decode(
-                token,
-                signing_key.key,
-                algorithms=[self.idp_algorithm],
-                options={"verify_aud": False},
-            )
-        return jwt.decode(
-            token,
-            self.idp_public_key,
-            algorithms=[self.idp_algorithm],
-            options={"verify_aud": False},
-        )
+            return jwt.decode(token, signing_key.key, **decode_kwargs)
+        return jwt.decode(token, self.idp_public_key, **decode_kwargs)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if request.method == "OPTIONS":
@@ -125,7 +141,7 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         if not authz_token:
             return JSONResponse(status_code=401, content={"detail": "Missing authz token"})
 
-        # 3. Validate IdP token
+        # 3. Validate IdP token (signature + audience + optional issuer)
         try:
             idp_payload = self._decode_idp_token(idp_token)
         except jwt.ExpiredSignatureError:
@@ -146,16 +162,24 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         except jwt.InvalidTokenError:
             return JSONResponse(status_code=401, content={"detail": "Invalid authz token"})
 
-        # 5. Verify binding: IdP sub must match authz idp_sub
-        idp_sub = idp_payload.get("sub", "")
-        authz_idp_sub = authz_payload.get("idp_sub", "")
-        if idp_sub != authz_idp_sub:
+        # 5. Verify binding: IdP sub must match authz idp_sub, both non-empty.
+        idp_sub = idp_payload.get("sub")
+        authz_idp_sub = authz_payload.get("idp_sub")
+        if not idp_sub or not authz_idp_sub or idp_sub != authz_idp_sub:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Token binding mismatch: idp_sub does not match"},
             )
 
-        # 6. Set user on request state
+        # 6. Enforce svc binding: the authz token was minted for this service.
+        token_svc = authz_payload.get("svc")
+        if not token_svc or token_svc != self.service_name:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Authz token was issued for a different service"},
+            )
+
+        # 7. Set user on request state
         try:
             request.state.user = AuthenticatedUser(
                 user_id=uuid.UUID(authz_payload["sub"]),

@@ -17,6 +17,10 @@ from src.models.workspace import WorkspaceMembership
 from src.services import token_service
 
 
+class CrossProviderEmailConflict(Exception):
+    """Raised when an IdP login's email matches a user from a different provider."""
+
+
 async def find_or_create_user(
     db: AsyncSession,
     provider: str,
@@ -46,15 +50,26 @@ async def find_or_create_user(
         await db.commit()
         return user
 
-    # Check if user exists by email (link account)
-    stmt = select(User).where(User.email == email)
+    # Security: never auto-link across providers by email. Two different IdPs
+    # reporting the same email are not necessarily the same human — especially
+    # when one IdP has weaker verification than the other. Identity is keyed on
+    # (provider, provider_user_id) only. Email collisions create a separate row.
+    #
+    # If this lookup finds an existing user, they signed up via a different
+    # provider. Reject the sign-in with a clear message so a support flow (or
+    # future explicit link UI) can handle the merge intentionally.
+    stmt = select(User.id).where(User.email == email)
     result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
+    if result.scalar_one_or_none() is not None:
+        raise CrossProviderEmailConflict(
+            f"An account with email {email!r} exists under a different identity "
+            "provider. Sign in with the original provider, or contact an "
+            "administrator to link the accounts."
+        )
 
-    if not user:
-        user = User(email=email, name=strip_html(name), avatar_url=avatar_url)
-        db.add(user)
-        await db.flush()
+    user = User(email=email, name=strip_html(name), avatar_url=avatar_url)
+    db.add(user)
+    await db.flush()
 
     social_account = SocialAccount(
         user_id=user.id,

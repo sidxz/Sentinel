@@ -32,6 +32,10 @@ def sentinel_keypair():
     ).decode()
 
 
+TEST_IDP_AUDIENCE = "my-oauth-client.apps.googleusercontent.com"
+TEST_SERVICE_NAME = "team-notes"
+
+
 @pytest.fixture()
 def dual_tokens(idp_keypair, sentinel_keypair):
     idp_priv, _ = idp_keypair
@@ -44,6 +48,7 @@ def dual_tokens(idp_keypair, sentinel_keypair):
     idp_token = pyjwt.encode(
         {
             "sub": idp_sub,
+            "aud": TEST_IDP_AUDIENCE,
             "email": "alice@acme.com",
             "name": "Alice",
             "iat": now,
@@ -56,6 +61,7 @@ def dual_tokens(idp_keypair, sentinel_keypair):
         {
             "sub": str(user_id),
             "idp_sub": idp_sub,
+            "svc": TEST_SERVICE_NAME,
             "wid": str(workspace_id),
             "wslug": "acme",
             "wrole": "editor",
@@ -78,6 +84,8 @@ def _make_app(idp_pub_key: str, sentinel_pub_key: str) -> Starlette:
     app = Starlette(routes=[Route("/protected", protected)])
     app.add_middleware(
         AuthzMiddleware,
+        service_name=TEST_SERVICE_NAME,
+        idp_audience=TEST_IDP_AUDIENCE,
         idp_public_key=idp_pub_key,
         sentinel_public_key=sentinel_pub_key,
     )
@@ -117,6 +125,7 @@ class TestAuthzMiddleware:
         idp_token = pyjwt.encode(
             {
                 "sub": "google|ATTACKER",
+                "aud": TEST_IDP_AUDIENCE,
                 "email": "evil@evil.com",
                 "iat": now,
                 "exp": now + datetime.timedelta(hours=1),
@@ -128,6 +137,7 @@ class TestAuthzMiddleware:
             {
                 "sub": str(uuid.uuid4()),
                 "idp_sub": "google|VICTIM",
+                "svc": TEST_SERVICE_NAME,
                 "wid": str(uuid.uuid4()),
                 "wslug": "acme",
                 "wrole": "owner",
@@ -146,3 +156,75 @@ class TestAuthzMiddleware:
         )
         assert resp.status_code == 401
         assert "binding" in resp.json()["detail"].lower()
+
+    def test_wrong_audience_rejected(self, idp_keypair, sentinel_keypair, dual_tokens):
+        """An IdP token with the wrong aud must be rejected even if signature is valid."""
+        idp_priv, idp_pub = idp_keypair
+        _, sentinel_pub = sentinel_keypair
+        _, authz_token = dual_tokens
+        now = datetime.datetime.now(datetime.UTC)
+
+        # Valid signature, valid sub, but audience = attacker's OAuth client
+        bad_audience_token = pyjwt.encode(
+            {
+                "sub": "google|12345",
+                "aud": "attacker-client-id.apps.googleusercontent.com",
+                "email": "alice@acme.com",
+                "iat": now,
+                "exp": now + datetime.timedelta(hours=1),
+            },
+            idp_priv,
+            algorithm="RS256",
+        )
+        client = TestClient(_make_app(idp_pub, sentinel_pub))
+        resp = client.get(
+            "/protected",
+            headers={
+                "Authorization": f"Bearer {bad_audience_token}",
+                "X-Authz-Token": authz_token,
+            },
+        )
+        assert resp.status_code == 401
+
+    def test_wrong_svc_rejected(self, idp_keypair, sentinel_keypair):
+        """An authz token with a different svc claim must be rejected."""
+        idp_priv, idp_pub = idp_keypair
+        sentinel_priv, sentinel_pub = sentinel_keypair
+        now = datetime.datetime.now(datetime.UTC)
+        idp_sub = "google|12345"
+
+        idp_token = pyjwt.encode(
+            {
+                "sub": idp_sub,
+                "aud": TEST_IDP_AUDIENCE,
+                "email": "alice@acme.com",
+                "iat": now,
+                "exp": now + datetime.timedelta(hours=1),
+            },
+            idp_priv,
+            algorithm="RS256",
+        )
+        # Token minted for another service
+        authz_token = pyjwt.encode(
+            {
+                "sub": str(uuid.uuid4()),
+                "idp_sub": idp_sub,
+                "svc": "other-service",
+                "wid": str(uuid.uuid4()),
+                "wslug": "acme",
+                "wrole": "owner",
+                "actions": [],
+                "aud": "sentinel:authz",
+                "iat": now,
+                "exp": now + datetime.timedelta(minutes=5),
+            },
+            sentinel_priv,
+            algorithm="RS256",
+        )
+        client = TestClient(_make_app(idp_pub, sentinel_pub))
+        resp = client.get(
+            "/protected",
+            headers={"Authorization": f"Bearer {idp_token}", "X-Authz-Token": authz_token},
+        )
+        assert resp.status_code == 403
+        assert "different service" in resp.json()["detail"].lower()

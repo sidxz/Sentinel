@@ -17,6 +17,9 @@ import { createSentinelAuthzMiddleware } from '@sentinel-auth/nextjs/authz-middl
 export default createSentinelAuthzMiddleware({
   sentinelUrl: process.env.SENTINEL_URL!,
   idpJwksUrl: 'https://www.googleapis.com/oauth2/v3/certs',
+  idpAudience: process.env.GOOGLE_CLIENT_ID!,
+  idpIssuer: 'https://accounts.google.com',
+  serviceName: 'my-app',
   publicPaths: ['/login', '/auth/callback'],
 })
 export const config = { matcher: ['/((?!_next|favicon.ico).*)'] }
@@ -26,10 +29,13 @@ export const config = { matcher: ['/((?!_next|favicon.ico).*)'] }
 |--------|------|---------|-------------|
 | `sentinelUrl` | `string` | required | Sentinel URL (derives JWKS endpoint) |
 | `idpJwksUrl` | `string` | required | IdP JWKS URL for token verification |
+| `idpAudience` | `string \| string[]` | **required** | Your app's OAuth client_id. Rejects tokens minted for any other client of the same IdP. |
+| `idpIssuer` | `string` | `undefined` | Expected IdP `iss` claim. Strongly recommended. |
+| `serviceName` | `string` | **required** | Your service's name (as registered in Sentinel). Authz token's `svc` claim must equal this — stops cross-service token replay. |
 | `publicPaths` | `string[]` | `[]` | Paths that skip auth |
 | `loginPath` | `string` | `"/login"` | Redirect for unauthenticated page requests |
 
-What it does: strips spoofed `x-sentinel-*` headers, verifies IdP token against IdP JWKS, verifies authz token against Sentinel JWKS, checks `idp_sub` binding, sets `x-sentinel-*` headers for downstream components. API routes get 401 JSON; page routes redirect.
+What it does: strips spoofed `x-sentinel-*` headers, verifies IdP token (signature + `aud` + optional `iss`) against IdP JWKS, verifies authz token against Sentinel JWKS, checks `idp_sub` binding, checks `svc` binding, sets `x-sentinel-*` headers for downstream components. API routes get 401 JSON; page routes redirect.
 
 ## Proxy Middleware
 
@@ -114,6 +120,9 @@ import { createSentinelAuthzMiddleware } from '@sentinel-auth/nextjs/authz-middl
 export default createSentinelAuthzMiddleware({
   sentinelUrl: process.env.SENTINEL_URL!,
   idpJwksUrl: 'https://www.googleapis.com/oauth2/v3/certs',
+  idpAudience: process.env.GOOGLE_CLIENT_ID!,
+  idpIssuer: 'https://accounts.google.com',
+  serviceName: 'my-app',
   publicPaths: ['/login', '/auth/callback'],
 })
 export const config = { matcher: ['/((?!_next|favicon.ico).*)'] }

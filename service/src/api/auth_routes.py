@@ -99,6 +99,7 @@ async def list_providers():
 async def login(
     provider: str,
     request: Request,
+    client_id: uuid.UUID = Query(..., description="ClientApp id this login is for"),
     redirect_uri: str = Query(...),
     code_challenge: str = Query(...),
     code_challenge_method: str = Query("S256"),
@@ -119,23 +120,31 @@ async def login(
             "Only S256 code_challenge_method is supported.",
         )
 
-    # Validate redirect_uri against any active allowed app
+    # Security: require redirect_uri to belong to the SPECIFIC ClientApp named
+    # by client_id — not just any active ClientApp. Otherwise an attacker can
+    # craft a login URL naming app B's redirect while controlling the PKCE
+    # challenge, then redeem the resulting code against their own verifier
+    # (Vuln 7 / login CSRF + auth-code theft).
     stmt = select(ClientApp).where(
+        ClientApp.id == client_id,
         ClientApp.is_active.is_(True),
         ClientApp.redirect_uris.any(redirect_uri),
     )
     result = await db.execute(stmt)
-    if not result.scalar_one_or_none():
+    client_app = result.scalar_one_or_none()
+    if not client_app:
         return _error_page(
             400,
             "App Not Allowed",
-            "The redirect URI is not registered for any active app. Check that the app is registered and enabled in the admin panel.",
+            "The redirect URI is not registered for this client app. Check that the app is registered and enabled in the admin panel.",
         )
 
-    # Store in session for callback (survives the OAuth round-trip)
+    # Store in session for callback (survives the OAuth round-trip). client_app_id
+    # is persisted so the callback can re-verify no tampering has occurred.
     request.session["redirect_uri"] = redirect_uri
     request.session["code_challenge"] = code_challenge
     request.session["code_challenge_method"] = code_challenge_method
+    request.session["client_app_id"] = str(client_app.id)
 
     client = oauth.create_client(provider)
     oauth_redirect_uri = f"{settings.base_url}/auth/callback/{provider}"
@@ -200,15 +209,24 @@ async def callback(
             avatar_url = userinfo.get("picture")
             profile = dict(userinfo)
 
-        user = await auth_service.find_or_create_user(
-            db=db,
-            provider=provider,
-            provider_user_id=provider_user_id,
-            email=email,
-            name=name,
-            avatar_url=avatar_url,
-            provider_data=profile,
-        )
+        try:
+            user = await auth_service.find_or_create_user(
+                db=db,
+                provider=provider,
+                provider_user_id=provider_user_id,
+                email=email,
+                name=name,
+                avatar_url=avatar_url,
+                provider_data=profile,
+            )
+        except auth_service.CrossProviderEmailConflict:
+            return _error_page(
+                409,
+                "Email Already Used",
+                "An account with this email address already exists under a "
+                "different sign-in provider. Please sign in with your original "
+                "provider, or contact your administrator to link accounts.",
+            )
 
         await activity_service.log_activity(
             db,
@@ -223,20 +241,29 @@ async def callback(
         )
         await db.commit()
 
-        # Retrieve redirect_uri and PKCE challenge from session and clear it
+        # Retrieve redirect_uri, PKCE challenge, and client binding from session
         redirect_uri = request.session.pop("redirect_uri", None)
         code_challenge = request.session.pop("code_challenge", None)
         code_challenge_method = request.session.pop("code_challenge_method", None)
+        session_client_app_id = request.session.pop("client_app_id", None)
         request.session.clear()
-        if not redirect_uri:
+        if not redirect_uri or not session_client_app_id:
             return _error_page(
                 400,
                 "Session Expired",
                 "Your login session has expired. Please go back and try again.",
             )
 
-        # Re-validate redirect_uri still belongs to an active allowed app
+        try:
+            session_client_uuid = uuid.UUID(session_client_app_id)
+        except (TypeError, ValueError):
+            return _error_page(400, "Invalid Session", "Please sign in again.")
+
+        # Re-validate the exact ClientApp that initiated login still owns this
+        # redirect_uri and is still active. Binding (client_app, redirect_uri)
+        # defends against redirect_uri substitution across apps.
         stmt = select(ClientApp).where(
+            ClientApp.id == session_client_uuid,
             ClientApp.is_active.is_(True),
             ClientApp.redirect_uris.any(redirect_uri),
         )
@@ -246,7 +273,7 @@ async def callback(
             return _error_page(
                 400,
                 "App Not Allowed",
-                "The app you are trying to sign into has been disabled. Contact your administrator.",
+                "The app you are trying to sign into has been disabled or its configuration has changed. Contact your administrator.",
             )
 
         # Generate auth code and redirect (with PKCE challenge bound to code)
@@ -465,15 +492,21 @@ async def admin_callback(
             avatar_url = userinfo.get("picture")
             profile = dict(userinfo)
 
-        user = await auth_service.find_or_create_user(
-            db=db,
-            provider=provider,
-            provider_user_id=provider_user_id,
-            email=email,
-            name=name,
-            avatar_url=avatar_url,
-            provider_data=profile,
-        )
+        try:
+            user = await auth_service.find_or_create_user(
+                db=db,
+                provider=provider,
+                provider_user_id=provider_user_id,
+                email=email,
+                name=name,
+                avatar_url=avatar_url,
+                provider_data=profile,
+            )
+        except auth_service.CrossProviderEmailConflict:
+            return RedirectResponse(
+                url=f"{settings.admin_url}/login?error=email_conflict",
+                status_code=302,
+            )
 
         if not user.is_admin:
             return RedirectResponse(

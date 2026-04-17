@@ -89,29 +89,38 @@ export function AuthzCallback({
       return
     }
 
-    // Verify nonce to prevent token replay attacks.
-    // Nonce may come from URL hash params (proxy flow, e.g. GitHub) or JWT claims (implicit flow, e.g. Google).
+    // Verify nonce to prevent token replay / login-CSRF injection. If no nonce
+    // was stored at login start, the callback did NOT originate from a flow
+    // we initiated — fail closed so an attacker cannot inject an id_token by
+    // pointing the victim at the callback URL directly.
     const expectedNonce = sessionStorage.getItem('sentinel_authz_nonce')
-    if (expectedNonce) {
-      const hashNonce = params.get('nonce')
-      try {
-        if (hashNonce) {
-          if (hashNonce !== expectedNonce) {
-            throw new Error('Nonce mismatch — possible token replay')
-          }
-        } else {
-          const claims = parseJwt(idToken)
-          if ((claims as unknown as Record<string, unknown>).nonce !== expectedNonce) {
-            throw new Error('Nonce mismatch — possible token replay')
-          }
+    if (!expectedNonce) {
+      const err = new Error(
+        'No login flow in progress — callback rejected. Start login from this tab.',
+      )
+      setError(err)
+      setLoading(false)
+      onError?.(err)
+      return
+    }
+    const hashNonce = params.get('nonce')
+    try {
+      if (hashNonce) {
+        if (hashNonce !== expectedNonce) {
+          throw new Error('Nonce mismatch — possible token replay')
         }
-      } catch (e) {
-        const err = e instanceof Error ? e : new Error('Nonce verification failed')
-        setError(err)
-        setLoading(false)
-        onError?.(err)
-        return
+      } else {
+        const claims = parseJwt(idToken)
+        if ((claims as unknown as Record<string, unknown>).nonce !== expectedNonce) {
+          throw new Error('Nonce mismatch — possible token replay')
+        }
       }
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error('Nonce verification failed')
+      setError(err)
+      setLoading(false)
+      onError?.(err)
+      return
     }
 
     // Clean up session storage only after successful nonce verification

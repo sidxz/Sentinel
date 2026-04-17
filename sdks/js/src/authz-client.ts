@@ -27,11 +27,20 @@ export class SentinelAuthz {
   private readonly idps: Record<string, IdpConfig>
   private readonly redirectUri: string
   private refreshTimer: ReturnType<typeof setTimeout> | null = null
+  private readonly mintEndpoint: string
   private refreshPromise: Promise<boolean> | null = null
   private listeners: Set<AuthStateListener> = new Set()
 
   constructor(config: SentinelAuthzConfig) {
     this.sentinelUrl = config.sentinelUrl.replace(/\/+$/, '')
+    if (!config.mintEndpoint) {
+      throw new Error(
+        'SentinelAuthz: mintEndpoint is required. Expose a backend route that ' +
+        'calls Sentinel\'s /authz/resolve with your service key (e.g. "/api/auth/mint"). ' +
+        'The browser must not mint authz tokens directly — it lacks a service key.',
+      )
+    }
+    this.mintEndpoint = config.mintEndpoint
     this.store = config.storage ?? new AuthzMemoryStore()
     this.autoRefresh = config.autoRefresh ?? true
     this.refreshBuffer = config.refreshBuffer ?? 30
@@ -92,20 +101,27 @@ export class SentinelAuthz {
     }
     if (!idpToken) return null
 
-    // Verify nonce to prevent token replay attacks.
-    // Nonce may come from URL hash params (proxy flow, e.g. GitHub) or JWT claims (implicit flow, e.g. Google).
+    // Verify nonce to prevent token replay / login-CSRF injection.
+    // Nonce may come from URL hash params (proxy flow, e.g. GitHub) or JWT claims
+    // (implicit flow, e.g. Google). If no nonce was stored at login start, the
+    // callback did NOT originate from a flow we initiated — fail closed so an
+    // attacker cannot inject an id_token by pointing the victim at the callback
+    // URL directly.
     const expectedNonce = sessionStorage.getItem('sentinel_authz_nonce')
-    if (expectedNonce) {
-      const hashNonce = params.get('nonce')
-      if (hashNonce) {
-        if (hashNonce !== expectedNonce) {
-          throw new Error('Nonce mismatch — possible token replay')
-        }
-      } else {
-        const claims = parseJwt(idpToken) as unknown as Record<string, unknown>
-        if (claims.nonce !== expectedNonce) {
-          throw new Error('Nonce mismatch — possible token replay')
-        }
+    if (!expectedNonce) {
+      throw new Error(
+        'No login flow in progress — callback rejected. Start login from this tab.',
+      )
+    }
+    const hashNonce = params.get('nonce')
+    if (hashNonce) {
+      if (hashNonce !== expectedNonce) {
+        throw new Error('Nonce mismatch — possible token replay')
+      }
+    } else {
+      const claims = parseJwt(idpToken) as unknown as Record<string, unknown>
+      if (claims.nonce !== expectedNonce) {
+        throw new Error('Nonce mismatch — possible token replay')
       }
     }
 
@@ -135,20 +151,35 @@ export class SentinelAuthz {
     return res.json()
   }
 
-  /** Select a workspace and exchange the IdP token for a Sentinel authz token. */
+  /**
+   * Select a workspace and exchange the IdP token for a Sentinel authz token.
+   *
+   * The POST goes to the configured ``mintEndpoint`` on YOUR backend, not to
+   * Sentinel directly. Your backend must forward the request to Sentinel's
+   * ``/authz/resolve`` with ``X-Service-Key`` set. See SentinelAuthzConfig.
+   */
   async selectWorkspace(idpToken: string, provider: string, workspaceId: string): Promise<void> {
-    const res = await fetch(`${this.sentinelUrl}/authz/resolve`, {
+    const body: Record<string, string> = {
+      idp_token: idpToken,
+      provider,
+      workspace_id: workspaceId,
+    }
+    // Forward the login-flow nonce so the backend can pass it to Sentinel's
+    // /authz/resolve, which enforces replay protection against the IdP token.
+    const nonce = typeof sessionStorage !== 'undefined'
+      ? sessionStorage.getItem('sentinel_authz_nonce')
+      : null
+    if (nonce) body.nonce = nonce
+
+    const res = await fetch(this.mintEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        idp_token: idpToken,
-        provider,
-        workspace_id: workspaceId,
-      }),
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
     })
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error((body as Record<string, string>).detail || 'Token exchange failed')
+      const parsed = await res.json().catch(() => ({}))
+      throw new Error((parsed as Record<string, string>).detail || 'Token exchange failed')
     }
 
     const data: AuthzResolveResponse = await res.json()
@@ -247,7 +278,16 @@ export class SentinelAuthz {
     const idpToken = this.store.getIdpToken()
     const provider = this.store.getProvider()
     const workspaceId = this.store.getWorkspaceId()
-    if (!idpToken || !provider || !workspaceId) return false
+    // When the IdP token is no longer available (e.g. after a page reload —
+    // the default store keeps it in memory only), silent refresh is not
+    // possible and the user must re-authenticate via the IdP. Clear stale
+    // state and let the app redirect to login on next interaction.
+    if (!idpToken || !provider || !workspaceId) {
+      this.store.clear()
+      this.clearRefreshTimer()
+      this.notify()
+      return false
+    }
 
     try {
       await this.selectWorkspace(idpToken, provider, workspaceId)

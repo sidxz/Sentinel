@@ -14,6 +14,13 @@ class AuthzResolveRequest(BaseModel):
         default=None,
         description="Workspace to authorize for. Omit for workspace list.",
     )
+    nonce: str | None = Field(
+        default=None,
+        description=(
+            "Optional replay protection. If provided, must match the "
+            "nonce claim on the IdP's ID token (OIDC providers only)."
+        ),
+    )
 
 
 class AuthzUserResponse(BaseModel):

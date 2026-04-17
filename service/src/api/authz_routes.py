@@ -1,6 +1,7 @@
 """AuthZ Mode endpoints — IdP token validation + authorization JWT issuance."""
 
 import uuid
+from urllib.parse import urlparse
 
 import httpx
 import structlog
@@ -14,6 +15,7 @@ from src.auth.jwt import create_authz_token
 from src.config import settings
 from src.database import get_db
 from src.middleware.rate_limit import limiter
+from src.models.service_app import ServiceApp
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.schemas.authz import (
     AuthzResolveRequest,
@@ -31,9 +33,43 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/authz", tags=["authz"])
 
 
+async def _validate_authz_redirect_uri(db: AsyncSession, redirect_uri: str) -> None:
+    """Assert ``redirect_uri``'s origin is registered on an active ServiceApp.
+
+    Raises ``HTTPException(400)`` if the URI is malformed or the origin is not
+    on any active ``ServiceApp.allowed_origins``. This is the allowlist for the
+    AuthZ-mode proxy flow (``/authz/idp/*``) — in AuthZ mode trust is rooted in
+    ServiceApp registration, so redirect targets must match a registered origin.
+    """
+    parsed = urlparse(redirect_uri)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Invalid redirect_uri")
+    if parsed.fragment:
+        raise HTTPException(
+            status_code=400, detail="redirect_uri must not contain a fragment"
+        )
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    stmt = select(ServiceApp.id).where(
+        ServiceApp.is_active.is_(True),
+        ServiceApp.allowed_origins.any(origin),
+    )
+    result = await db.execute(stmt)
+    if not result.first():
+        raise HTTPException(
+            status_code=400,
+            detail="redirect_uri origin is not registered on any active service",
+        )
+
+
 @router.get("/idp/{provider}/login")
 @limiter.limit("10/minute")
-async def idp_login(request: Request, provider: str, redirect_uri: str, nonce: str):
+async def idp_login(
+    request: Request,
+    provider: str,
+    redirect_uri: str,
+    nonce: str,
+    db: AsyncSession = Depends(get_db),
+):
     """Redirect to an OAuth provider that requires server-side code exchange (e.g. GitHub).
 
     Stores redirect_uri and nonce in the session, then redirects to the
@@ -46,6 +82,12 @@ async def idp_login(request: Request, provider: str, redirect_uri: str, nonce: s
         )
     if not settings.github_client_id or not settings.github_client_secret:
         raise HTTPException(status_code=400, detail="GitHub OAuth is not configured")
+
+    # Security: the IdP access token is delivered to ``redirect_uri`` in the URL
+    # fragment. Without an allowlist any attacker-chosen URL would receive the
+    # victim's GitHub token. Gate on ServiceApp.allowed_origins — the AuthZ-mode
+    # trust root.
+    await _validate_authz_redirect_uri(db, redirect_uri)
 
     request.session["authz_idp_redirect_uri"] = redirect_uri
     request.session["authz_idp_nonce"] = nonce
@@ -64,7 +106,9 @@ async def idp_login(request: Request, provider: str, redirect_uri: str, nonce: s
 
 @router.get("/idp/{provider}/callback")
 @limiter.limit("10/minute")
-async def idp_callback(request: Request, provider: str, code: str):
+async def idp_callback(
+    request: Request, provider: str, code: str, db: AsyncSession = Depends(get_db)
+):
     """Exchange authorization code for access token and redirect back to the frontend.
 
     Exchanges GitHub's authorization code for an access token, then redirects
@@ -83,6 +127,9 @@ async def idp_callback(request: Request, provider: str, code: str):
             status_code=400,
             detail="No redirect_uri in session — start from /authz/idp/{provider}/login",
         )
+
+    # Re-validate — the allowlist may have changed since the session started.
+    await _validate_authz_redirect_uri(db, redirect_uri)
 
     # Exchange code for access token
     async with httpx.AsyncClient() as client:
@@ -124,10 +171,29 @@ async def resolve(
 
     If workspace_id is provided, returns a signed authz JWT for that workspace.
     If omitted, returns the list of workspaces the user belongs to.
+
+    Origin-authenticated callers (browsers) may discover workspaces but MUST NOT
+    mint authz tokens directly — token minting is a credential issuance step and
+    requires an ``X-Service-Key`` (server-to-server trust). Browsers should route
+    the mint call through their own backend, which holds the service key.
     """
+    # Security: gate the mint step behind service-key auth. Origin auth is
+    # lower-trust (just Origin-header match) and must not be sufficient to
+    # issue a credential. Discovery (workspace list) is safe for Origin auth.
+    if body.workspace_id is not None and service_ctx.origin_authenticated:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Minting an authz token requires a service key. "
+                "Call this endpoint from your backend with X-Service-Key."
+            ),
+        )
+
     # 1. Validate IdP token against provider's JWKS
     try:
-        idp_claims = await validate_idp_token(body.idp_token, body.provider)
+        idp_claims = await validate_idp_token(
+            body.idp_token, body.provider, expected_nonce=body.nonce
+        )
     except IdpValidationError as e:
         logger.warning(
             "authz_resolve_idp_validation_failed",
@@ -138,14 +204,22 @@ async def resolve(
         raise HTTPException(status_code=400, detail=str(e))
 
     # 2. Find or create user (JIT provisioning)
-    user = await auth_service.find_or_create_user(
-        db=db,
-        provider=body.provider,
-        provider_user_id=idp_claims["sub"],
-        email=idp_claims["email"],
-        name=idp_claims["name"],
-        avatar_url=idp_claims.get("picture"),
-    )
+    try:
+        user = await auth_service.find_or_create_user(
+            db=db,
+            provider=body.provider,
+            provider_user_id=idp_claims["sub"],
+            email=idp_claims["email"],
+            name=idp_claims["name"],
+            avatar_url=idp_claims.get("picture"),
+        )
+    except auth_service.CrossProviderEmailConflict as e:
+        logger.warning(
+            "authz_resolve_email_conflict",
+            provider=body.provider,
+            email=idp_claims["email"],
+        )
+        raise HTTPException(status_code=409, detail=str(e))
 
     if not user.is_active:
         logger.warning(

@@ -33,3 +33,63 @@ def sanitize_url(value: str | None) -> str | None:
 
 
 SafeUrl = Annotated[str | None, AfterValidator(sanitize_url)]
+
+
+def validate_redirect_uri(uri: str) -> str:
+    """Strictly validate a redirect URI.
+
+    Requires http(s) scheme, non-empty host, no userinfo/fragment, and round-trips
+    through urlparse cleanly. Path is allowed; query string is not (OAuth appends
+    its own). Rejects wildcards and common shapes used for origin confusion
+    (``https://good@evil.com/...``, ``http://``, bare hosts).
+    """
+    from urllib.parse import urlparse, urlunparse
+
+    if not isinstance(uri, str) or not uri:
+        raise ValueError("redirect URI must be a non-empty string")
+    parsed = urlparse(uri.strip())
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"Invalid redirect URI scheme: {uri!r}")
+    if "@" in parsed.netloc:
+        raise ValueError(f"Redirect URI must not contain userinfo: {uri!r}")
+    if not parsed.hostname:
+        raise ValueError(f"Redirect URI must have a host: {uri!r}")
+    if parsed.fragment:
+        raise ValueError(f"Redirect URI must not contain a fragment: {uri!r}")
+    if parsed.query:
+        raise ValueError(f"Redirect URI must not contain a query string: {uri!r}")
+    # Reject wildcards / placeholders
+    if "*" in uri or uri.lower() in {"null", "http://", "https://"}:
+        raise ValueError(f"Invalid redirect URI: {uri!r}")
+    # Normalize — reject values that don't round-trip
+    roundtripped = urlunparse(parsed)
+    if roundtripped != uri.strip():
+        raise ValueError(f"Malformed redirect URI: {uri!r}")
+    return uri.strip()
+
+
+def validate_origin_string(origin: str) -> str:
+    """Strictly validate an Origin (scheme://host[:port]).
+
+    Rejects paths, query strings, fragments, wildcards, ``null``, bare hostnames.
+    """
+    from urllib.parse import urlparse, urlunparse
+
+    if not isinstance(origin, str) or not origin:
+        raise ValueError("origin must be a non-empty string")
+    parsed = urlparse(origin.strip())
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"Invalid origin scheme: {origin!r}")
+    if "@" in parsed.netloc:
+        raise ValueError(f"Origin must not contain userinfo: {origin!r}")
+    if not parsed.hostname:
+        raise ValueError(f"Origin must have a host: {origin!r}")
+    if parsed.path or parsed.query or parsed.fragment:
+        raise ValueError(f"Origin must not contain path/query/fragment: {origin!r}")
+    if "*" in origin or origin.lower() == "null":
+        raise ValueError(f"Invalid origin: {origin!r}")
+    # Require exact round-trip with no path
+    canonical = urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+    if canonical != origin.strip():
+        raise ValueError(f"Malformed origin: {origin!r}")
+    return origin.strip()

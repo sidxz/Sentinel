@@ -10,6 +10,8 @@ sentinel = Sentinel(
     service_name="my-service",
     service_key="sk_...",
     idp_jwks_url="https://www.googleapis.com/oauth2/v3/certs",
+    idp_audience="123-abc.apps.googleusercontent.com",  # your OAuth client_id
+    idp_issuer="https://accounts.google.com",
 )
 ```
 
@@ -23,11 +25,13 @@ sentinel = Sentinel(
 | `mode` | `str` | `"authz"` | `"authz"` or `"proxy"` |
 | `idp_public_key` | `str \| None` | `None` | PEM public key for IdP token validation |
 | `idp_jwks_url` | `str \| None` | `None` | JWKS endpoint for IdP token validation (preferred -- handles key rotation) |
+| `idp_audience` | `str \| list[str] \| None` | `None` | **Required in authz mode.** The IdP `aud` claim this app expects -- typically your OAuth client_id. Without this check, any token signed by the IdP for any OAuth client would authenticate. |
+| `idp_issuer` | `str \| None` | `None` | Expected IdP `iss` claim, e.g. `"https://accounts.google.com"`. Strongly recommended. |
 | `actions` | `list[dict] \| None` | `None` | RBAC actions to register on startup |
 | `allowed_workspaces` | `set[str] \| None` | `None` | Workspace IDs permitted to access this service. `None` allows all. Proxy mode only. |
 | `cache_ttl` | `float` | `0` | Seconds to cache `accessible()` and `can()` results in the `PermissionClient`. `0` disables caching. Recommended: `30`–`120` for apps where permission changes are infrequent. Write operations (share, unshare, visibility changes) automatically invalidate the cache. |
 
-In authz mode, one of `idp_public_key` or `idp_jwks_url` is required.
+In authz mode, both `idp_audience` and one of `idp_public_key` / `idp_jwks_url` are required.
 
 ## AuthZ Mode (Default)
 
@@ -39,6 +43,8 @@ sentinel = Sentinel(
     service_name="my-service",
     service_key="sk_...",
     idp_jwks_url="https://www.googleapis.com/oauth2/v3/certs",
+    idp_audience="123-abc.apps.googleusercontent.com",
+    idp_issuer="https://accounts.google.com",
     actions=[
         {"action": "reports:export", "description": "Export reports"},
         {"action": "reports:delete"},
@@ -53,6 +59,13 @@ Requests must send two tokens:
 
 - `Authorization: Bearer <idp_token>`
 - `X-Authz-Token: <sentinel_authz_token>`
+
+The middleware enforces:
+
+- IdP token signature, `aud` (= `idp_audience`), and optional `iss`
+- Authz token signature and `aud == "sentinel:authz"`
+- `authz_token.idp_sub == idp_token.sub` (token binding)
+- `authz_token.svc == service_name` (prevents cross-service token replay)
 
 ## Proxy Mode
 

@@ -56,13 +56,23 @@ describe('AuthzLocalStorageStore', () => {
     store = new AuthzLocalStorageStore()
   })
 
-  it('stores and retrieves from localStorage', () => {
+  it('stores and retrieves from localStorage (idp token in memory only)', () => {
     store.setTokens('idp-jwt', 'authz-jwt', 'google', 'ws-1')
+    // IdP token is kept in memory only — not persisted to reduce XSS blast radius.
     expect(store.getIdpToken()).toBe('idp-jwt')
     expect(store.getAuthzToken()).toBe('authz-jwt')
     expect(store.getProvider()).toBe('google')
     expect(store.getWorkspaceId()).toBe('ws-1')
-    expect(localStorage.getItem('sentinel_idp_token')).toBe('idp-jwt')
+    expect(localStorage.getItem('sentinel_idp_token')).toBeNull()
+    expect(localStorage.getItem('sentinel_authz_token')).toBe('authz-jwt')
+  })
+
+  it('loses IdP token when a fresh store reads from storage (simulated reload)', () => {
+    store.setTokens('idp-jwt', 'authz-jwt', 'google', 'ws-1')
+    // New instance = fresh memory; authz token survives via localStorage, IdP token does not.
+    const reloaded = new AuthzLocalStorageStore()
+    expect(reloaded.getAuthzToken()).toBe('authz-jwt')
+    expect(reloaded.getIdpToken()).toBeNull()
   })
 
   it('stores and retrieves user identity', () => {
@@ -86,9 +96,10 @@ describe('AuthzLocalStorageStore', () => {
     expect(localStorage.getItem('sentinel_user_name')).toBeNull()
   })
 
-  it('uses sentinel_ prefix in localStorage keys', () => {
+  it('uses sentinel_ prefix in localStorage keys (authz token + metadata only)', () => {
     store.setTokens('idp-jwt', 'authz-jwt', 'google', 'ws-1')
-    expect(localStorage.setItem).toHaveBeenCalledWith('sentinel_idp_token', 'idp-jwt')
+    // Intentionally does NOT persist the IdP token — that stays in instance memory.
+    expect(localStorage.setItem).not.toHaveBeenCalledWith('sentinel_idp_token', 'idp-jwt')
     expect(localStorage.setItem).toHaveBeenCalledWith('sentinel_authz_token', 'authz-jwt')
     expect(localStorage.setItem).toHaveBeenCalledWith('sentinel_idp_provider', 'google')
     expect(localStorage.setItem).toHaveBeenCalledWith('sentinel_workspace_id', 'ws-1')

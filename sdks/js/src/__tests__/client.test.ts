@@ -34,6 +34,7 @@ describe('SentinelAuth', () => {
     store = new MemoryStore()
     client = new SentinelAuth({
       sentinelUrl: 'http://localhost:9003',
+      clientId: '00000000-0000-0000-0000-000000000001',
       storage: store,
       autoRefresh: false,
     })
@@ -65,6 +66,7 @@ describe('SentinelAuth', () => {
     // SentinelAuth reads window.location.origin in constructor for redirectUri
     const authClient = new SentinelAuth({
       sentinelUrl: 'http://localhost:9003',
+      clientId: '00000000-0000-0000-0000-000000000001',
       redirectUri: 'http://localhost:5173/auth/callback',
       storage: store,
       autoRefresh: false,
@@ -73,6 +75,7 @@ describe('SentinelAuth', () => {
     await authClient.login('google')
 
     expect(mockLocation.href).toContain('http://localhost:9003/auth/login/google?')
+    expect(mockLocation.href).toContain('client_id=00000000-0000-0000-0000-000000000001')
     expect(mockLocation.href).toContain('redirect_uri=')
     expect(mockLocation.href).toContain('code_challenge=')
     expect(mockLocation.href).toContain('code_challenge_method=S256')

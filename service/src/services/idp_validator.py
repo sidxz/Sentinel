@@ -88,6 +88,7 @@ async def _validate_oidc_token(
     idp_token: str,
     provider: str,
     *,
+    expected_nonce: str | None = None,
     _override_key: Any | None = None,
 ) -> dict[str, Any]:
     """Validate an OIDC JWT and return normalised claims."""
@@ -144,9 +145,13 @@ async def _validate_oidc_token(
                 f"Invalid token: {last_error}" if last_error else "Invalid token"
             )
 
-    # Require verified email
-    if not payload.get("email_verified", False):
+    # Require verified email — strict True (rejects stringified "true"/"false" from buggy IdPs)
+    if payload.get("email_verified") is not True:
         raise IdpValidationError("Email not verified")
+
+    # Replay protection: if caller supplied a nonce, require the IdP token to carry it.
+    if expected_nonce is not None and payload.get("nonce") != expected_nonce:
+        raise IdpValidationError("Nonce mismatch")
 
     return {
         "sub": payload["sub"],
@@ -212,6 +217,7 @@ async def validate_idp_token(
     idp_token: str,
     provider: str,
     *,
+    expected_nonce: str | None = None,
     _override_key: Any | None = None,
 ) -> dict[str, Any]:
     """Validate an IdP token and return normalised user claims.
@@ -222,6 +228,9 @@ async def validate_idp_token(
         The raw token string (JWT for OIDC providers, opaque for GitHub).
     provider:
         One of ``"google"``, ``"entra_id"``, ``"github"``.
+    expected_nonce:
+        If provided (OIDC providers only), require the token's ``nonce``
+        claim to match this value. Ignored for GitHub (opaque token).
     _override_key:
         **Test hook** — when provided, uses this key instead of fetching JWKS
         and skips audience/issuer verification.
@@ -233,11 +242,15 @@ async def validate_idp_token(
     Raises
     ------
     IdpValidationError
-        If the token is invalid, expired, or the email is not verified.
+        If the token is invalid, expired, the email is not verified, or the
+        nonce claim does not match ``expected_nonce``.
     """
     if provider in _PROVIDER_CONFIG:
         return await _validate_oidc_token(
-            idp_token, provider, _override_key=_override_key
+            idp_token,
+            provider,
+            expected_nonce=expected_nonce,
+            _override_key=_override_key,
         )
     elif provider == "github":
         return await _validate_github_token(idp_token)

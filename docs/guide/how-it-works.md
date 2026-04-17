@@ -18,13 +18,22 @@ sequenceDiagram
     Browser->>IdP: Sign in (Google SDK, MSAL, etc.)
     IdP-->>Browser: IdP token (1hr)
 
-    Browser->>Sentinel: POST /authz/resolve<br/>{idp_token, provider, workspace_id}
+    Note over Browser,Sentinel: Step 1 — discover workspaces (browser-direct, no credential issued)
+    Browser->>Sentinel: POST /authz/resolve<br/>{idp_token, provider}
     Sentinel->>IdP: Validate token against JWKS
-    Sentinel->>Sentinel: JIT provision user,<br/>resolve workspace role + RBAC actions
-    Sentinel-->>Browser: {authz_token (5min), user, workspace}
+    Sentinel-->>Browser: {user, workspaces}
 
+    Note over Browser,Sentinel: Step 2 — mint authz JWT (goes through backend with service key)
+    Browser->>App: POST /api/auth/mint<br/>{idp_token, provider, workspace_id, nonce}
+    App->>Sentinel: POST /authz/resolve<br/>+ X-Service-Key: sk_...
+    Sentinel->>IdP: Re-validate, check nonce
+    Sentinel->>Sentinel: JIT provision user,<br/>resolve workspace role + RBAC actions
+    Sentinel-->>App: {authz_token (5min), user, workspace}
+    App-->>Browser: {authz_token, user, workspace}
+
+    Note over Browser,App: Subsequent API requests send both tokens
     Browser->>App: API request<br/>Authorization: Bearer {idp_token}<br/>X-Authz-Token: {authz_token}
-    App->>App: AuthzMiddleware validates both tokens,<br/>checks idp_sub binding
+    App->>App: AuthzMiddleware validates both tokens,<br/>checks idp_sub + svc bindings
     App-->>Browser: Response
 ```
 
@@ -33,9 +42,11 @@ The client sends two tokens on every API request:
 - **IdP token** (`Authorization` header) -- proves identity. Issued by Google/GitHub/EntraID, typically valid for 1 hour.
 - **Authz token** (`X-Authz-Token` header) -- carries authorization context. Issued by Sentinel, valid for 5 minutes. Contains workspace role, RBAC actions, and an `idp_sub` claim that binds it to the IdP identity.
 
+**Minting vs. discovery.** The browser calls Sentinel directly to *discover* workspaces (no credential issued). Minting the authz JWT goes through your backend (`POST /api/auth/mint` in the diagram) because credential issuance requires a service key — the browser doesn't hold one. See [AuthZ Mode Security](../security.md#authz-mode-security).
+
 The backend's `AuthzMiddleware` validates both tokens independently and verifies the `idp_sub` binding -- the IdP token's `sub` must match the authz token's `idp_sub`. This prevents an attacker from pairing a stolen authz token with a different identity.
 
-The authz token also carries an `svc` claim binding it to the requesting service, preventing cross-service replay.
+The authz token also carries an `svc` claim binding it to the requesting service, preventing cross-service replay. The middleware enforces this alongside the IdP token's `aud` (OAuth client_id) — all checked on every request.
 
 ## Proxy Mode
 

@@ -2,10 +2,29 @@ import type { AuthzTokenStore, UserIdentity } from './authz-types'
 
 const PREFIX = 'sentinel_'
 
-/** Authz token storage using browser localStorage. */
+/**
+ * Authz token storage using browser localStorage — the authz token plus
+ * session metadata are persisted; the IdP token is kept in memory only and
+ * does NOT survive a page reload.
+ *
+ * Rationale: the IdP token is long-lived (Google ID tokens last ~1 hour) and
+ * trust-critical — an XSS reading it can impersonate the user across every
+ * service the user belongs to, for the token's full lifetime. Persisting it
+ * to localStorage dramatically widens the blast radius of XSS. Keeping it in
+ * memory only means XSS still compromises the current tab, but a page reload
+ * (or new tab) forces a fresh OAuth round-trip rather than silently reusing
+ * a stolen token.
+ *
+ * Trade-off: on reload the authz token exists in localStorage but no IdP
+ * token is available, so the SDK treats the session as requiring re-auth.
+ * Apps that need persistent sessions should implement a server-backed
+ * ``CookieStore`` (HttpOnly cookie, token held server-side) instead.
+ */
 export class AuthzLocalStorageStore implements AuthzTokenStore {
+  private idpToken: string | null = null
+
   getIdpToken(): string | null {
-    return localStorage.getItem(`${PREFIX}idp_token`)
+    return this.idpToken
   }
 
   getAuthzToken(): string | null {
@@ -28,7 +47,7 @@ export class AuthzLocalStorageStore implements AuthzTokenStore {
   }
 
   setTokens(idpToken: string, authzToken: string, provider: string, workspaceId: string): void {
-    localStorage.setItem(`${PREFIX}idp_token`, idpToken)
+    this.idpToken = idpToken
     localStorage.setItem(`${PREFIX}authz_token`, authzToken)
     localStorage.setItem(`${PREFIX}idp_provider`, provider)
     localStorage.setItem(`${PREFIX}workspace_id`, workspaceId)
@@ -40,12 +59,14 @@ export class AuthzLocalStorageStore implements AuthzTokenStore {
   }
 
   clear(): void {
-    localStorage.removeItem(`${PREFIX}idp_token`)
+    this.idpToken = null
     localStorage.removeItem(`${PREFIX}authz_token`)
     localStorage.removeItem(`${PREFIX}idp_provider`)
     localStorage.removeItem(`${PREFIX}workspace_id`)
     localStorage.removeItem(`${PREFIX}user_email`)
     localStorage.removeItem(`${PREFIX}user_name`)
+    // Clear legacy idp_token key from older SDK versions that persisted it
+    localStorage.removeItem(`${PREFIX}idp_token`)
   }
 }
 

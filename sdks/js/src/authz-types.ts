@@ -32,8 +32,27 @@ export const IdpConfigs = {
 
 export interface SentinelAuthzConfig {
   /** Base URL of the Sentinel service (e.g. "http://localhost:9003").
-   *  Derives /authz/resolve for token exchange. */
+   *  Used by the browser only to DISCOVER workspaces for an IdP token. */
   sentinelUrl: string
+  /**
+   * URL of YOUR backend's mint endpoint. Required.
+   *
+   * The browser calls this endpoint (not Sentinel directly) to exchange an IdP
+   * token + workspace_id for a Sentinel authz token. Your backend is expected
+   * to hold the Sentinel service key and forward the request to
+   * ``POST {sentinelUrl}/authz/resolve`` with ``X-Service-Key``.
+   *
+   * Rationale: minting an authz token is credential issuance and must be
+   * gated by server-to-server trust, not by browser Origin matching. Without
+   * this indirection any XSS could mint fresh authz tokens as long as the
+   * IdP token remained valid (~1 hour for Google).
+   *
+   * Request body (same as /authz/resolve): ``{idp_token, provider, workspace_id, nonce?}``
+   * Expected response: same shape as ``AuthzResolveResponse`` (``authz_token`` included).
+   *
+   * Example: ``"/api/auth/mint"``.
+   */
+  mintEndpoint: string
   /** IdP configurations keyed by provider name (e.g. { google: IdpConfigs.google('client-id') }). */
   idps?: Record<string, IdpConfig>
   /** OAuth redirect URI. Defaults to `${window.location.origin}/auth/callback`. */

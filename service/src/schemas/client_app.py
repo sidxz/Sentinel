@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, field_validator
 
-from src.schemas.validators import SafeStr
+from src.schemas.validators import SafeStr, validate_redirect_uri
 
 
 class ClientAppCreateRequest(BaseModel):
@@ -13,10 +13,7 @@ class ClientAppCreateRequest(BaseModel):
     @field_validator("redirect_uris", mode="before")
     @classmethod
     def validate_uris(cls, v: list[str]) -> list[str]:
-        for uri in v:
-            if not uri.startswith(("http://", "https://")):
-                raise ValueError(f"Invalid redirect URI: {uri} (must be http or https)")
-        return v
+        return [validate_redirect_uri(uri) for uri in v]
 
 
 class ClientAppUpdateRequest(BaseModel):
@@ -30,10 +27,7 @@ class ClientAppUpdateRequest(BaseModel):
     def validate_uris(cls, v: list[str] | None) -> list[str] | None:
         if v is None:
             return v
-        for uri in v:
-            if not uri.startswith(("http://", "https://")):
-                raise ValueError(f"Invalid redirect URI: {uri} (must be http or https)")
-        return v
+        return [validate_redirect_uri(uri) for uri in v]
 
 
 class ClientAppResponse(BaseModel):

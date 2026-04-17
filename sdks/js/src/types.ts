@@ -3,6 +3,13 @@
 export interface SentinelConfig {
   /** Base URL of the Sentinel identity service (e.g. "http://localhost:9003") */
   sentinelUrl: string
+  /**
+   * The Sentinel ClientApp ID (UUID) this frontend is registered as. Required —
+   * the login flow binds this ID to the chosen redirect URI so a crafted link
+   * cannot redirect a victim's login to a different app's callback. Obtain from
+   * the Sentinel admin panel.
+   */
+  clientId: string
   /** OAuth redirect URI. Defaults to `${window.location.origin}/auth/callback` */
   redirectUri?: string
   /** Token storage backend. Defaults to in-memory (MemoryStore). Pass `new LocalStorageStore()` to persist across page reloads. */

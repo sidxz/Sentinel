@@ -29,6 +29,8 @@ sentinel = Sentinel(
     service_name="my-service",
     service_key="sk_...",
     idp_jwks_url="https://www.googleapis.com/oauth2/v3/certs",
+    idp_audience="123-abc.apps.googleusercontent.com",  # your OAuth client_id
+    idp_issuer="https://accounts.google.com",           # strongly recommended
 )
 
 app = FastAPI(lifespan=sentinel.lifespan)
@@ -38,6 +40,9 @@ sentinel.protect(app)
 async def me(user: AuthenticatedUser = Depends(sentinel.require_user)):
     return {"email": user.email, "role": user.workspace_role}
 ```
+
+!!! info "`idp_audience` is required in authz mode"
+    Without it, the middleware would accept Google-signed tokens minted for other OAuth clients. The value is your OAuth client_id as registered with the IdP.
 
 ## Requirements
 

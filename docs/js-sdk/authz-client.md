@@ -9,18 +9,73 @@ import { SentinelAuthz, IdpConfigs } from '@sentinel-auth/js'
 
 const authz = new SentinelAuthz({
   sentinelUrl: 'http://localhost:9003',
+  mintEndpoint: '/api/auth/mint', // YOUR backend route — must not be Sentinel
   idps: { google: IdpConfigs.google('your-google-client-id') },
 })
 ```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `sentinelUrl` | `string` | required | Base URL of the Sentinel service |
+| `sentinelUrl` | `string` | required | Base URL of the Sentinel service. Used only for **discovery** (listing workspaces for an IdP token). |
+| `mintEndpoint` | `string` | **required** | URL of your backend's mint route. The browser calls here (not Sentinel directly) to exchange IdP token + workspace_id for an authz token. Your backend forwards to Sentinel's `/authz/resolve` with `X-Service-Key`. See [AuthZ Mode Security](../security.md#authz-mode-security). |
 | `idps` | `Record<string, IdpConfig>` | `{}` | IdP configs keyed by provider name |
 | `redirectUri` | `string` | `${origin}/auth/callback` | OAuth redirect URI |
 | `storage` | `AuthzTokenStore` | `AuthzMemoryStore` | Token storage backend |
 | `autoRefresh` | `boolean` | `true` | Refresh authz token before expiry |
 | `refreshBuffer` | `number` | `30` | Seconds before expiry to trigger refresh |
+
+### Backend mint route
+
+The `mintEndpoint` must accept `{idp_token, provider, workspace_id, nonce?}` and return the same shape as Sentinel's `/authz/resolve`. FastAPI example:
+
+```python
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+import uuid
+from your_app.sentinel_instance import sentinel  # your Sentinel SDK instance
+
+router = APIRouter()
+
+class MintRequest(BaseModel):
+    idp_token: str
+    provider: str
+    workspace_id: uuid.UUID
+    nonce: str | None = None
+
+@router.post("/api/auth/mint")
+async def mint_authz_token(body: MintRequest):
+    try:
+        return await sentinel.authz.resolve(
+            idp_token=body.idp_token,
+            provider=body.provider,
+            workspace_id=body.workspace_id,
+            nonce=body.nonce,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+```
+
+Add the route to `sentinel.protect(app, exclude_paths=[...])` — it's called before the user has an authz token.
+
+Next.js Route Handler:
+
+```typescript
+// app/api/auth/mint/route.ts
+import { NextResponse } from 'next/server'
+
+export async function POST(req: Request) {
+  const body = await req.json()
+  const r = await fetch(`${process.env.SENTINEL_URL}/authz/resolve`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Service-Key': process.env.SENTINEL_SERVICE_KEY!, // server-side only
+    },
+    body: JSON.stringify(body),
+  })
+  return NextResponse.json(await r.json(), { status: r.status })
+}
+```
 
 Built-in IdP helpers: `IdpConfigs.google(clientId)`, `IdpConfigs.entraId(clientId, tenantId)`. Pass a custom `IdpConfig` object for other providers.
 
@@ -66,7 +121,7 @@ const result = await authz.resolve(idpToken, 'google')
 
 ### selectWorkspace(idpToken, provider, workspaceId)
 
-Exchange IdP token for a Sentinel authz token scoped to a workspace.
+Exchange IdP token for a Sentinel authz token scoped to a workspace. POSTs to the configured `mintEndpoint` on your backend (not Sentinel). Propagates `sessionStorage.sentinel_authz_nonce` automatically for replay protection.
 
 ```typescript
 await authz.selectWorkspace(idpToken, 'google', 'ws-uuid')
@@ -109,7 +164,7 @@ authz.destroy()  // clean up timers
 | Backend | Persistence |
 |---------|-------------|
 | `AuthzMemoryStore` (default) | Lost on page refresh |
-| `AuthzLocalStorageStore` | Survives refresh, shared across tabs |
+| `AuthzLocalStorageStore` | Authz token + metadata persist; **IdP token stays in memory only** |
 
 ```typescript
 import { SentinelAuthz, AuthzLocalStorageStore } from '@sentinel-auth/js'
@@ -118,6 +173,21 @@ const authz = new SentinelAuthz({
 })
 ```
 
+!!! info "IdP token is not persisted"
+    `AuthzLocalStorageStore` deliberately keeps the IdP token (which is long-lived and trust-critical — a Google ID token lasts ~1h and authenticates on every request) **in instance memory only**. It does not survive a page reload. This reduces the blast radius of XSS: an attacker who reads `localStorage` does not get the IdP token, only the short-lived (~5 min) authz token.
+
+    Trade-off: after a page reload the SDK has no IdP token, so silent refresh fails and the user is re-sent through the IdP login flow. If you need persistent sessions, front your frontend with a backend route that sets an `HttpOnly` cookie holding the tokens server-side.
+
+## `handleCallback()` nonce enforcement
+
+`handleCallback()` requires that `sentinel_authz_nonce` exists in `sessionStorage`. If it doesn't (e.g. the callback was opened in a new tab that did not initiate the login), the SDK throws:
+
+```
+Error: No login flow in progress — callback rejected. Start login from this tab.
+```
+
+This prevents a login-CSRF where an attacker links a victim to `.../auth/callback#id_token=<attacker_token>` and silently establishes the attacker's identity in the victim's app.
+
 ## Complete example
 
 ```typescript
@@ -125,6 +195,7 @@ import { SentinelAuthz, IdpConfigs, AuthzLocalStorageStore } from '@sentinel-aut
 
 const authz = new SentinelAuthz({
   sentinelUrl: 'http://localhost:9003',
+  mintEndpoint: '/api/auth/mint',
   idps: { google: IdpConfigs.google('your-client-id') },
   storage: new AuthzLocalStorageStore(),
 })

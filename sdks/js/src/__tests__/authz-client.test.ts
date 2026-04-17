@@ -48,6 +48,7 @@ describe('SentinelAuthz', () => {
     store = new AuthzMemoryStore()
     client = new SentinelAuthz({
       sentinelUrl: 'http://localhost:9003',
+      mintEndpoint: '/api/auth/mint',
       storage: store,
       autoRefresh: false,
     })
@@ -73,22 +74,26 @@ describe('SentinelAuthz', () => {
     expect(result.workspaces![0].slug).toBe('acme')
   })
 
-  it('selectWorkspace stores both tokens and notifies listeners', async () => {
+  it('selectWorkspace POSTs to mintEndpoint (not Sentinel) and stores tokens', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify(selectResponse), { status: 200 }),
     )
     const listener = vi.fn()
     client.onAuthStateChange(listener)
     await client.selectWorkspace('idp-token-123', 'google', 'ws-1')
-    expect(fetch).toHaveBeenCalledWith('http://localhost:9003/authz/resolve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        idp_token: 'idp-token-123',
-        provider: 'google',
-        workspace_id: 'ws-1',
-      }),
+
+    // Credential issuance goes through the backend mint route, never the
+    // browser-direct /authz/resolve path (Sentinel would 403 that anyway).
+    const [url, init] = vi.mocked(fetch).mock.calls[0]
+    expect(url).toBe('/api/auth/mint')
+    expect(init?.method).toBe('POST')
+    expect(init?.credentials).toBe('same-origin')
+    expect(JSON.parse(init?.body as string)).toEqual({
+      idp_token: 'idp-token-123',
+      provider: 'google',
+      workspace_id: 'ws-1',
     })
+
     expect(store.getIdpToken()).toBe('idp-token-123')
     expect(store.getAuthzToken()).toBe(selectResponse.authz_token)
     expect(store.getProvider()).toBe('google')
@@ -96,6 +101,30 @@ describe('SentinelAuthz', () => {
     expect(store.getUserIdentity()).toEqual({ email: 'alice@acme.com', name: 'Alice' })
     expect(listener).toHaveBeenCalledTimes(1)
     expect(listener.mock.calls[0][0]).not.toBeNull()
+  })
+
+  it('selectWorkspace forwards the login-flow nonce to the mint endpoint', async () => {
+    sessionStorage.setItem('sentinel_authz_nonce', 'the-login-nonce')
+    try {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify(selectResponse), { status: 200 }),
+      )
+      await client.selectWorkspace('idp-token-123', 'google', 'ws-1')
+      const [, init] = vi.mocked(fetch).mock.calls[0]
+      expect(JSON.parse(init?.body as string).nonce).toBe('the-login-nonce')
+    } finally {
+      sessionStorage.removeItem('sentinel_authz_nonce')
+    }
+  })
+
+  it('constructor rejects missing mintEndpoint', () => {
+    expect(() =>
+      new SentinelAuthz({
+        sentinelUrl: 'http://localhost:9003',
+        // @ts-expect-error — intentionally missing required field
+        mintEndpoint: undefined,
+      }),
+    ).toThrow(/mintEndpoint is required/)
   })
 
   it('getUser returns user from authz token with cached identity', () => {

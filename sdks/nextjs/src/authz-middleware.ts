@@ -7,6 +7,20 @@ export interface SentinelAuthzMiddlewareConfig {
   sentinelUrl: string
   /** JWKS URL for IdP token verification (e.g. Google's JWKS endpoint). */
   idpJwksUrl: string
+  /**
+   * IdP audience — the OAuth client_id(s) this app is registered as with the
+   * IdP. REQUIRED: without this check, any valid ID token from any client of
+   * the same IdP authenticates (e.g. any Google OAuth app can mint a token
+   * that passes signature verification).
+   */
+  idpAudience: string | string[]
+  /** IdP issuer, e.g. "https://accounts.google.com". Optional but strongly recommended. */
+  idpIssuer?: string
+  /**
+   * Service name — the authz token's `svc` claim must equal this. Prevents
+   * a token minted for another service from being replayed here.
+   */
+  serviceName: string
   /** Paths that skip auth (e.g. ["/login", "/api/auth"]). */
   publicPaths?: string[]
   /** Redirect target for unauthenticated page requests. Defaults to "/login". */
@@ -31,9 +45,10 @@ function getJWKS(url: string) {
  * Create a Next.js Edge Middleware that validates dual tokens (AuthZ mode).
  *
  * Validates:
- * 1. IdP token (Authorization: Bearer) — against IdP JWKS (signature only, no audience check)
- * 2. Authz token (X-Authz-Token) — against Sentinel JWKS (audience: sentinel:authz)
+ * 1. IdP token (Authorization: Bearer) — signature + audience (+ issuer if provided)
+ * 2. Authz token (X-Authz-Token) — signature + audience (sentinel:authz) + issuer
  * 3. idp_sub binding — authz token's idp_sub must match IdP token's sub
+ * 4. svc binding — authz token's svc must equal configured serviceName
  *
  * Usage in `middleware.ts`:
  * ```ts
@@ -41,6 +56,9 @@ function getJWKS(url: string) {
  * export default createSentinelAuthzMiddleware({
  *   sentinelUrl: 'http://localhost:9003',
  *   idpJwksUrl: 'https://www.googleapis.com/oauth2/v3/certs',
+ *   idpAudience: process.env.GOOGLE_CLIENT_ID!,
+ *   idpIssuer: 'https://accounts.google.com',
+ *   serviceName: 'my-app',
  *   publicPaths: ['/login', '/auth/callback'],
  * })
  * export const config = { matcher: ['/((?!_next|favicon.ico).*)'] }
@@ -50,9 +68,19 @@ export function createSentinelAuthzMiddleware(config: SentinelAuthzMiddlewareCon
   const {
     sentinelUrl,
     idpJwksUrl,
+    idpAudience,
+    idpIssuer,
+    serviceName,
     publicPaths = [],
     loginPath = '/login',
   } = config
+
+  if (!serviceName) {
+    throw new Error('createSentinelAuthzMiddleware: serviceName is required')
+  }
+  if (!idpAudience || (Array.isArray(idpAudience) && idpAudience.length === 0)) {
+    throw new Error('createSentinelAuthzMiddleware: idpAudience is required')
+  }
 
   const sentinelJwksUrl = `${sentinelUrl.replace(/\/+$/, '')}/.well-known/jwks.json`
   const issuer = config.issuer ?? new URL(sentinelUrl).origin
@@ -98,19 +126,29 @@ export function createSentinelAuthzMiddleware(config: SentinelAuthzMiddlewareCon
 
     try {
       // Verify both tokens in parallel.
-      // IdP token: verify signature only (no audience restriction — the IdP's
-      //   audience is the app's OAuth client ID, not something we enforce here).
-      // Authz token: verify signature + audience via Sentinel's verifyToken.
+      // IdP token: signature + audience (+ optional issuer).
+      // Authz token: signature + audience via Sentinel's verifyToken.
+      const idpVerifyOptions: {
+        audience: string | string[]
+        issuer?: string
+      } = { audience: idpAudience }
+      if (idpIssuer) idpVerifyOptions.issuer = idpIssuer
+
       const [idpResult, authzPayload] = await Promise.all([
-        jwtVerify(idpToken, getJWKS(idpJwksUrl)),
+        jwtVerify(idpToken, getJWKS(idpJwksUrl), idpVerifyOptions),
         verifyToken(authzToken, { jwksUrl: sentinelJwksUrl, audience: 'sentinel:authz', issuer }),
       ])
 
       const idpPayload = idpResult.payload
 
-      // Check idp_sub binding: authz token's idp_sub must match IdP token's sub
+      // Check idp_sub binding: authz token's idp_sub must match IdP token's sub.
       const authzClaims = authzPayload as unknown as Record<string, unknown>
-      if (!idpPayload.sub || authzClaims.idp_sub !== idpPayload.sub) {
+      if (!idpPayload.sub || !authzClaims.idp_sub || authzClaims.idp_sub !== idpPayload.sub) {
+        return handleUnauthenticated(req, loginPath)
+      }
+
+      // Enforce svc binding: the authz token was minted for this service.
+      if (!authzClaims.svc || authzClaims.svc !== serviceName) {
         return handleUnauthenticated(req, loginPath)
       }
 

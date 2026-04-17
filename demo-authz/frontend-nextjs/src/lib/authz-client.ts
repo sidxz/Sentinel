@@ -14,6 +14,10 @@ export function getAuthzClient(): SentinelAuthz {
   if (!_client) {
     _client = new SentinelAuthz({
       sentinelUrl: SENTINEL_URL,
+      // Mint endpoint lives on the demo backend — it holds the Sentinel service
+      // key and proxies the POST /authz/resolve call. Browsers never touch the
+      // service key; credential issuance stays server-to-server.
+      mintEndpoint: `${BACKEND_URL}/auth/mint`,
       idps: {
         google: IdpConfigs.google(GOOGLE_CLIENT_ID),
       },
