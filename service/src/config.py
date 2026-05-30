@@ -27,7 +27,9 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     admin_token_expire_minutes: int = 60
     authz_token_expire_minutes: int = 5
-    jwt_previous_public_key_paths: str = ""  # comma-separated retired public key paths (verify-only)
+    jwt_previous_public_key_paths: str = (
+        ""  # comma-separated retired public key paths (verify-only)
+    )
 
     # OAuth2 providers
     google_client_id: str = ""

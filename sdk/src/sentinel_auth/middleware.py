@@ -94,9 +94,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         # Resolve the signing key by kid via PyJWKClient — it caches the JWKS and
         # refetches on a rotated-in kid, the same battle-tested path used for IdP
         # tokens. Static public_key mode pins one key (air-gapped, no rotation).
-        self._jwk_client = (
-            PyJWKClient(jwks_url, timeout=5) if jwks_url and not public_key else None
-        )
+        self._jwk_client = PyJWKClient(jwks_url, timeout=5) if jwks_url and not public_key else None
         if jwks_url:
             warn_if_insecure(jwks_url, "JWTAuthMiddleware")
 

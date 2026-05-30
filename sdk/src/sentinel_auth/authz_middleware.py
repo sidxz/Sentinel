@@ -96,9 +96,7 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         jwks_url = idp_jwks_url or (sentinel_instance.idp_jwks_url if sentinel_instance else None)
         # Bound the fetch so a slow remote IdP JWKS can't freeze the event loop
         # for the 30s urllib default (the call is sync, like the Sentinel one).
-        self._idp_jwks_client: PyJWKClient | None = (
-            PyJWKClient(jwks_url, timeout=10) if jwks_url else None
-        )
+        self._idp_jwks_client: PyJWKClient | None = PyJWKClient(jwks_url, timeout=10) if jwks_url else None
 
         # Sentinel (authz token) key resolution. Static sentinel_public_key pins
         # one key (air-gapped); otherwise resolve by kid via PyJWKClient against
