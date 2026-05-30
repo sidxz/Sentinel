@@ -117,6 +117,18 @@ def test_decode_rejects_unknown_kid(two_keys):
         key_provider._verification_cache = saved
 
 
+def test_jwks_publishes_all_verification_keys(two_keys):
+    from src.auth import jwks, key_provider
+
+    jwks._jwks_cache = None  # bypass TTL cache
+    out = jwks.build_jwks()
+    published = {k["kid"] for k in out["keys"]}
+    assert published == set(key_provider.verification_keys())
+    for k in out["keys"]:
+        assert k["use"] == "sig" and k["alg"] == "RS256" and k["kty"] == "RSA"
+    jwks._jwks_cache = None
+
+
 def test_previous_public_key_paths_parses_csv():
     s = Settings(jwt_previous_public_key_paths="keys/old1.pem, keys/old2.pem")
     assert s.jwt_previous_public_key_paths_list == ["keys/old1.pem", "keys/old2.pem"]
