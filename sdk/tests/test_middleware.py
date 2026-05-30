@@ -2,6 +2,8 @@
 
 import datetime
 
+import respx
+from httpx import Response
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -119,3 +121,71 @@ class TestJWTMiddleware:
         data = resp.json()
         assert data["has_token"] is True
         assert data["token"] == valid_token
+
+
+def _make_jwks_app(base_url: str) -> Starlette:
+    async def protected(request: Request) -> JSONResponse:
+        return JSONResponse({"email": request.state.user.email})
+
+    app = Starlette(routes=[Route("/protected", protected)])
+    app.add_middleware(JWTAuthMiddleware, base_url=base_url)
+    return app
+
+
+def _jwks_for(public_pem: str, kid: str) -> dict:
+    import json
+
+    from cryptography.hazmat.primitives.serialization import load_pem_public_key
+    from jwt.algorithms import RSAAlgorithm
+
+    jwk = json.loads(RSAAlgorithm.to_jwk(load_pem_public_key(public_pem.encode())))
+    jwk.update({"use": "sig", "alg": "RS256", "kid": kid})
+    return {"keys": [jwk]}
+
+
+class TestJWKSRotation:
+    @respx.mock
+    def test_selects_key_by_kid_from_jwks(self, rsa_keypair, jwt_payload):
+        import jwt as pyjwt
+
+        priv, pub = rsa_keypair
+        token = pyjwt.encode(jwt_payload, priv, algorithm="RS256", headers={"kid": "key-1"})
+        respx.get("http://sentinel/.well-known/jwks.json").mock(
+            return_value=Response(200, json=_jwks_for(pub, "key-1"))
+        )
+        client = TestClient(_make_jwks_app("http://sentinel"))
+        resp = client.get("/protected", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+
+    @respx.mock
+    def test_refetches_jwks_on_unknown_kid(self, rsa_keypair, jwt_payload):
+        """After the keyset is cached, a token with a new (rotated-in) kid must
+        trigger exactly one JWKS refetch and then validate."""
+        import jwt as pyjwt
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa as rsa_mod
+
+        old_priv, old_pub = rsa_keypair
+        new = rsa_mod.generate_private_key(public_exponent=65537, key_size=2048)
+        new_pub = new.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode()
+        new_priv = new.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+        ).decode()
+
+        respx.get("http://sentinel/.well-known/jwks.json").mock(
+            side_effect=[
+                Response(200, json=_jwks_for(old_pub, "old")),  # initial fetch
+                Response(200, json=_jwks_for(new_pub, "new")),  # refetch after rotation
+            ]
+        )
+        token_old = pyjwt.encode(jwt_payload, old_priv, algorithm="RS256", headers={"kid": "old"})
+        token_new = pyjwt.encode(jwt_payload, new_priv, algorithm="RS256", headers={"kid": "new"})
+        app = _make_jwks_app("http://sentinel")
+        client = TestClient(app)
+
+        # First request caches the "old" keyset.
+        assert client.get("/protected", headers={"Authorization": f"Bearer {token_old}"}).status_code == 200
+        # Rotated-in "new" kid is unknown → triggers a refetch → validates.
+        assert client.get("/protected", headers={"Authorization": f"Bearer {token_new}"}).status_code == 200

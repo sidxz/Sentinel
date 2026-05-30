@@ -89,6 +89,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         self.public_key = public_key
         self.jwks_url = jwks_url
         self._jwks_lock = asyncio.Lock()
+        self._keyset: dict | None = None
         self.algorithm = algorithm
         self.audience = audience
         self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json"]
@@ -96,25 +97,38 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         if jwks_url:
             warn_if_insecure(jwks_url, "JWTAuthMiddleware")
 
-    async def _get_public_key(self) -> str:
-        """Return the cached public key, fetching from JWKS if needed."""
+    async def _key_for_token(self, token: str):
+        """Resolve the verifying key. Static ``public_key`` mode pins one key and
+        ignores ``kid``; JWKS mode selects by ``kid`` and refetches once on an
+        unknown ``kid`` so a rotated key is picked up without a restart."""
         if self.public_key:
             return self.public_key
-        async with self._jwks_lock:
-            if self.public_key:
-                return self.public_key
-            # Fetch from JWKS endpoint
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(self.jwks_url)
-                resp.raise_for_status()
-                jwks = resp.json()
-            if not jwks.get("keys"):
-                raise RuntimeError("No keys found in JWKS response")
-            for key in jwks["keys"]:
-                if key.get("kty") == "RSA" and key.get("use", "sig") == "sig":
-                    self.public_key = RSAAlgorithm.from_jwk(key)
-                    return self.public_key
-            raise RuntimeError("No RSA signing key found in JWKS")
+        kid = jwt.get_unverified_header(token).get("kid")
+        if not kid:
+            raise jwt.InvalidTokenError("Token missing kid")
+        if self._keyset is None or kid not in self._keyset:
+            async with self._jwks_lock:
+                if self._keyset is None or kid not in self._keyset:
+                    await self._refresh_keyset()
+        key = (self._keyset or {}).get(kid)
+        if key is None:
+            raise jwt.InvalidTokenError("Unknown key id")
+        return key
+
+    async def _refresh_keyset(self) -> None:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(self.jwks_url)
+            resp.raise_for_status()
+            jwks = resp.json()
+        keyset = {}
+        for key in jwks.get("keys", []):
+            if (
+                key.get("kty") == "RSA"
+                and key.get("use", "sig") == "sig"
+                and key.get("kid")
+            ):
+                keyset[key["kid"]] = RSAAlgorithm.from_jwk(key)
+        self._keyset = keyset
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Skip auth for excluded paths (exact match or path prefix with boundary)
@@ -130,8 +144,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 
         token = auth_header.removeprefix("Bearer ")
         try:
-            public_key = await self._get_public_key()
-            payload = jwt.decode(token, public_key, algorithms=[self.algorithm], audience=self.audience)
+            key = await self._key_for_token(token)
+            payload = jwt.decode(token, key, algorithms=[self.algorithm], audience=self.audience)
         except jwt.ExpiredSignatureError:
             return JSONResponse(status_code=401, content={"detail": "Token has expired"})
         except jwt.InvalidTokenError:
