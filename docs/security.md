@@ -100,6 +100,14 @@ openssl rsa -in keys/private.pem -pubout -out keys/public.pem
 
 The public key is also available at `/.well-known/jwks.json`.
 
+### Key Rotation
+
+Every token carries a `kid` (RFC-7638 thumbprint) header, and JWKS publishes the
+current key plus any retired keys (`JWT_PREVIOUS_PUBLIC_KEY_PATHS`). Verifiers
+select the key by `kid`, so a new key can sign while old tokens still verify —
+graceful, zero-downtime rotation. SDK middlewares refetch JWKS on an unknown
+`kid`. See the runbook: [deployment/key-rotation.md](deployment/key-rotation.md).
+
 ### Audience Separation
 
 Tokens carry a `type` claim that prevents cross-use:
