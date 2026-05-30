@@ -332,16 +332,33 @@ Server-side dependencies (`get_user_for_service_call`, `get_current_user_flexibl
 
 ### Cross-Provider Email Linking — Disabled
 
-`find_or_create_user` keys identity strictly on `(provider, provider_user_id)`. A new IdP login whose email matches a user provisioned under a different provider is **rejected with `409 CrossProviderEmailConflict`** — the user is told to sign in with the original provider or contact an administrator. Previous versions auto-linked by email; attackers with a weaker IdP could take over accounts created under a stronger one.
+`find_or_create_user` keys identity strictly on `(provider, provider_user_id)` and never auto-links across providers by email. A new IdP login whose email matches a user who already has a SocialAccount under a **different** provider is **rejected with `409 CrossProviderEmailConflict`** — attackers with a weaker IdP cannot take over an account created under a stronger one. An email match against an admin-pre-provisioned account that has **no** SocialAccount yet is the intended first sign-in and is linked to that account, so pre-provisioning works without locking the user out.
 
 ### Revocation for Authz Tokens
 
-Authz tokens carry `jti` and `sub` and go through the same revocation checks as access tokens:
+Authz tokens carry `jti` and `sub`. **On Sentinel's own endpoints** — the
+`get_user_for_service_call` and `get_current_user_flexible` dependencies — they go
+through the same revocation checks as access tokens on every request:
 
 - `jti` on the denylist → 401
 - `sub` marked deactivated → 401
 
-Admin-driven user deactivation immediately invalidates outstanding authz tokens — previously the token remained usable for its full TTL.
+So admin-driven deactivation takes effect immediately for any request that reaches Sentinel.
+
+**SDK edge (important).** The `AuthzMiddleware` shipped in the SDK and installed via
+`sentinel.protect(app)` validates tokens **offline** — signature, audience, expiry,
+and the `idp_sub`/`svc` bindings — and deliberately does **not** call back to Sentinel
+to consult the denylist or deactivation flag (no network round-trip per request).
+The consequence: at an SDK-protected downstream service, a deactivated user's
+already-issued authz token stays accepted until it **expires naturally**.
+
+Authz tokens are not enrolled in a refresh family, so the deactivation flag is their
+only revocation lever — and it is consulted only on Sentinel's own endpoints. Bound
+the exposure by keeping `AUTHZ_TOKEN_EXPIRE_MINUTES` short (default 5). For
+revocation-sensitive operations at a downstream service, route the decision through
+Sentinel (e.g. a `PermissionClient` / `RoleClient` check) rather than relying on the
+offline middleware alone. (A future opt-in revocation check in the middleware could
+close this at the cost of a per-request network call.)
 
 ### Browser Storage (`AuthzLocalStorageStore`)
 

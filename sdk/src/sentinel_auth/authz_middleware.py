@@ -41,6 +41,15 @@ class AuthzMiddleware(BaseHTTPMiddleware):
 
     For IdP key material you must provide either ``idp_public_key`` (single PEM)
     or ``idp_jwks_url`` (e.g. Google's JWKS — handles key rotation).
+
+    **Offline by design — no revocation check.** Validation is purely local
+    (signature, audience, expiry, ``idp_sub``/``svc`` bindings); the middleware
+    does NOT call Sentinel to consult the token denylist or the user-deactivation
+    flag. A deactivated user's already-issued authz token therefore stays accepted
+    here until it expires naturally. Authz tokens are short-lived (default 5 min)
+    to bound this window — keep ``AUTHZ_TOKEN_EXPIRE_MINUTES`` small. For
+    revocation-sensitive operations, gate them with a Sentinel ``PermissionClient``
+    / ``RoleClient`` call rather than relying on this middleware alone.
     """
 
     def __init__(
