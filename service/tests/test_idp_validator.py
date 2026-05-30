@@ -158,9 +158,9 @@ async def test_github_token_rejected_when_not_bound_to_sentinel_app(github_app_c
     app). Sentinel must fail closed here.
     """
     with respx.mock(assert_all_called=False) as mock:
-        mock.post(
-            "https://api.github.com/applications/sentinel-client-id/token"
-        ).mock(return_value=httpx.Response(404))
+        mock.post("https://api.github.com/applications/sentinel-client-id/token").mock(
+            return_value=httpx.Response(404)
+        )
         mock.get("https://api.github.com/user").mock(
             return_value=httpx.Response(
                 200, json={"id": 123, "login": "victim", "name": "Victim"}
@@ -181,9 +181,7 @@ async def test_github_token_rejected_when_not_bound_to_sentinel_app(github_app_c
 async def test_github_token_accepted_when_bound_to_sentinel_app(github_app_creds):
     """A GitHub token that passes the app-binding check authenticates normally."""
     with respx.mock(assert_all_called=False) as mock:
-        mock.post(
-            "https://api.github.com/applications/sentinel-client-id/token"
-        ).mock(
+        mock.post("https://api.github.com/applications/sentinel-client-id/token").mock(
             return_value=httpx.Response(200, json={"id": 42, "login": "user"})
         )
         mock.get("https://api.github.com/user").mock(
@@ -200,9 +198,7 @@ async def test_github_token_accepted_when_bound_to_sentinel_app(github_app_creds
         mock.get("https://api.github.com/user/emails").mock(
             return_value=httpx.Response(
                 200,
-                json=[
-                    {"primary": True, "verified": True, "email": "user@example.com"}
-                ],
+                json=[{"primary": True, "verified": True, "email": "user@example.com"}],
             )
         )
 
@@ -233,13 +229,11 @@ async def test_github_token_binding_uses_basic_auth_with_client_secret(
         return httpx.Response(200, json={"id": 1, "login": "u"})
 
     with respx.mock(assert_all_called=False) as mock:
-        mock.post(
-            "https://api.github.com/applications/sentinel-client-id/token"
-        ).mock(side_effect=_record_auth)
+        mock.post("https://api.github.com/applications/sentinel-client-id/token").mock(
+            side_effect=_record_auth
+        )
         mock.get("https://api.github.com/user").mock(
-            return_value=httpx.Response(
-                200, json={"id": 1, "login": "u", "name": "U"}
-            )
+            return_value=httpx.Response(200, json={"id": 1, "login": "u", "name": "U"})
         )
         mock.get("https://api.github.com/user/emails").mock(
             return_value=httpx.Response(
@@ -249,9 +243,9 @@ async def test_github_token_binding_uses_basic_auth_with_client_secret(
 
         await validate_idp_token("t", "github")
 
-    expected = "Basic " + base64.b64encode(
-        b"sentinel-client-id:sentinel-secret"
-    ).decode()
+    expected = (
+        "Basic " + base64.b64encode(b"sentinel-client-id:sentinel-secret").decode()
+    )
     assert captured_auth["header"] == expected, (
         "Binding check must authenticate as the OAuth app via HTTP Basic; "
         "otherwise GitHub rejects the request regardless of token validity."

@@ -270,9 +270,7 @@ def _patch_jwks(monkeypatch, jwks: dict) -> None:
     import urllib.request
 
     payload = json.dumps(jwks).encode()
-    monkeypatch.setattr(
-        urllib.request, "urlopen", lambda *a, **k: _FakeHTTPResponse(payload)
-    )
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: _FakeHTTPResponse(payload))
 
 
 def _signed_dual(idp_priv, sentinel_priv, kid):

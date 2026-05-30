@@ -19,9 +19,7 @@ def _req(xff=None, client_host="203.0.113.9"):
     headers = _Headers()
     if xff is not None:
         headers["x-forwarded-for"] = xff
-    return SimpleNamespace(
-        headers=headers, client=SimpleNamespace(host=client_host)
-    )
+    return SimpleNamespace(headers=headers, client=SimpleNamespace(host=client_host))
 
 
 def test_not_behind_proxy_ignores_xff(monkeypatch):
