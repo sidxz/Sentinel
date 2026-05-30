@@ -66,19 +66,41 @@ async def find_or_create_user(
     # Security: never auto-link across providers by email. Two different IdPs
     # reporting the same email are not necessarily the same human — especially
     # when one IdP has weaker verification than the other. Identity is keyed on
-    # (provider, provider_user_id) only. Email collisions create a separate row.
-    #
-    # If this lookup finds an existing user, they signed up via a different
-    # provider. Reject the sign-in with a clear message so a support flow (or
-    # future explicit link UI) can handle the merge intentionally.
-    stmt = select(User.id).where(User.email == email)
-    result = await db.execute(stmt)
-    if result.scalar_one_or_none() is not None:
-        raise CrossProviderEmailConflict(
-            f"An account with email {email!r} exists under a different identity "
-            "provider. Sign in with the original provider, or contact an "
-            "administrator to link the accounts."
+    # (provider, provider_user_id) only.
+    stmt = select(User).where(User.email == email)
+    existing = (await db.execute(stmt)).scalar_one_or_none()
+
+    if existing is not None:
+        # Does this user already have ANY social account? If so, they signed up
+        # via a different provider — a genuine cross-provider collision; reject
+        # so a support flow (or future explicit link UI) handles it intentionally.
+        sa_stmt = select(SocialAccount.id).where(SocialAccount.user_id == existing.id)
+        has_social = (await db.execute(sa_stmt)).scalar_one_or_none() is not None
+        if has_social:
+            raise CrossProviderEmailConflict(
+                f"An account with email {email!r} exists under a different identity "
+                "provider. Sign in with the original provider, or contact an "
+                "administrator to link the accounts."
+            )
+
+        # No social account = an admin-pre-provisioned (e.g. CSV-imported) bare
+        # account. Link this provider to it so the user can sign in, instead of
+        # locking them out of an account created for exactly this purpose.
+        existing.name = strip_html(name)
+        if avatar_url:
+            existing.avatar_url = avatar_url
+        db.add(
+            SocialAccount(
+                user_id=existing.id,
+                provider=provider,
+                provider_user_id=provider_user_id,
+                provider_data=provider_data,
+            )
         )
+        if existing.email in settings.admin_email_list and not existing.is_admin:
+            existing.is_admin = True
+        await db.commit()
+        return existing
 
     user = User(email=email, name=strip_html(name), avatar_url=avatar_url)
     db.add(user)
