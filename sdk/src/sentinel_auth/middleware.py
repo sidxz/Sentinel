@@ -5,12 +5,11 @@ JWT tokens on incoming requests and populate ``request.state.user``
 with an ``AuthenticatedUser`` instance.
 """
 
-import asyncio
 import uuid
 
-import httpx
 import jwt
-from jwt.algorithms import RSAAlgorithm
+from jwt import PyJWKClient
+from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -88,47 +87,25 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             raise ValueError("Provide base_url, jwks_url, or public_key")
         self.public_key = public_key
         self.jwks_url = jwks_url
-        self._jwks_lock = asyncio.Lock()
-        self._keyset: dict | None = None
         self.algorithm = algorithm
         self.audience = audience
         self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json"]
         self.allowed_workspaces = allowed_workspaces
+        # Resolve the signing key by kid via PyJWKClient — it caches the JWKS and
+        # refetches on a rotated-in kid, the same battle-tested path used for IdP
+        # tokens. Static public_key mode pins one key (air-gapped, no rotation).
+        self._jwk_client = (
+            PyJWKClient(jwks_url, timeout=10) if jwks_url and not public_key else None
+        )
         if jwks_url:
             warn_if_insecure(jwks_url, "JWTAuthMiddleware")
 
-    async def _key_for_token(self, token: str):
-        """Resolve the verifying key. Static ``public_key`` mode pins one key and
-        ignores ``kid``; JWKS mode selects by ``kid`` and refetches once on an
-        unknown ``kid`` so a rotated key is picked up without a restart."""
+    def _signing_key(self, token: str):
+        """Return the verifying key: the pinned PEM in static mode, otherwise the
+        JWKS key whose kid matches the token (PyJWKClient refetches on miss)."""
         if self.public_key:
             return self.public_key
-        kid = jwt.get_unverified_header(token).get("kid")
-        if not kid:
-            raise jwt.InvalidTokenError("Token missing kid")
-        if self._keyset is None or kid not in self._keyset:
-            async with self._jwks_lock:
-                if self._keyset is None or kid not in self._keyset:
-                    await self._refresh_keyset()
-        key = (self._keyset or {}).get(kid)
-        if key is None:
-            raise jwt.InvalidTokenError("Unknown key id")
-        return key
-
-    async def _refresh_keyset(self) -> None:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(self.jwks_url)
-            resp.raise_for_status()
-            jwks = resp.json()
-        keyset = {}
-        for key in jwks.get("keys", []):
-            if (
-                key.get("kty") == "RSA"
-                and key.get("use", "sig") == "sig"
-                and key.get("kid")
-            ):
-                keyset[key["kid"]] = RSAAlgorithm.from_jwk(key)
-        self._keyset = keyset
+        return self._jwk_client.get_signing_key_from_jwt(token).key
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Skip auth for excluded paths (exact match or path prefix with boundary)
@@ -144,11 +121,13 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 
         token = auth_header.removeprefix("Bearer ")
         try:
-            key = await self._key_for_token(token)
+            key = self._signing_key(token)
             payload = jwt.decode(token, key, algorithms=[self.algorithm], audience=self.audience)
         except jwt.ExpiredSignatureError:
             return JSONResponse(status_code=401, content={"detail": "Token has expired"})
-        except jwt.InvalidTokenError:
+        except PyJWKClientConnectionError:
+            return JSONResponse(status_code=500, content={"detail": "Authentication service unavailable"})
+        except (jwt.InvalidTokenError, PyJWKClientError):
             return JSONResponse(status_code=401, content={"detail": "Invalid token"})
         except Exception:
             return JSONResponse(status_code=500, content={"detail": "Authentication service unavailable"})

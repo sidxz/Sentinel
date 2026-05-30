@@ -231,22 +231,48 @@ class TestAuthzMiddleware:
 
 
 class _FakeSentinel:
-    """Minimal stand-in exposing the keyset interface AuthzMiddleware needs."""
+    """Minimal stand-in exposing what AuthzMiddleware reads from a Sentinel."""
 
-    def __init__(self, keyset):
-        self._keyset = keyset
-        self.fetch_calls = 0
+    def __init__(self, base_url="http://sentinel"):
+        self.base_url = base_url
         self.idp_public_key = None
         self.idp_jwks_url = None
         self.sentinel_public_key = None
 
-    @property
-    def sentinel_keyset(self):
-        return self._keyset
 
-    async def fetch_sentinel_keyset(self):
-        self.fetch_calls += 1
-        return self._keyset
+def _jwks_for(public_pem: str, kid: str) -> dict:
+    import json
+
+    from cryptography.hazmat.primitives.serialization import load_pem_public_key
+    from jwt.algorithms import RSAAlgorithm
+
+    jwk = json.loads(RSAAlgorithm.to_jwk(load_pem_public_key(public_pem.encode())))
+    jwk.update({"use": "sig", "alg": "RS256", "kid": kid})
+    return {"keys": [jwk]}
+
+
+class _FakeHTTPResponse:
+    def __init__(self, payload: bytes):
+        self._payload = payload
+
+    def __enter__(self):
+        import io
+
+        return io.BytesIO(self._payload)
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _patch_jwks(monkeypatch, jwks: dict) -> None:
+    """Make PyJWKClient (urllib-based) serve this JWKS on every fetch."""
+    import json
+    import urllib.request
+
+    payload = json.dumps(jwks).encode()
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda *a, **k: _FakeHTTPResponse(payload)
+    )
 
 
 def _signed_dual(idp_priv, sentinel_priv, kid):
@@ -284,7 +310,7 @@ def _signed_dual(idp_priv, sentinel_priv, kid):
     return idp_token, authz_token
 
 
-def _make_keyset_app(idp_pub, fake_sentinel) -> Starlette:
+def _make_instance_app(idp_pub, fake_sentinel) -> Starlette:
     async def protected(request: Request) -> JSONResponse:
         return JSONResponse({"email": request.state.user.email})
 
@@ -299,41 +325,31 @@ def _make_keyset_app(idp_pub, fake_sentinel) -> Starlette:
     return app
 
 
-class TestAuthzKidRotation:
-    def test_authz_token_selected_by_kid(self, idp_keypair, sentinel_keypair):
-        from cryptography.hazmat.primitives.serialization import load_pem_public_key
+class TestAuthzKidPath:
+    """The authz-token key is resolved by kid via PyJWKClient against Sentinel's
+    JWKS; we verify the delegation and the unknown-kid error mapping."""
 
+    def test_authz_token_resolved_by_kid_via_jwks(self, idp_keypair, sentinel_keypair, monkeypatch):
         idp_priv, idp_pub = idp_keypair
         sentinel_priv, sentinel_pub = sentinel_keypair
-        fake = _FakeSentinel({"s1": load_pem_public_key(sentinel_pub.encode())})
+        _patch_jwks(monkeypatch, _jwks_for(sentinel_pub, "s1"))
         idp_token, authz_token = _signed_dual(idp_priv, sentinel_priv, "s1")
-        client = TestClient(_make_keyset_app(idp_pub, fake))
+        client = TestClient(_make_instance_app(idp_pub, _FakeSentinel()))
         resp = client.get(
             "/protected",
             headers={"Authorization": f"Bearer {idp_token}", "X-Authz-Token": authz_token},
         )
         assert resp.status_code == 200
-        assert fake.fetch_calls == 0
 
-    def test_unknown_kid_triggers_keyset_refetch(self, idp_keypair, sentinel_keypair):
-        from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
+    def test_unknown_authz_kid_rejected_401(self, idp_keypair, sentinel_keypair, monkeypatch):
         idp_priv, idp_pub = idp_keypair
         sentinel_priv, sentinel_pub = sentinel_keypair
-        fake = _FakeSentinel({})  # cached keyset is empty
-        real = {"s1": load_pem_public_key(sentinel_pub.encode())}
-
-        async def _fetch():
-            fake.fetch_calls += 1
-            fake._keyset = real
-            return real
-
-        fake.fetch_sentinel_keyset = _fetch
-        idp_token, authz_token = _signed_dual(idp_priv, sentinel_priv, "s1")
-        client = TestClient(_make_keyset_app(idp_pub, fake))
+        _patch_jwks(monkeypatch, _jwks_for(sentinel_pub, "s1"))
+        # authz token's kid is not published → PyJWKClient refetches, misses, raises.
+        idp_token, authz_token = _signed_dual(idp_priv, sentinel_priv, "other")
+        client = TestClient(_make_instance_app(idp_pub, _FakeSentinel()))
         resp = client.get(
             "/protected",
             headers={"Authorization": f"Bearer {idp_token}", "X-Authz-Token": authz_token},
         )
-        assert resp.status_code == 200
-        assert fake.fetch_calls == 1
+        assert resp.status_code == 401

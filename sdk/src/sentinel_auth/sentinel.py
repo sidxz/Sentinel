@@ -100,7 +100,6 @@ class Sentinel:
         self._roles: RoleClient | None = None
         self._authz: AuthzClient | None = None
         self._sentinel_public_key: str | None = None
-        self._sentinel_keyset: dict | None = None
 
     def __repr__(self) -> str:
         return f"Sentinel(base_url={self.base_url!r}, service_name={self.service_name!r})"
@@ -109,11 +108,6 @@ class Sentinel:
     def sentinel_public_key(self) -> str | None:
         """Sentinel's public key, fetched during lifespan startup."""
         return self._sentinel_public_key
-
-    @property
-    def sentinel_keyset(self) -> dict | None:
-        """Sentinel's verification keyset ({kid: key}), fetched at startup."""
-        return self._sentinel_keyset
 
     # -- Lazy clients --------------------------------------------------------
 
@@ -198,25 +192,6 @@ class Sentinel:
         self._sentinel_public_key = pub_key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
         return self._sentinel_public_key
 
-    async def fetch_sentinel_keyset(self) -> dict:
-        """Fetch Sentinel's full verification keyset ({kid: key}) from JWKS.
-
-        Supports key rotation: every published key is loaded and selected by the
-        token's ``kid`` at verification time.
-        """
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{self.base_url}/.well-known/jwks.json")
-            resp.raise_for_status()
-            jwks = resp.json()
-        keyset = {}
-        for k in jwks.get("keys", []):
-            if k.get("kty") == "RSA" and k.get("kid"):
-                keyset[k["kid"]] = RSAAlgorithm.from_jwk(k)
-        if not keyset:
-            raise RuntimeError("No keys found in Sentinel JWKS response")
-        self._sentinel_keyset = keyset
-        return keyset
-
     # -- Lifespan ------------------------------------------------------------
 
     @property
@@ -232,7 +207,7 @@ class Sentinel:
         @asynccontextmanager
         async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             if self.mode == "authz":
-                await self.fetch_sentinel_keyset()
+                await self.fetch_sentinel_public_key()
             if self.actions:
                 await self.roles.register_actions(self.actions)
             yield
