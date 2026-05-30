@@ -124,6 +124,39 @@ class AuthzMiddleware(BaseHTTPMiddleware):
             return jwt.decode(token, signing_key.key, **decode_kwargs)
         return jwt.decode(token, self.idp_public_key, **decode_kwargs)
 
+    async def _decode_authz(self, token: str) -> dict:
+        """Verify a Sentinel authz token, selecting the key by its ``kid``.
+
+        Static ``sentinel_public_key`` mode pins one key (air-gapped, not
+        rotation-capable). Otherwise the key is resolved from the Sentinel
+        instance's keyset; an unknown ``kid`` triggers one refetch so a
+        rotated-in key is picked up without a restart.
+        """
+        if self._sentinel_public_key:
+            return jwt.decode(
+                token,
+                self._sentinel_public_key,
+                algorithms=[self.sentinel_algorithm],
+                audience=self.sentinel_audience,
+            )
+        kid = jwt.get_unverified_header(token).get("kid")
+        keyset = (
+            self._sentinel_instance.sentinel_keyset
+            if self._sentinel_instance
+            else None
+        )
+        if (not keyset or kid not in keyset) and self._sentinel_instance:
+            keyset = await self._sentinel_instance.fetch_sentinel_keyset()
+        key = (keyset or {}).get(kid) if kid else None
+        if key is None:
+            raise jwt.InvalidTokenError("Unknown authz key id")
+        return jwt.decode(
+            token,
+            key,
+            algorithms=[self.sentinel_algorithm],
+            audience=self.sentinel_audience,
+        )
+
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if request.method == "OPTIONS":
             return await call_next(request)
@@ -149,14 +182,9 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         except jwt.InvalidTokenError:
             return JSONResponse(status_code=401, content={"detail": "Invalid IdP token"})
 
-        # 4. Validate authz token
+        # 4. Validate authz token (key selected by kid; supports rotation)
         try:
-            authz_payload = jwt.decode(
-                authz_token,
-                self.sentinel_public_key,
-                algorithms=[self.sentinel_algorithm],
-                audience=self.sentinel_audience,
-            )
+            authz_payload = await self._decode_authz(authz_token)
         except jwt.ExpiredSignatureError:
             return JSONResponse(status_code=401, content={"detail": "Authz token expired"})
         except jwt.InvalidTokenError:
