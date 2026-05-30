@@ -170,12 +170,36 @@ async def _validate_oidc_token(
 
 async def _validate_github_token(idp_token: str) -> dict[str, Any]:
     """Validate a GitHub OAuth token via the GitHub API."""
+    # Fail closed if GitHub IdP isn't configured for this deployment — without
+    # client credentials we cannot verify the token was issued to Sentinel's
+    # OAuth app, so we cannot trust the token at all.
+    if not settings.github_client_id or not settings.github_client_secret:
+        raise IdpValidationError("GitHub IdP not configured on this deployment")
+
     headers = {
         "Authorization": f"Bearer {idp_token}",
         "Accept": "application/vnd.github+json",
     }
 
     async with httpx.AsyncClient(timeout=10.0) as client:
+        # App-binding check: GitHub access tokens are opaque and `/user`
+        # authenticates the underlying user regardless of which OAuth app
+        # holds the token. Without this step, any token from an
+        # attacker-registered OAuth app that the victim consented to can be
+        # replayed to impersonate the victim against Sentinel. The
+        # `/applications/{client_id}/token` endpoint authenticates as the
+        # OAuth app (HTTP Basic with client_id:client_secret) and returns 200
+        # only when the submitted token was issued to *that* app; 404
+        # otherwise. This is the OIDC `aud` equivalent for opaque tokens.
+        binding_resp = await client.post(
+            f"https://api.github.com/applications/{settings.github_client_id}/token",
+            auth=(settings.github_client_id, settings.github_client_secret),
+            headers={"Accept": "application/vnd.github+json"},
+            json={"access_token": idp_token},
+        )
+        if binding_resp.status_code != 200:
+            raise IdpValidationError("GitHub token was not issued to this application")
+
         # Fetch user profile
         profile_resp = await client.get("https://api.github.com/user", headers=headers)
         if profile_resp.status_code != 200:

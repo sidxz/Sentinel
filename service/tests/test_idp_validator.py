@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import time
 
+import httpx
 import jwt as pyjwt
 import pytest
+import respx
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 
+from src.config import settings
 from src.services.idp_validator import IdpValidationError, validate_idp_token
 
 
@@ -123,3 +126,133 @@ async def test_unverified_email_rejected(rsa_keypair, make_token):
 
     with pytest.raises(IdpValidationError, match="not verified"):
         await validate_idp_token(token, "google", _override_key=public_key)
+
+
+# ---------------------------------------------------------------------------
+# GitHub OAuth-app-binding tests
+#
+# Regression: without a binding check, ANY valid GitHub access token (including
+# one issued to an attacker-registered OAuth app after phishing a victim's
+# consent) is accepted, because `GET /user` authenticates the underlying user
+# regardless of which OAuth app holds the token. The fix consults GitHub's
+# app-scoped introspection endpoint `POST /applications/{client_id}/token`,
+# which returns 200 only when the token was issued to the authenticated app.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def github_app_creds(monkeypatch):
+    """Point settings at a known client_id/secret for the GitHub app check."""
+    monkeypatch.setattr(settings, "github_client_id", "sentinel-client-id")
+    monkeypatch.setattr(settings, "github_client_secret", "sentinel-secret")
+
+
+@pytest.mark.asyncio
+async def test_github_token_rejected_when_not_bound_to_sentinel_app(github_app_creds):
+    """A GitHub token valid at /user but not issued to Sentinel's OAuth app is rejected.
+
+    Attack path: attacker registers "EVIL-APP", phishes victim to authorize it,
+    captures the resulting access token, submits it to /authz/resolve. GitHub's
+    /user returns the victim's profile (the token IS valid), but GitHub's
+    app-scoped introspection returns 404 (the token was not issued to Sentinel's
+    app). Sentinel must fail closed here.
+    """
+    with respx.mock(assert_all_called=False) as mock:
+        mock.post(
+            "https://api.github.com/applications/sentinel-client-id/token"
+        ).mock(return_value=httpx.Response(404))
+        mock.get("https://api.github.com/user").mock(
+            return_value=httpx.Response(
+                200, json={"id": 123, "login": "victim", "name": "Victim"}
+            )
+        )
+        mock.get("https://api.github.com/user/emails").mock(
+            return_value=httpx.Response(
+                200,
+                json=[{"primary": True, "verified": True, "email": "v@example.com"}],
+            )
+        )
+
+        with pytest.raises(IdpValidationError, match="not issued"):
+            await validate_idp_token("attacker-held-victim-token", "github")
+
+
+@pytest.mark.asyncio
+async def test_github_token_accepted_when_bound_to_sentinel_app(github_app_creds):
+    """A GitHub token that passes the app-binding check authenticates normally."""
+    with respx.mock(assert_all_called=False) as mock:
+        mock.post(
+            "https://api.github.com/applications/sentinel-client-id/token"
+        ).mock(
+            return_value=httpx.Response(200, json={"id": 42, "login": "user"})
+        )
+        mock.get("https://api.github.com/user").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id": 42,
+                    "login": "user",
+                    "name": "Legit User",
+                    "avatar_url": "https://example.com/a.png",
+                },
+            )
+        )
+        mock.get("https://api.github.com/user/emails").mock(
+            return_value=httpx.Response(
+                200,
+                json=[
+                    {"primary": True, "verified": True, "email": "user@example.com"}
+                ],
+            )
+        )
+
+        result = await validate_idp_token("legit-sentinel-bound-token", "github")
+
+        assert result["sub"] == "github|42"
+        assert result["email"] == "user@example.com"
+        assert result["name"] == "Legit User"
+
+
+@pytest.mark.asyncio
+async def test_github_token_binding_uses_basic_auth_with_client_secret(
+    github_app_creds,
+):
+    """The app-binding request must authenticate with Basic(client_id:client_secret).
+
+    GitHub's /applications/{id}/token endpoint is only accessible to the OAuth
+    app itself — the authenticating principal is the app, not the token's user.
+    Without Basic auth (or with the wrong secret), GitHub returns 401 and the
+    check degrades to "always fail" regardless of token validity.
+    """
+    import base64
+
+    captured_auth: dict = {}
+
+    def _record_auth(request: httpx.Request) -> httpx.Response:
+        captured_auth["header"] = request.headers.get("authorization", "")
+        return httpx.Response(200, json={"id": 1, "login": "u"})
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.post(
+            "https://api.github.com/applications/sentinel-client-id/token"
+        ).mock(side_effect=_record_auth)
+        mock.get("https://api.github.com/user").mock(
+            return_value=httpx.Response(
+                200, json={"id": 1, "login": "u", "name": "U"}
+            )
+        )
+        mock.get("https://api.github.com/user/emails").mock(
+            return_value=httpx.Response(
+                200, json=[{"primary": True, "verified": True, "email": "u@e.com"}]
+            )
+        )
+
+        await validate_idp_token("t", "github")
+
+    expected = "Basic " + base64.b64encode(
+        b"sentinel-client-id:sentinel-secret"
+    ).decode()
+    assert captured_auth["header"] == expected, (
+        "Binding check must authenticate as the OAuth app via HTTP Basic; "
+        "otherwise GitHub rejects the request regardless of token validity."
+    )

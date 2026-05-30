@@ -11,7 +11,8 @@ _redis: redis.Redis | None = None
 
 # Key prefixes
 _REFRESH_PREFIX = "rt:"  # rt:{jti} → JSON {user_id, family_id}
-_FAMILY_PREFIX = "rtf:"  # rtf:{family_id} → set of jtis
+_FAMILY_PREFIX = "rtf:"  # rtf:{family_id} → set of refresh jtis
+_FAMILY_AJTIS_PREFIX = "rta:"  # rta:{family_id} → set of access jtis (all rotations)
 _BLACKLIST_PREFIX = "bl:"  # bl:{jti} → "1"
 _CLIENT_APP_PREFIX = "cap:"  # cap:{client_app_id} → set of family_ids
 _USER_FAMILIES_PREFIX = "uf:"  # uf:{user_id} → set of family_ids
@@ -46,6 +47,13 @@ async def store_refresh_token(
     pipe.set(f"{_REFRESH_PREFIX}{jti}", val, ex=ttl)
     pipe.sadd(f"{_FAMILY_PREFIX}{family_id}", jti)
     pipe.expire(f"{_FAMILY_PREFIX}{family_id}", ttl)
+    # Track every access_jti ever minted in this family so revoke_token_family
+    # can blacklist pre-rotation tokens. consume_refresh_token uses getdel on
+    # rt:{jti} which erases the paired access_jti from the refresh record —
+    # without this parallel set, revocation only catches the newest token.
+    if access_jti:
+        pipe.sadd(f"{_FAMILY_AJTIS_PREFIX}{family_id}", access_jti)
+        pipe.expire(f"{_FAMILY_AJTIS_PREFIX}{family_id}", ttl)
     pipe.sadd(f"{_USER_FAMILIES_PREFIX}{user_id}", family_id)
     pipe.expire(f"{_USER_FAMILIES_PREFIX}{user_id}", ttl)
     if client_app_id:
@@ -79,38 +87,35 @@ async def consume_refresh_token(
 async def revoke_token_family(family_id: str) -> int:
     """Revoke all refresh tokens in a family (theft detection).
 
-    Also blacklists any associated access tokens so they cannot be used
-    for the remainder of their lifetime.
+    Also blacklists every access token ever minted in the family so that
+    pre-rotation access tokens captured by an attacker (via XSS, device theft,
+    etc.) cannot be used for the remainder of their ~15-minute TTL after the
+    family has been killed.
 
     Returns the number of refresh tokens revoked.
     """
     r = await get_redis()
     jtis = await r.smembers(f"{_FAMILY_PREFIX}{family_id}")
-    if not jtis:
+    ajtis = await r.smembers(f"{_FAMILY_AJTIS_PREFIX}{family_id}")
+    if not jtis and not ajtis:
         return 0
-
-    # Read stored values first to extract access JTIs before deleting
-    access_jtis: list[str] = []
-    for jti in jtis:
-        val = await r.get(f"{_REFRESH_PREFIX}{jti}")
-        if val:
-            parts = val.split(":")
-            # Format: user_id:family_id:workspace_id:client_app_id:access_jti
-            if len(parts) >= 5 and parts[4]:
-                access_jtis.append(parts[4])
 
     pipe = r.pipeline()
     for jti in jtis:
         pipe.delete(f"{_REFRESH_PREFIX}{jti}")
     pipe.delete(f"{_FAMILY_PREFIX}{family_id}")
+    pipe.delete(f"{_FAMILY_AJTIS_PREFIX}{family_id}")
     results = await pipe.execute()
 
-    # Blacklist associated access tokens (default 900s / 15 min TTL)
+    # Blacklist every access_jti ever issued in this family (default 900s /
+    # 15 min TTL). Reading the parallel set catches access tokens whose
+    # refresh companions were already consumed (and thus getdel'd) before
+    # revocation fires.
     access_ttl = settings.access_token_expire_minutes * 60
-    for access_jti in access_jtis:
+    for access_jti in ajtis:
         await r.set(f"{_BLACKLIST_PREFIX}{access_jti}", "1", ex=access_ttl)
 
-    return sum(1 for x in results[:-1] if x)
+    return sum(1 for x in results[: len(jtis)] if x)
 
 
 async def revoke_all_user_tokens(user_id: str) -> int:
