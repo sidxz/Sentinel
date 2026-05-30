@@ -63,6 +63,10 @@ sed -i '' "s/\"@sentinel-auth\/js\": \"\\^.*\"/\"@sentinel-auth\/js\": \"^${VERS
 sed -i '' "s/\"@sentinel-auth\/js\": \"\\^.*\"/\"@sentinel-auth\/js\": \"^${VERSION}\"/" sdks/nextjs/package.json
 sed -i '' "s/\"@sentinel-auth\/react\": \"\\^.*\"/\"@sentinel-auth\/react\": \"^${VERSION}\"/" sdks/nextjs/package.json
 
+# Refresh the uv workspace lockfile so it tracks the bumped member versions.
+echo "Updating uv.lock..."
+uv lock
+
 # ── Verify builds ─────────────────────────────────────────────────
 
 echo "Building JS SDKs..."
@@ -84,7 +88,8 @@ git add \
   sdks/js/package.json \
   sdks/react/package.json \
   sdks/nextjs/package.json \
-  admin/package.json
+  admin/package.json \
+  uv.lock
 
 git commit -m "chore: bump all packages to ${VERSION}"
 

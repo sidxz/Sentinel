@@ -93,12 +93,12 @@ status: ## Check what's running
 	@curl -sf -o /dev/null http://localhost:9004 && echo "Admin:   running on :9004" || echo "Admin:   not running"
 
 lint: ## Run ruff linter and format check
-	uv run ruff check service/src/ sdk/src/
-	uv run ruff format --check service/src/ sdk/src/
+	uv run ruff check service/src/ service/tests/ sdk/src/ sdk/tests/
+	uv run ruff format --check service/src/ service/tests/ sdk/src/ sdk/tests/
 
 fmt: ## Auto-fix lint and formatting issues
-	uv run ruff check --fix service/src/ sdk/src/
-	uv run ruff format service/src/ sdk/src/
+	uv run ruff check --fix service/src/ service/tests/ sdk/src/ sdk/tests/
+	uv run ruff format service/src/ service/tests/ sdk/src/ sdk/tests/
 
 docs: ## Build documentation site
 	uv run --extra docs mkdocs build
