@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     admin_token_expire_minutes: int = 60
     authz_token_expire_minutes: int = 5
+    jwt_previous_public_key_paths: str = ""  # comma-separated retired public key paths (verify-only)
 
     # OAuth2 providers
     google_client_id: str = ""
@@ -82,6 +83,16 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def jwt_previous_public_key_paths_list(self) -> list[str]:
+        if not self.jwt_previous_public_key_paths:
+            return []
+        return [
+            p.strip()
+            for p in self.jwt_previous_public_key_paths.split(",")
+            if p.strip()
+        ]
 
     @property
     def admin_email_list(self) -> list[str]:
