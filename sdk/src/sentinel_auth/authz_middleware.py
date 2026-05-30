@@ -94,7 +94,11 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json"]
 
         jwks_url = idp_jwks_url or (sentinel_instance.idp_jwks_url if sentinel_instance else None)
-        self._idp_jwks_client: PyJWKClient | None = PyJWKClient(jwks_url) if jwks_url else None
+        # Bound the fetch so a slow remote IdP JWKS can't freeze the event loop
+        # for the 30s urllib default (the call is sync, like the Sentinel one).
+        self._idp_jwks_client: PyJWKClient | None = (
+            PyJWKClient(jwks_url, timeout=10) if jwks_url else None
+        )
 
         # Sentinel (authz token) key resolution. Static sentinel_public_key pins
         # one key (air-gapped); otherwise resolve by kid via PyJWKClient against
@@ -105,7 +109,7 @@ class AuthzMiddleware(BaseHTTPMiddleware):
             else None
         )
         self._sentinel_jwk_client: PyJWKClient | None = (
-            PyJWKClient(sentinel_jwks_url, timeout=10) if sentinel_jwks_url else None
+            PyJWKClient(sentinel_jwks_url, timeout=5) if sentinel_jwks_url else None
         )
 
     @property
