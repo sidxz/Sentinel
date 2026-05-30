@@ -117,6 +117,37 @@ def test_decode_rejects_unknown_kid(two_keys):
         key_provider._verification_cache = saved
 
 
+def test_rotation_continuity(two_keys, tmp_path, monkeypatch):
+    """A token signed by the OLD key still verifies while that key is in the
+    verify set, then fails once it is dropped."""
+    from src.auth import key_provider
+    from src.auth.jwt import _AUD_AUTHZ, decode_token
+    from src.config import settings
+
+    old_pub_pem = two_keys["cur_pub"]
+    token_from_old = _make_authz()
+
+    # Rotate: brand-new current key; the just-used key becomes verify-only.
+    new_priv, new_pub = _write_keypair(tmp_path, "new")
+    old_pub_path = tmp_path / "rotated_old_pub.pem"
+    old_pub_path.write_text(old_pub_pem)
+    monkeypatch.setattr(settings, "jwt_private_key_path", new_priv)
+    monkeypatch.setattr(settings, "jwt_public_key_path", new_pub)
+    monkeypatch.setattr(settings, "jwt_previous_public_key_paths", str(old_pub_path))
+    key_provider.reset_cache()
+
+    assert decode_token(token_from_old, audience=_AUD_AUTHZ)["svc"] == "svc"
+    new_token = _make_authz()
+    assert decode_token(new_token, audience=_AUD_AUTHZ)["svc"] == "svc"
+
+    # Drop the old key from the verify set → old token now rejected.
+    monkeypatch.setattr(settings, "jwt_previous_public_key_paths", "")
+    key_provider.reset_cache()
+    with pytest.raises(pyjwt.InvalidTokenError):
+        decode_token(token_from_old, audience=_AUD_AUTHZ)
+    assert decode_token(new_token, audience=_AUD_AUTHZ)["svc"] == "svc"
+
+
 def test_jwks_publishes_all_verification_keys(two_keys):
     from src.auth import jwks, key_provider
 
