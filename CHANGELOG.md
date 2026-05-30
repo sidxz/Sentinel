@@ -16,7 +16,7 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ---
 
-## [0.11.0] – 2026-04-17 — Security hardening
+## [0.11.0] – 2026-05-29 — Security hardening
 
 A co-ordinated fix for 17 findings across two rounds of deep security audit of
 AuthZ mode (V1–V15 from round 1; V16–V18 from a follow-up round-2 review).
@@ -46,6 +46,15 @@ required on the caller side.
 - **V16** — Refresh-family revocation now blacklists the paired access token's `jti`. `token_service.store_refresh_token`'s `access_jti` slot was always empty because `auth_service.issue_tokens` and `rotate_refresh_token` never forwarded it, leaving the access-token blacklist loop in `revoke_token_family` as dead code. On theft detection, the attacker's minted access token stayed valid for up to `access_token_expire_minutes` (default 15 min) after the family was killed. Fixed by decoding the minted access JWT and plumbing its `jti` into the refresh record.
 - **V17** — `GET /authz/idp/github/callback` now validates the OAuth `state` parameter against the session value stored at login start (constant-time compare, rejected first). The login endpoint generated `state` but never stored it, and the callback did not accept a `state` query parameter — the GitHub-proxy AuthZ flow had no CSRF protection on the callback. Restores parity with proxy mode (which enforces state via Authlib).
 - **V18** — Proxy-mode OAuth callbacks (`/auth/callback/{provider}` and `/auth/admin/callback/{provider}`) now use the same strict `is True` `email_verified` check as authz mode. V13 patched the helper in `idp_validator.py` but the two proxy-mode callbacks used an inline `not userinfo.get("email_verified", False)` that still accepted stringified booleans. Consolidated into a single `auth_service.is_email_verified_claim` helper used by all three paths.
+
+#### Round 3 — key rotation + follow-up hardening (2026-05-29)
+
+- **Graceful JWT signing-key rotation (closes ASVS MED-6)** — every token now carries a `kid`; JWKS publishes the current key plus any retired keys; `decode_token` selects the verifying key by `kid` (strict — unknown/missing `kid` rejected); the Python and JS/Next SDK middlewares resolve by `kid` and refetch JWKS on a rotated-in key. A leaked signing key can now be rotated without an outage. New config `JWT_PREVIOUS_PUBLIC_KEY_PATHS`; runbook at `docs/deployment/key-rotation.md`.
+- **GitHub OAuth app-binding** — `idp_validator` verifies an opaque GitHub token was issued to Sentinel's own OAuth app (`POST /applications/{client_id}/token`) and fails closed when GitHub IdP is unconfigured. Blocks replay of a token minted for an attacker-registered OAuth app (the `aud`-equivalent for opaque tokens).
+- **X-Forwarded-For rate-limit bypass** — the client IP is read from the configured trusted-proxy hop (`TRUSTED_PROXY_COUNT`, default 1) instead of the spoofable leftmost value, preventing per-IP throttle evasion behind a reverse proxy.
+- **Pre-provisioned account linking** — refines V4: an admin-pre-provisioned account with no linked `SocialAccount` is now linked to the first matching IdP sign-in instead of being permanently blocked by `CrossProviderEmailConflict`. Genuine cross-provider collisions (account already has a SocialAccount under a different provider) are still rejected.
+- **Hardening** — `register_resource` validates the owner is a workspace member (symmetric with share-grantee validation); workspace member search uses `icontains(autoescape=True)`; removed a misleading tautological workspace check in admin role assignment.
+- **SDK** — Sentinel-token verification now uses PyJWT's `PyJWKClient` (consistent with the IdP-token path; handles `kid` selection + JWKS refetch), with bounded fetch timeouts. `AuthzMiddleware`'s offline design (no per-request revocation check at the SDK edge) is documented; deactivation enforcement there is bounded by the short authz-token TTL.
 
 ### Breaking changes
 
