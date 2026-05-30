@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     behind_proxy: bool = (
         False  # Set True when behind a reverse proxy (nginx, ALB, etc.)
     )
+    trusted_proxy_count: int = (
+        1  # Number of trusted reverse proxies between Sentinel and the internet.
+        # The client IP is read from the Nth-from-right X-Forwarded-For entry, so
+        # client-controlled (leftmost) values cannot spoof the rate-limit bucket.
+    )
 
     # Admin
     admin_emails: str = ""

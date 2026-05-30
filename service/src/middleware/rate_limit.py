@@ -20,11 +20,21 @@ _fallback_request_count = 0
 
 
 def get_client_ip(request: Request) -> str:
-    """Extract client IP, respecting X-Forwarded-For when behind a proxy."""
+    """Extract the client IP, trusting only the configured proxy hop.
+
+    When behind a reverse proxy, the real client IP is the ``trusted_proxy_count``-th
+    entry from the RIGHT of ``X-Forwarded-For`` — the hop our trusted proxy
+    appended. The leftmost entries are client-controlled and must never be
+    trusted, otherwise an attacker can rotate them to evade per-IP rate limits.
+    Falls back to the direct peer when the chain is shorter than expected.
+    """
     if settings.behind_proxy:
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+            idx = settings.trusted_proxy_count
+            if parts and 0 < idx <= len(parts):
+                return parts[-idx]
     if request.client:
         return request.client.host
     return "unknown"
