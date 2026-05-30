@@ -19,6 +19,18 @@ async def register_resource(
     owner_id: uuid.UUID,
     visibility: str = "workspace",
 ) -> ResourcePermission:
+    # Validate the owner belongs to the workspace, symmetric with
+    # share_resource's grantee check — prevents registering a resource owned by
+    # a user outside the workspace (data-integrity / cross-workspace hardening).
+    from src.models.workspace import WorkspaceMembership
+
+    member_stmt = select(WorkspaceMembership).where(
+        WorkspaceMembership.workspace_id == workspace_id,
+        WorkspaceMembership.user_id == owner_id,
+    )
+    if not (await db.execute(member_stmt)).scalar_one_or_none():
+        raise ValueError("Owner is not a member of this workspace")
+
     # Atomic upsert: ON CONFLICT DO NOTHING avoids race conditions
     stmt = (
         pg_insert(ResourcePermission)

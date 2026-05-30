@@ -1109,7 +1109,10 @@ async def assign_role_member(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        # Fetch role to obtain its workspace_id for cross-workspace isolation check
+        # Confirm the role exists for a clean 404. Admin tokens are global (the
+        # User model has a single is_admin flag, no per-workspace admin), so
+        # there is no separate workspace context to scope this against — passing
+        # role.workspace_id here would be a tautology, not an isolation check.
         from src.models.role import Role
 
         role = await db.get(Role, role_id)
@@ -1120,7 +1123,6 @@ async def assign_role_member(
             user_id,
             role_id,
             assigned_by=uuid.UUID(admin["sub"]),
-            workspace_id=role.workspace_id,
         )
     except HTTPException:
         raise

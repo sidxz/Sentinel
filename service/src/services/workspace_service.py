@@ -82,8 +82,12 @@ async def list_members(
         .where(WorkspaceMembership.workspace_id == workspace_id)
     )
     if q:
-        pattern = f"%{q}%"
-        stmt = stmt.where(User.name.ilike(pattern) | User.email.ilike(pattern))
+        # autoescape so %/_ in user input are treated literally, not as LIKE
+        # wildcards (consistent with admin_service search).
+        stmt = stmt.where(
+            User.name.icontains(q, autoescape=True)
+            | User.email.icontains(q, autoescape=True)
+        )
     stmt = stmt.order_by(WorkspaceMembership.joined_at)
     if limit is not None:
         stmt = stmt.limit(limit)
