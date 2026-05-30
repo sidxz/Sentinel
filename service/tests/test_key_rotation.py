@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import jwt as pyjwt
 import pytest
@@ -57,6 +58,63 @@ def test_verification_keys_include_current_and_previous(two_keys):
     old_kid = key_provider.thumbprint_kid(two_keys["old_pub"])
     assert set(keys) == {cur_kid, old_kid}
     assert keys[cur_kid] == two_keys["cur_pub"]
+
+
+def _make_authz(**overrides):
+    from src.auth.jwt import create_authz_token
+
+    kwargs = dict(
+        user_id=uuid.uuid4(),
+        idp_sub="google|1",
+        workspace_id=uuid.uuid4(),
+        workspace_slug="w",
+        workspace_role="viewer",
+        actions=[],
+        service_name="svc",
+    )
+    kwargs.update(overrides)
+    return create_authz_token(**kwargs)
+
+
+def test_issued_token_has_kid(two_keys):
+    from src.auth import key_provider
+
+    token = _make_authz()
+    header = pyjwt.get_unverified_header(token)
+    _, expected_kid = key_provider.signing_key()
+    assert header["kid"] == expected_kid
+
+
+def test_decode_rejects_token_without_kid(two_keys):
+    from src.auth import key_provider
+    from src.auth.jwt import _AUD_AUTHZ, decode_token
+    from src.config import settings
+
+    private_pem, _ = key_provider.signing_key()
+    payload = {
+        "iss": settings.base_url,
+        "sub": str(uuid.uuid4()),
+        "aud": _AUD_AUTHZ,
+        "type": "authz",
+        "exp": datetime.now(UTC) + timedelta(minutes=5),
+    }
+    no_kid = pyjwt.encode(payload, private_pem, algorithm="RS256")
+    with pytest.raises(pyjwt.InvalidTokenError):
+        decode_token(no_kid, audience=_AUD_AUTHZ)
+
+
+def test_decode_rejects_unknown_kid(two_keys):
+    from src.auth import key_provider
+    from src.auth.jwt import _AUD_AUTHZ, decode_token
+
+    token = _make_authz()
+    saved = key_provider._verification_cache
+    key_provider._verification_cache = {}
+    try:
+        with pytest.raises(pyjwt.InvalidTokenError):
+            decode_token(token, audience=_AUD_AUTHZ)
+    finally:
+        key_provider._verification_cache = saved
 
 
 def test_previous_public_key_paths_parses_csv():

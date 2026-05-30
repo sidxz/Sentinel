@@ -3,28 +3,21 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 
+from src.auth import key_provider
 from src.config import settings
 
-_private_key: str | None = None
-_public_key: str | None = None
 
-
-def _get_private_key() -> str:
-    global _private_key
-    if _private_key is None:
-        _private_key = settings.jwt_private_key_path.read_text()
-    return _private_key
-
-
-def _get_public_key() -> str:
-    global _public_key
-    if _public_key is None:
-        _public_key = settings.jwt_public_key_path.read_text()
-    return _public_key
+def _sign(payload: dict) -> str:
+    private_pem, kid = key_provider.signing_key()
+    return jwt.encode(
+        payload, private_pem, algorithm=settings.jwt_algorithm, headers={"kid": kid}
+    )
 
 
 def get_public_key() -> str:
-    return _get_public_key()
+    """Current signing key's public PEM (kept for back-compat)."""
+    _, kid = key_provider.signing_key()
+    return key_provider.verification_keys()[kid]
 
 
 _AUD_ACCESS = "sentinel:access"
@@ -59,7 +52,7 @@ def create_access_token(
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
         "type": "access",
     }
-    return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)
+    return _sign(payload)
 
 
 def create_admin_token(user_id: uuid.UUID, email: str, name: str) -> str:
@@ -76,7 +69,7 @@ def create_admin_token(user_id: uuid.UUID, email: str, name: str) -> str:
         "exp": now + timedelta(minutes=settings.admin_token_expire_minutes),
         "type": "admin_access",
     }
-    return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)
+    return _sign(payload)
 
 
 def create_refresh_token(user_id: uuid.UUID, family_id: str | None = None) -> str:
@@ -91,7 +84,7 @@ def create_refresh_token(user_id: uuid.UUID, family_id: str | None = None) -> st
         "exp": now + timedelta(days=settings.refresh_token_expire_days),
         "type": "refresh",
     }
-    return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)
+    return _sign(payload)
 
 
 def create_authz_token(
@@ -126,18 +119,24 @@ def create_authz_token(
         "exp": now + timedelta(minutes=settings.authz_token_expire_minutes),
         "type": "authz",
     }
-    return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)
+    return _sign(payload)
 
 
 def decode_token(token: str, audience: str | list[str]) -> dict:
-    """Decode and validate a JWT.
+    """Decode and validate a JWT, selecting the verifying key by its kid.
 
     Audience is required — callers must explicitly declare expected audience.
-    Decode algorithm is hardcoded to RS256 to prevent algorithm confusion attacks.
+    Algorithm is hardcoded to RS256 to prevent algorithm confusion attacks.
+    A token whose kid is missing or not in the current verification set is
+    rejected (strict — no legacy fallback).
     """
+    kid = jwt.get_unverified_header(token).get("kid")
+    keys = key_provider.verification_keys()
+    if not kid or kid not in keys:
+        raise jwt.InvalidTokenError("Unknown or missing key id")
     return jwt.decode(
         token,
-        _get_public_key(),
+        keys[kid],
         algorithms=["RS256"],  # Security: hardcode to prevent algorithm substitution
         audience=audience,
         issuer=_ISSUER,
