@@ -39,7 +39,7 @@ Spec: `docs/superpowers/specs/2026-06-09-organizations-email-domain-tenancy-desi
 - `service/src/services/auth_service.py` — `find_or_create_user` gains `organization_id`; `issue_tokens` + `rotate_refresh_token` load org + enforce allowlist + pass claims.
 - `service/src/api/auth_routes.py:212-221` — resolve org, gate sign-in (403), pass `organization_id`.
 - `service/src/auth/jwt.py:30-55,90-122` — `create_access_token` + `create_authz_token` gain org params/claims.
-- `service/src/api/authz_routes.py:290-314` — load org + pass claims into `create_authz_token`.
+- `service/src/api/authz_routes.py` — load org + pass claims into `create_authz_token` (Task 7); **and** (added during final review — `/authz/resolve` is a third sign-in/token-mint path) resolve + gate the org at JIT provisioning, pass `organization_id` into `find_or_create_user`, and enforce `workspace_allows_org` before minting. Covered by `tests/test_authz_org_gate.py`.
 - `service/src/services/workspace_service.py:108-129` — `invite_member` enforces allowed-orgs.
 - `service/tests/test_preprovisioned_link.py` — pass `organization_id` to the updated `find_or_create_user`.
 

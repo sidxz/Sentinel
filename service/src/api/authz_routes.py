@@ -16,7 +16,6 @@ from src.auth.jwt import create_authz_token
 from src.config import settings
 from src.database import get_db
 from src.middleware.rate_limit import limiter
-from src.models.organization import Organization
 from src.models.service_app import ServiceApp
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.schemas.authz import (
@@ -26,7 +25,7 @@ from src.schemas.authz import (
     AuthzWorkspaceOption,
     AuthzWorkspaceResponse,
 )
-from src.services import auth_service
+from src.services import auth_service, organization_service
 from src.services.idp_validator import IdpValidationError, validate_idp_token
 from src.services.role_service import get_user_actions
 
@@ -228,7 +227,21 @@ async def resolve(
         )
         raise HTTPException(status_code=400, detail=str(e))
 
-    # 2. Find or create user (JIT provisioning)
+    # 2. Resolve the org from the verified IdP email and gate sign-in — the same
+    # domain restriction the browser OAuth callback applies, so AuthZ mode cannot
+    # be a side door around it. Then JIT-provision the user with that org.
+    org = await organization_service.resolve_organization(db, idp_claims["email"])
+    if org is None:
+        logger.warning(
+            "authz_resolve_org_not_permitted",
+            provider=body.provider,
+            service=service_ctx.service_name,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Sign-in is not permitted for this email domain.",
+        )
+
     try:
         user = await auth_service.find_or_create_user(
             db=db,
@@ -236,6 +249,7 @@ async def resolve(
             provider_user_id=idp_claims["sub"],
             email=idp_claims["email"],
             name=idp_claims["name"],
+            organization_id=org.id,
             avatar_url=idp_claims.get("picture"),
         )
     except auth_service.CrossProviderEmailConflict as e:
@@ -288,12 +302,22 @@ async def resolve(
             status_code=403, detail="User is not a member of this workspace"
         )
 
+    # Enforce the workspace's allowed-orgs list (the authoritative gate, same as
+    # issue_tokens) so a disallowed org cannot mint an authz token either.
+    if not await organization_service.workspace_allows_org(
+        db, body.workspace_id, user.organization_id
+    ):
+        logger.warning(
+            "authz_resolve_org_not_allowed",
+            user_id=str(user.id),
+            workspace_id=str(body.workspace_id),
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="User's organization is not permitted in this workspace",
+        )
+
     workspace = await db.get(Workspace, body.workspace_id)
-    org = (
-        await db.get(Organization, user.organization_id)
-        if user.organization_id
-        else None
-    )
 
     # 5. Get RBAC actions for this service
     actions = await get_user_actions(

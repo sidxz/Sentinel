@@ -136,6 +136,14 @@ In the OAuth callback, immediately after the existing `email_verified` check
 Disabling the public org therefore blocks all public-org users at their next
 sign-in, by the same mechanism.
 
+The **AuthZ-mode** path (`POST /authz/resolve`, service-to-service JIT
+provisioning) is a third sign-in path and applies the **same** gate: it resolves
+the org from the validated IdP email and rejects (403) when `None`, so AuthZ mode
+cannot be a side door around the domain restriction. The **admin** OAuth callback
+is the deliberate exception — it resolves and persists the org but does not gate,
+because admin access is already restricted to `is_admin` users and hard-gating
+there could lock every admin out of the panel that configures orgs.
+
 ### 4. Token claims (`service/src/auth/jwt.py`)
 
 `create_access_token` adds, next to `wid`/`wslug`:
@@ -161,7 +169,10 @@ types, react/nextjs re-exports). No verification-logic change; additive claims.
   **authoritative** gate: require an existing membership **AND** (the workspace has
   no allowed-org rows **OR** the user's org ∈ the allowed set). Tightening a
   workspace's allowlist later thus stops disallowed existing members from getting
-  tokens at next issuance (intended enforcement; can strand prior members).
+  tokens at next issuance (intended enforcement; can strand prior members). The
+  refresh path (`rotate_refresh_token`) and the **AuthZ mint** (`/authz/resolve`)
+  apply the identical check before issuing a token, so no token-minting path
+  bypasses the allowlist.
 
 ### 6. Admin surface
 
