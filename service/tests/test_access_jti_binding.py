@@ -27,6 +27,8 @@ def _fake_user() -> MagicMock:
     user.name = "Test User"
     user.is_active = True
     user.is_admin = False
+    # No org — avoids the db.get(Organization, ...) branch.
+    user.organization_id = None
     return user
 
 
@@ -93,7 +95,9 @@ async def test_rotate_refresh_token_forwards_access_jti_to_store():
     workspace_id = uuid.uuid4()
     family_id = str(uuid.uuid4())
 
-    # Mock DB: user lookup + workspace membership + workspace + groups
+    # Mock DB: user lookup + workspace membership + workspace + groups.
+    # user.organization_id is None (set in _fake_user) so db.get(Organization)
+    # is skipped; only User and Workspace are fetched.
     workspace = MagicMock()
     workspace.id = workspace_id
     workspace.slug = "test-ws"

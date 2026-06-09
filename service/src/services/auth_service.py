@@ -13,6 +13,7 @@ from src.auth.jwt import (
 from src.config import settings
 from src.schemas.validators import sanitize_url, strip_html
 from src.models.group import GroupMembership
+from src.models.organization import Organization
 from src.models.user import SocialAccount, User
 from src.models.workspace import WorkspaceMembership
 from src.services import token_service
@@ -170,6 +171,11 @@ async def issue_tokens(
     result = await db.execute(stmt)
     group_ids = [row[0] for row in result.all()]
 
+    org = (
+        await db.get(Organization, user.organization_id)
+        if user.organization_id
+        else None
+    )
     access_token = create_access_token(
         user_id=user.id,
         email=user.email,
@@ -178,6 +184,9 @@ async def issue_tokens(
         workspace_slug=workspace_slug,
         workspace_role=membership.role,
         groups=group_ids,
+        org_id=str(org.id) if org else None,
+        org_slug=org.slug if org else None,
+        org_is_public=org.is_public if org else False,
     )
     # family_id is generated inside create_refresh_token and embedded in the JWT
     refresh_token = create_refresh_token(user_id=user.id)
@@ -266,6 +275,11 @@ async def rotate_refresh_token(
     db_result = await db.execute(stmt)
     group_ids = [row[0] for row in db_result.all()]
 
+    org = (
+        await db.get(Organization, user.organization_id)
+        if user.organization_id
+        else None
+    )
     # Issue new tokens
     new_access = create_access_token(
         user_id=user.id,
@@ -275,6 +289,9 @@ async def rotate_refresh_token(
         workspace_slug=workspace.slug,
         workspace_role=membership.role,
         groups=group_ids,
+        org_id=str(org.id) if org else None,
+        org_slug=org.slug if org else None,
+        org_is_public=org.is_public if org else False,
     )
     new_refresh = create_refresh_token(user_id=user.id, family_id=family_id)
 

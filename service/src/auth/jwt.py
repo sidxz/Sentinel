@@ -35,6 +35,9 @@ def create_access_token(
     workspace_slug: str,
     workspace_role: str,
     groups: list[uuid.UUID],
+    org_id: str | None,
+    org_slug: str | None,
+    org_is_public: bool,
 ) -> str:
     now = datetime.now(UTC)
     payload = {
@@ -48,6 +51,9 @@ def create_access_token(
         "wslug": workspace_slug,
         "wrole": workspace_role,
         "groups": [str(g) for g in groups],
+        "oid": org_id,
+        "oslug": org_slug,
+        "opub": org_is_public,
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
         "type": "access",
