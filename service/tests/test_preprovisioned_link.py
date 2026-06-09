@@ -91,3 +91,23 @@ async def test_real_cross_provider_collision_still_rejected():
             name="Victim",
             organization_id=uuid.uuid4(),
         )
+
+
+@pytest.mark.asyncio
+async def test_organization_id_may_be_none_for_new_user():
+    # Callers that do not org-gate (e.g. admin sign-in) pass organization_id=None.
+    # execute() order: SocialAccount-by-provider (miss), User-by-email (miss) →
+    # brand-new user created with a null org.
+    session = _FakeSession(results=[None, None])
+
+    user = await find_or_create_user(
+        session,
+        provider="google",
+        provider_user_id="google|9",
+        email="new@example.com",
+        name="New",
+        organization_id=None,
+    )
+
+    assert user.organization_id is None
+    assert session.committed

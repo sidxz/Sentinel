@@ -695,7 +695,11 @@ Expected: FAIL with `TypeError: find_or_create_user() got an unexpected keyword 
 
 - [ ] **Step 3: Add the `organization_id` parameter and set it on every path** (`service/src/services/auth_service.py`)
 
-Change the `find_or_create_user` signature (lines 37-45) to add `organization_id`:
+Change the `find_or_create_user` signature (lines 37-45) to add `organization_id`.
+It is `uuid.UUID | None`: sign-in policy (rejecting an unresolved org) is a
+*route* concern, so the service simply persists whatever the caller resolved.
+The user-facing callback passes a real id (it 403s on `None` first); the admin
+callback passes `org.id if org else None` without gating (see note below).
 
 ```python
 async def find_or_create_user(
@@ -704,7 +708,7 @@ async def find_or_create_user(
     provider_user_id: str,
     email: str,
     name: str,
-    organization_id: uuid.UUID,
+    organization_id: uuid.UUID | None,
     avatar_url: str | None = None,
     provider_data: dict | None = None,
 ) -> User:
@@ -774,6 +778,22 @@ Then, immediately before the `try:` that calls `find_or_create_user` (currently 
 ```
 
 (The existing `except auth_service.CrossProviderEmailConflict:` block immediately after is unchanged.)
+
+**Also update the second caller — `admin_callback`** (same file, the admin-panel
+OAuth callback). It also calls `find_or_create_user` and would break under the new
+signature. Resolve + persist the org but do NOT gate (admin access is already gated
+by `is_admin`; hard org-gating here risks locking every admin out of the panel used
+to configure orgs). Before its `try:` that calls `find_or_create_user`, add:
+
+```python
+        # Resolve + persist the admin's org for record-keeping, but do NOT gate
+        # admin sign-in on it. Admin access is gated by is_admin (below); hard
+        # org-gating here would risk locking every admin out of the panel used to
+        # configure orgs (e.g. if the public org is disabled).
+        org = await organization_service.resolve_organization(db, email)
+```
+
+and pass `organization_id=org.id if org else None` into that `find_or_create_user(...)` call.
 
 - [ ] **Step 5: Run tests to verify they pass**
 

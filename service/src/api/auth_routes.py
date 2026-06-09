@@ -504,6 +504,11 @@ async def admin_callback(
             avatar_url = userinfo.get("picture")
             profile = dict(userinfo)
 
+        # Resolve + persist the admin's org for record-keeping, but do NOT gate
+        # admin sign-in on it. Admin access is gated by is_admin (below); hard
+        # org-gating here would risk locking every admin out of the panel used to
+        # configure orgs (e.g. if the public org is disabled).
+        org = await organization_service.resolve_organization(db, email)
         try:
             user = await auth_service.find_or_create_user(
                 db=db,
@@ -511,6 +516,7 @@ async def admin_callback(
                 provider_user_id=provider_user_id,
                 email=email,
                 name=name,
+                organization_id=org.id if org else None,
                 avatar_url=avatar_url,
                 provider_data=profile,
             )

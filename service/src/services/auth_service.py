@@ -40,11 +40,16 @@ async def find_or_create_user(
     provider_user_id: str,
     email: str,
     name: str,
-    organization_id: uuid.UUID,
+    organization_id: uuid.UUID | None,
     avatar_url: str | None = None,
     provider_data: dict | None = None,
 ) -> User:
-    """Find existing user by social account or create a new one."""
+    """Find existing user by social account or create a new one.
+
+    ``organization_id`` is the caller-resolved org for this email (None when the
+    caller does not org-gate, e.g. admin sign-in). Sign-in policy (rejecting an
+    unresolved org) lives in the route, not here.
+    """
     avatar_url = sanitize_url(avatar_url)
     # Check if social account exists
     stmt = select(SocialAccount).where(
