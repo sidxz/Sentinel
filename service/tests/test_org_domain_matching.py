@@ -2,6 +2,10 @@
 
 import uuid
 
+import pytest
+
+from src.services import organization_service as org_svc
+
 
 def test_organization_models_have_expected_shape():
     from src.models.organization import (
@@ -23,11 +27,12 @@ def test_organization_models_have_expected_shape():
         assert col in OrganizationDomain.__table__.columns
     # Domain must be globally unique (a domain cannot belong to two orgs).
     assert any(
-        c.name == "uq_org_domain"
-        for c in OrganizationDomain.__table__.constraints
+        c.name == "uq_org_domain" for c in OrganizationDomain.__table__.constraints
     )
 
-    assert WorkspaceAllowedOrganization.__tablename__ == "workspace_allowed_organizations"
+    assert (
+        WorkspaceAllowedOrganization.__tablename__ == "workspace_allowed_organizations"
+    )
     for col in ("id", "workspace_id", "organization_id"):
         assert col in WorkspaceAllowedOrganization.__table__.columns
 
@@ -47,11 +52,6 @@ def test_user_has_organization_id_column():
     assert User.__table__.columns["organization_id"].nullable is True
 
 
-import pytest
-
-from src.services import organization_service as org_svc
-
-
 @pytest.mark.parametrize(
     "raw,expected",
     [
@@ -62,10 +62,12 @@ from src.services import organization_service as org_svc
         ("", None),
         (None, None),
         ("noatsign-nodot", None),
-        ("a@b@c.com", None),          # multiple '@' is malformed -> fail closed
-        ("user@", None),              # empty domain
-        ("tamu.edu.", None),          # trailing dot
-        ("@tamu.edu", "tamu.edu"),    # leading '@' ok, single '@'
+        ("a@b@c.com", None),  # multiple '@' is malformed -> fail closed
+        ("user@", None),  # empty domain
+        ("tamu.edu.", None),  # trailing dot
+        ("@tamu.edu", "tamu.edu"),  # leading '@' ok, single '@'
+        ("a@\x00.com", None),  # null byte -> fail closed
+        ("a@" + "x" * 250 + ".com", None),  # over RFC 1035 253-char limit
     ],
 )
 def test_normalize_domain(raw, expected):
@@ -76,6 +78,12 @@ def test_match_exact_wins():
     a = uuid.uuid4()
     rows = [(a, "tamu.edu", False)]
     assert org_svc.match_org_id("tamu.edu", rows) == a
+
+
+def test_match_is_case_insensitive_on_input():
+    a = uuid.uuid4()
+    # match_org_id lowercases its input defensively.
+    assert org_svc.match_org_id("TAMU.edu", [(a, "tamu.edu", False)]) == a
 
 
 def test_match_subdomain_only_when_flag_set():

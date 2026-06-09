@@ -15,8 +15,8 @@ def normalize_domain(value: str | None) -> str | None:
 
     Lowercases, strips, takes the part after a single '@' (if present),
     IDNA-encodes unicode labels, and returns None for anything malformed
-    (empty, multiple '@', no dot, leading/trailing dot). This keys org lookups,
-    so it must fail closed.
+    (empty, multiple '@', no dot, leading/trailing dot, null byte, or over the
+    RFC 1035 253-char limit). This keys org lookups, so it must fail closed.
     """
     if not value:
         return None
@@ -28,6 +28,9 @@ def normalize_domain(value: str | None) -> str | None:
     if not candidate or "." not in candidate:
         return None
     if candidate.startswith(".") or candidate.endswith("."):
+        return None
+    # .encode("idna") does not reject these structural invalids; guard explicitly.
+    if "\x00" in candidate or len(candidate) > 253:
         return None
     try:
         candidate = candidate.encode("idna").decode("ascii")
@@ -43,7 +46,11 @@ def match_org_id(
     """Pure resolver over (org_id, rule_domain, include_subdomains) rows from
     *enabled* orgs. Exact match is authoritative; otherwise the most specific
     (longest) subdomain rule whose pattern the domain is a sub-label of wins.
+
+    ``domain`` is lowercased defensively so the function is correct even if a
+    caller passes a non-normalized value (rules are lowercased below too).
     """
+    domain = domain.lower()
     best_id: uuid.UUID | None = None
     best_len = -1
     for org_id, rule_domain, include_subdomains in rows:

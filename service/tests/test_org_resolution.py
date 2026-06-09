@@ -7,10 +7,6 @@ import pytest
 from src.services import organization_service as org_svc
 
 
-class _DomainRow(tuple):
-    """Stand-in for a (org_id, domain, include_subdomains) result row."""
-
-
 class _ExecResult:
     def __init__(self, *, rows=None, scalar=None, scalars=None):
         self._rows = rows or []
@@ -65,8 +61,8 @@ async def test_resolve_falls_back_to_public():
     public = object()
     session = _FakeSession(
         exec_results=[
-            _ExecResult(rows=[]),          # no domain match
-            _ExecResult(scalar=public),    # enabled public org
+            _ExecResult(rows=[]),  # no domain match
+            _ExecResult(scalar=public),  # enabled public org
         ]
     )
     result = await org_svc.resolve_organization(session, "someone@gmail.com")
@@ -93,7 +89,9 @@ async def test_resolve_malformed_email_short_circuits_to_none():
 @pytest.mark.asyncio
 async def test_workspace_open_when_no_rows():
     session = _FakeSession(exec_results=[_ExecResult(scalars=[])])
-    assert await org_svc.workspace_allows_org(session, uuid.uuid4(), uuid.uuid4()) is True
+    assert (
+        await org_svc.workspace_allows_org(session, uuid.uuid4(), uuid.uuid4()) is True
+    )
 
 
 @pytest.mark.asyncio
