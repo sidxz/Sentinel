@@ -156,6 +156,8 @@ async def test_remove_domain_wrong_org_not_found():
 
     db = _FakeDB(get_results=[_Dom()])
     with pytest.raises(svc.OrgNotFound):
+        # the domain exists but its organization_id != the org_id we pass, so
+        # the cross-org guard (not the missing-row branch) fires.
         await svc.remove_domain(db, uuid.uuid4(), uuid.uuid4())
 
 
@@ -197,3 +199,19 @@ async def test_set_allowed_orgs_empty_clears():
     db = _FakeDB(get_results=[object()], execute_results=[_Result()])  # delete only
     await svc.set_workspace_allowed_orgs(db, ws_id, [])
     assert not [o for o in db.added if isinstance(o, WorkspaceAllowedOrganization)]
+
+
+@pytest.mark.asyncio
+async def test_list_org_users_returns_users_and_total():
+    user = object()
+    db = _FakeDB(execute_results=[_Result(scalar=3), _Result(scalars=[user])])
+    users, total = await svc.list_org_users(db, uuid.uuid4(), limit=10, offset=0)
+    assert total == 3
+    assert users == [user]
+
+
+@pytest.mark.asyncio
+async def test_list_org_users_empty_org():
+    db = _FakeDB(execute_results=[_Result(scalar=0), _Result(scalars=[])])
+    users, total = await svc.list_org_users(db, uuid.uuid4())
+    assert users == [] and total == 0
