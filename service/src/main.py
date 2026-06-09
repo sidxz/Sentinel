@@ -7,6 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from src.api.admin_routes import router as admin_router
+from src.api.org_admin_routes import router as org_admin_router
 from src.api.auth_routes import router as auth_router
 from src.api.authz_routes import router as authz_router
 from src.api.group_routes import router as group_router
@@ -185,6 +186,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 app.include_router(admin_router)
+app.include_router(org_admin_router)
 app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(workspace_router)
