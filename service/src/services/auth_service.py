@@ -16,7 +16,7 @@ from src.models.group import GroupMembership
 from src.models.organization import Organization
 from src.models.user import SocialAccount, User
 from src.models.workspace import WorkspaceMembership
-from src.services import token_service
+from src.services import organization_service, token_service
 
 
 class CrossProviderEmailConflict(Exception):
@@ -159,6 +159,11 @@ async def issue_tokens(
     if not membership:
         raise ValueError("User is not a member of this workspace")
 
+    if not await organization_service.workspace_allows_org(
+        db, workspace_id, user.organization_id
+    ):
+        raise ValueError("User's organization is not permitted in this workspace")
+
     # Get group IDs
     stmt = (
         select(GroupMembership.group_id)
@@ -257,6 +262,12 @@ async def rotate_refresh_token(
     if not membership:
         await token_service.revoke_token_family(family_id)
         raise ValueError("User is no longer a member of this workspace")
+
+    if not await organization_service.workspace_allows_org(
+        db, workspace_id, user.organization_id
+    ):
+        await token_service.revoke_token_family(family_id)
+        raise ValueError("User's organization is not permitted in this workspace")
 
     # Get workspace slug
     from src.models.workspace import Workspace

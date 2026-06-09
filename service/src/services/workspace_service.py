@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
-from src.services import token_service
+from src.services import organization_service, token_service
 
 
 async def create_workspace(
@@ -120,6 +120,11 @@ async def invite_member(
     user = user.scalar_one_or_none()
     if not user:
         raise ValueError("User not found")
+
+    if not await organization_service.workspace_allows_org(
+        db, workspace_id, user.organization_id
+    ):
+        raise ValueError("User's organization is not permitted in this workspace")
 
     membership = WorkspaceMembership(
         workspace_id=workspace_id, user_id=user.id, role=role

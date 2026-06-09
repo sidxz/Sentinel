@@ -33,7 +33,10 @@ def _fake_user() -> MagicMock:
 
 
 def _fake_db_for_issue(membership_role: str = "editor") -> MagicMock:
-    """Mock DB that lets ``issue_tokens`` progress past its two queries."""
+    """Mock DB that lets ``issue_tokens`` progress past its queries.
+
+    Queues: membership check, workspace_allows_org (open = empty scalars), groups.
+    """
     db = MagicMock()
     membership = MagicMock()
     membership.role = membership_role
@@ -41,10 +44,18 @@ def _fake_db_for_issue(membership_role: str = "editor") -> MagicMock:
     membership_result = MagicMock()
     membership_result.scalar_one_or_none.return_value = membership
 
+    # workspace_allows_org: empty allowed-org set => open workspace
+    allows_org_scalars = MagicMock()
+    allows_org_scalars.all.return_value = []
+    allows_org_result = MagicMock()
+    allows_org_result.scalars.return_value = allows_org_scalars
+
     groups_result = MagicMock()
     groups_result.all.return_value = []
 
-    db.execute = AsyncMock(side_effect=[membership_result, groups_result])
+    db.execute = AsyncMock(
+        side_effect=[membership_result, allows_org_result, groups_result]
+    )
     return db
 
 
@@ -110,9 +121,18 @@ async def test_rotate_refresh_token_forwards_access_jti_to_store():
 
     membership_result = MagicMock()
     membership_result.scalar_one_or_none.return_value = membership
+
+    # workspace_allows_org: empty allowed-org set => open workspace
+    allows_org_scalars = MagicMock()
+    allows_org_scalars.all.return_value = []
+    allows_org_result = MagicMock()
+    allows_org_result.scalars.return_value = allows_org_scalars
+
     groups_result = MagicMock()
     groups_result.all.return_value = []
-    db.execute = AsyncMock(side_effect=[membership_result, groups_result])
+    db.execute = AsyncMock(
+        side_effect=[membership_result, allows_org_result, groups_result]
+    )
 
     # Build a real refresh token so rotate can decode it
     from src.auth.jwt import create_refresh_token
