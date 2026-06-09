@@ -303,7 +303,7 @@ class AdminOrgDomainCreateRequest(BaseModel):
 
 
 class AdminWorkspaceAllowedOrgsRequest(BaseModel):
-    organization_ids: list[uuid.UUID]
+    organization_ids: list[uuid.UUID] = Field(max_length=500)
 
 
 class AdminWorkspaceAllowedOrgsResponse(BaseModel):

@@ -140,3 +140,10 @@ def test_list_org_users_unknown_org_returns_404():
     client = TestClient(_app(_FakeDB(get_results=[None])))
     resp = client.get(f"/admin/organizations/{uuid.uuid4()}/users")
     assert resp.status_code == 404
+
+
+def test_list_org_users_negative_limit_returns_422():
+    # ge=1 bound rejects a negative limit at validation time (was a 500 before).
+    client = TestClient(_app(_FakeDB()))
+    resp = client.get(f"/admin/organizations/{uuid.uuid4()}/users?limit=-1")
+    assert resp.status_code == 422

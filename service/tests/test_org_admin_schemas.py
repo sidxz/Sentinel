@@ -32,3 +32,10 @@ def test_allowed_orgs_request_takes_uuid_list():
     ids = [uuid.uuid4(), uuid.uuid4()]
     req = AdminWorkspaceAllowedOrgsRequest(organization_ids=ids)
     assert req.organization_ids == ids
+
+
+def test_allowed_orgs_request_caps_list_size():
+    with pytest.raises(ValidationError):
+        AdminWorkspaceAllowedOrgsRequest(
+            organization_ids=[uuid.uuid4() for _ in range(501)]
+        )
