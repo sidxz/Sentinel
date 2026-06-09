@@ -28,6 +28,7 @@ from src.services import (
     activity_service,
     auth_code_service,
     auth_service,
+    organization_service,
     token_service,
     workspace_service,
 )
@@ -209,6 +210,16 @@ async def callback(
             avatar_url = userinfo.get("picture")
             profile = dict(userinfo)
 
+        org = await organization_service.resolve_organization(db, email)
+        if org is None:
+            return _error_page(
+                403,
+                "Sign-In Not Permitted",
+                "Your email domain is not associated with an organization on "
+                "this server, and public sign-in is disabled. Contact your "
+                "administrator.",
+            )
+
         try:
             user = await auth_service.find_or_create_user(
                 db=db,
@@ -216,6 +227,7 @@ async def callback(
                 provider_user_id=provider_user_id,
                 email=email,
                 name=name,
+                organization_id=org.id,
                 avatar_url=avatar_url,
                 provider_data=profile,
             )

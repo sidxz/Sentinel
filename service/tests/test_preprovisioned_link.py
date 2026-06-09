@@ -55,6 +55,7 @@ def _bare_user(email):
 @pytest.mark.asyncio
 async def test_preprovisioned_user_is_linked_not_rejected():
     pre = _bare_user("victim@example.com")
+    org_id = uuid.uuid4()
     # execute() order: SocialAccount-by-provider (miss), User-by-email (hit),
     # SocialAccount-by-user (none → bare pre-provisioned account).
     session = _FakeSession(results=[None, pre, None])
@@ -65,9 +66,11 @@ async def test_preprovisioned_user_is_linked_not_rejected():
         provider_user_id="google|1",
         email="victim@example.com",
         name="Victim",
+        organization_id=org_id,
     )
 
     assert user is pre
+    assert user.organization_id == org_id
     assert any(isinstance(a, SocialAccount) for a in session.added)
     assert session.committed
 
@@ -86,4 +89,5 @@ async def test_real_cross_provider_collision_still_rejected():
             provider_user_id="google|1",
             email="victim@example.com",
             name="Victim",
+            organization_id=uuid.uuid4(),
         )

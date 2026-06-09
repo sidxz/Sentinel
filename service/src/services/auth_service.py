@@ -40,6 +40,7 @@ async def find_or_create_user(
     provider_user_id: str,
     email: str,
     name: str,
+    organization_id: uuid.UUID,
     avatar_url: str | None = None,
     provider_data: dict | None = None,
 ) -> User:
@@ -57,6 +58,7 @@ async def find_or_create_user(
         user = await db.get(User, social_account.user_id)
         # Update profile from provider (sanitize IdP data)
         user.name = strip_html(name)
+        user.organization_id = organization_id
         if avatar_url:
             user.avatar_url = avatar_url
         social_account.provider_data = provider_data
@@ -87,6 +89,7 @@ async def find_or_create_user(
         # account. Link this provider to it so the user can sign in, instead of
         # locking them out of an account created for exactly this purpose.
         existing.name = strip_html(name)
+        existing.organization_id = organization_id
         if avatar_url:
             existing.avatar_url = avatar_url
         db.add(
@@ -102,7 +105,12 @@ async def find_or_create_user(
         await db.commit()
         return existing
 
-    user = User(email=email, name=strip_html(name), avatar_url=avatar_url)
+    user = User(
+        email=email,
+        name=strip_html(name),
+        avatar_url=avatar_url,
+        organization_id=organization_id,
+    )
     db.add(user)
     await db.flush()
 
