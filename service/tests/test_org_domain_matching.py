@@ -1,0 +1,36 @@
+"""Organization model shape + pure domain-matching logic."""
+
+import uuid
+
+
+def test_organization_models_have_expected_shape():
+    from src.models.organization import (
+        Organization,
+        OrganizationDomain,
+        WorkspaceAllowedOrganization,
+    )
+
+    assert Organization.__tablename__ == "organizations"
+    for col in ("id", "slug", "name", "is_public", "enabled", "created_by"):
+        assert col in Organization.__table__.columns
+
+    assert OrganizationDomain.__tablename__ == "organization_domains"
+    for col in ("id", "organization_id", "domain", "include_subdomains"):
+        assert col in OrganizationDomain.__table__.columns
+    # Domain must be globally unique (a domain cannot belong to two orgs).
+    assert any(
+        c.name == "uq_org_domain"
+        for c in OrganizationDomain.__table__.constraints
+    )
+
+    assert WorkspaceAllowedOrganization.__tablename__ == "workspace_allowed_organizations"
+    for col in ("id", "workspace_id", "organization_id"):
+        assert col in WorkspaceAllowedOrganization.__table__.columns
+
+
+def test_models_registered_for_metadata():
+    import src.models as m
+
+    assert "Organization" in m.__all__
+    assert "OrganizationDomain" in m.__all__
+    assert "WorkspaceAllowedOrganization" in m.__all__
