@@ -34,3 +34,10 @@ def test_models_registered_for_metadata():
     assert "Organization" in m.__all__
     assert "OrganizationDomain" in m.__all__
     assert "WorkspaceAllowedOrganization" in m.__all__
+
+
+def test_user_has_organization_id_column():
+    from src.models.user import User
+
+    assert "organization_id" in User.__table__.columns
+    assert User.__table__.columns["organization_id"].nullable is True
