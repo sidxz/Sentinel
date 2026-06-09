@@ -66,3 +66,43 @@ def test_authz_token_carries_org_claims():
     assert payload["oid"] == str(org_id)
     assert payload["oslug"] == "tamu"
     assert payload["opub"] is False
+
+
+def test_access_token_org_claims_are_null_not_omitted():
+    # When there is no org, the keys must still be present (null/false) so SDK
+    # consumers never have to guard against a missing key.
+    token = create_access_token(
+        user_id=uuid.uuid4(),
+        email="x@x.com",
+        name="X",
+        workspace_id=uuid.uuid4(),
+        workspace_slug="ws",
+        workspace_role="viewer",
+        groups=[],
+        org_id=None,
+        org_slug=None,
+        org_is_public=False,
+    )
+    payload = decode_token(token, audience=_AUD_ACCESS)
+    assert "oid" in payload and payload["oid"] is None
+    assert "oslug" in payload and payload["oslug"] is None
+    assert "opub" in payload and payload["opub"] is False
+
+
+def test_authz_token_org_claims_are_null_not_omitted():
+    token = create_authz_token(
+        user_id=uuid.uuid4(),
+        idp_sub="google|123",
+        workspace_id=uuid.uuid4(),
+        workspace_slug="ws",
+        workspace_role="viewer",
+        actions=[],
+        service_name="notes",
+        org_id=None,
+        org_slug=None,
+        org_is_public=False,
+    )
+    payload = decode_token(token, audience=_AUD_AUTHZ)
+    assert "oid" in payload and payload["oid"] is None
+    assert "oslug" in payload and payload["oslug"] is None
+    assert "opub" in payload and payload["opub"] is False
