@@ -250,3 +250,57 @@ class SystemSettingsResponse(BaseModel):
 class BulkUserStatusRequest(BaseModel):
     user_ids: list[uuid.UUID] = Field(max_length=500)
     is_active: bool
+
+
+# ── Organizations ─────────────────────────────────────────────────────
+
+
+class AdminOrgResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    is_public: bool
+    enabled: bool
+    domain_count: int
+    user_count: int
+
+
+class AdminOrgDomainResponse(BaseModel):
+    id: uuid.UUID
+    domain: str
+    include_subdomains: bool
+
+    model_config = {"from_attributes": True}
+
+
+class AdminOrgDetailResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    is_public: bool
+    enabled: bool
+    user_count: int
+    domains: list[AdminOrgDomainResponse]
+
+
+class AdminOrgCreateRequest(BaseModel):
+    name: SafeStr = Field(min_length=1, max_length=255)
+    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$", max_length=63)
+
+
+class AdminOrgUpdateRequest(BaseModel):
+    name: SafeStrOptional = None
+    enabled: bool | None = None
+
+
+class AdminOrgDomainCreateRequest(BaseModel):
+    domain: str = Field(min_length=1, max_length=253)
+    include_subdomains: bool = False
+
+
+class AdminWorkspaceAllowedOrgsRequest(BaseModel):
+    organization_ids: list[uuid.UUID]
+
+
+class AdminWorkspaceAllowedOrgsResponse(BaseModel):
+    organization_ids: list[uuid.UUID]
