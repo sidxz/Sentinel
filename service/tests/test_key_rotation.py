@@ -71,6 +71,9 @@ def _make_authz(**overrides):
         workspace_role="viewer",
         actions=[],
         service_name="svc",
+        org_id=None,
+        org_slug=None,
+        org_is_public=False,
     )
     kwargs.update(overrides)
     return create_authz_token(**kwargs)

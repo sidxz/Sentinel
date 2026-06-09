@@ -20,6 +20,9 @@ class TestAuthzToken:
             workspace_role="editor",
             actions=["read", "write"],
             service_name="notes",
+            org_id=None,
+            org_slug=None,
+            org_is_public=False,
         )
         payload = decode_token(token, audience=_AUD_AUTHZ)
         assert payload["sub"] == str(user_id)
@@ -40,6 +43,9 @@ class TestAuthzToken:
             workspace_role="viewer",
             actions=[],
             service_name="test-svc",
+            org_id=None,
+            org_slug=None,
+            org_is_public=False,
         )
         with pytest.raises(pyjwt.InvalidAudienceError):
             decode_token(token, audience="sentinel:access")

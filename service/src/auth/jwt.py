@@ -101,6 +101,9 @@ def create_authz_token(
     workspace_role: str,
     actions: list[str],
     service_name: str,
+    org_id: str | None,
+    org_slug: str | None,
+    org_is_public: bool,
 ) -> str:
     """Create a short-lived authorization-only JWT.
 
@@ -120,6 +123,9 @@ def create_authz_token(
         "wslug": workspace_slug,
         "wrole": workspace_role,
         "actions": actions,
+        "oid": org_id,
+        "oslug": org_slug,
+        "opub": org_is_public,
         "aud": _AUD_AUTHZ,
         "iat": now,
         "exp": now + timedelta(minutes=settings.authz_token_expire_minutes),

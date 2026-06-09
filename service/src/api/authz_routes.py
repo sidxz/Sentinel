@@ -16,6 +16,7 @@ from src.auth.jwt import create_authz_token
 from src.config import settings
 from src.database import get_db
 from src.middleware.rate_limit import limiter
+from src.models.organization import Organization
 from src.models.service_app import ServiceApp
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.schemas.authz import (
@@ -288,6 +289,11 @@ async def resolve(
         )
 
     workspace = await db.get(Workspace, body.workspace_id)
+    org = (
+        await db.get(Organization, user.organization_id)
+        if user.organization_id
+        else None
+    )
 
     # 5. Get RBAC actions for this service
     actions = await get_user_actions(
@@ -311,6 +317,9 @@ async def resolve(
         workspace_role=membership.role,
         actions=actions,
         service_name=service_ctx.service_name,
+        org_id=str(org.id) if org else None,
+        org_slug=org.slug if org else None,
+        org_is_public=org.is_public if org else False,
     )
 
     return AuthzResolveResponse(
