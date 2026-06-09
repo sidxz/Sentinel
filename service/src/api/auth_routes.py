@@ -509,6 +509,7 @@ async def admin_callback(
         # org-gating here would risk locking every admin out of the panel used to
         # configure orgs (e.g. if the public org is disabled).
         org = await organization_service.resolve_organization(db, email)
+
         try:
             user = await auth_service.find_or_create_user(
                 db=db,

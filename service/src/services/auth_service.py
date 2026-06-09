@@ -63,7 +63,10 @@ async def find_or_create_user(
         user = await db.get(User, social_account.user_id)
         # Update profile from provider (sanitize IdP data)
         user.name = strip_html(name)
-        user.organization_id = organization_id
+        # Refresh the org when the caller resolved one; never clobber a known org
+        # with None (e.g. an admin sign-in whose domain matched no enabled org).
+        if organization_id is not None:
+            user.organization_id = organization_id
         if avatar_url:
             user.avatar_url = avatar_url
         social_account.provider_data = provider_data
@@ -94,7 +97,9 @@ async def find_or_create_user(
         # account. Link this provider to it so the user can sign in, instead of
         # locking them out of an account created for exactly this purpose.
         existing.name = strip_html(name)
-        existing.organization_id = organization_id
+        # Refresh the org when resolved; never clobber a known org with None.
+        if organization_id is not None:
+            existing.organization_id = organization_id
         if avatar_url:
             existing.avatar_url = avatar_url
         db.add(

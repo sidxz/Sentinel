@@ -94,6 +94,51 @@ async def test_real_cross_provider_collision_still_rejected():
 
 
 @pytest.mark.asyncio
+async def test_existing_user_org_not_clobbered_by_none():
+    """A returning user (social account already exists) keeps their org when the
+    caller passes organization_id=None (e.g. admin sign-in that matched no org)."""
+    kept = uuid.uuid4()
+    existing = _bare_user("admin@corp.com")
+    existing.organization_id = kept
+
+    class _Social:
+        user_id = existing.id
+        provider_data = None
+
+    class _SocialSession:
+        def __init__(self):
+            self.committed = False
+
+        async def execute(self, _stmt):
+            return _Result(_Social())
+
+        async def get(self, _model, _pk):
+            return existing
+
+        def add(self, _obj):
+            pass
+
+        async def flush(self):
+            pass
+
+        async def commit(self):
+            self.committed = True
+
+    session = _SocialSession()
+    user = await find_or_create_user(
+        session,
+        provider="google",
+        provider_user_id="google|1",
+        email="admin@corp.com",
+        name="Admin",
+        organization_id=None,
+    )
+
+    assert user.organization_id == kept
+    assert session.committed
+
+
+@pytest.mark.asyncio
 async def test_organization_id_may_be_none_for_new_user():
     # Callers that do not org-gate (e.g. admin sign-in) pass organization_id=None.
     # execute() order: SocialAccount-by-provider (miss), User-by-email (miss) →
