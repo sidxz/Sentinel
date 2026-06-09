@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 
+from src.models.organization import WorkspaceAllowedOrganization
 from src.services import org_admin_service as svc
 
 
@@ -111,3 +112,48 @@ async def test_delete_regular_org_ok():
     db = _FakeDB(get_results=[org])
     await svc.delete_organization(db, org.id)
     assert org in db.deleted
+
+
+@pytest.mark.asyncio
+async def test_add_domain_normalizes_and_inserts():
+    org = _Org()
+    db = _FakeDB(get_results=[org], execute_results=[_Result(scalar=None)])
+    d = await svc.add_domain(db, org.id, "  Mail.TAMU.edu ", include_subdomains=True)
+    assert d.domain == "mail.tamu.edu"  # normalized
+    assert d.include_subdomains is True
+    assert d in db.added
+
+
+@pytest.mark.asyncio
+async def test_add_domain_to_public_org_is_protected():
+    pub = _Org(is_public=True)
+    db = _FakeDB(get_results=[pub])
+    with pytest.raises(svc.OrgProtected):
+        await svc.add_domain(db, pub.id, "tamu.edu", include_subdomains=False)
+
+
+@pytest.mark.asyncio
+async def test_add_invalid_domain_rejected():
+    org = _Org()
+    db = _FakeDB(get_results=[org])
+    with pytest.raises(ValueError):
+        await svc.add_domain(db, org.id, "not-a-domain", include_subdomains=False)
+
+
+@pytest.mark.asyncio
+async def test_add_duplicate_domain_conflicts():
+    org = _Org()
+    db = _FakeDB(get_results=[org], execute_results=[_Result(scalar=uuid.uuid4())])
+    with pytest.raises(svc.OrgConflict):
+        await svc.add_domain(db, org.id, "tamu.edu", include_subdomains=False)
+
+
+@pytest.mark.asyncio
+async def test_remove_domain_wrong_org_not_found():
+    class _Dom:
+        id = uuid.uuid4()
+        organization_id = uuid.uuid4()  # belongs to a different org
+
+    db = _FakeDB(get_results=[_Dom()])
+    with pytest.raises(svc.OrgNotFound):
+        await svc.remove_domain(db, uuid.uuid4(), uuid.uuid4())

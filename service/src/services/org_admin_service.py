@@ -35,6 +35,8 @@ class OrgProtected(Exception):
 async def create_organization(
     db: AsyncSession, name: str, slug: str
 ) -> Organization:
+    # DB unique constraint on slug is the concurrency backstop; this pre-check
+    # just yields a cleaner error in the common (non-racing) case.
     taken = (
         await db.execute(select(Organization.id).where(Organization.slug == slug))
     ).scalar_one_or_none()
@@ -127,3 +129,50 @@ async def get_organization_detail(
         )
     ).scalar_one()
     return {"org": org, "domains": list(domains), "user_count": user_count}
+
+
+async def add_domain(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    domain: str,
+    include_subdomains: bool,
+) -> OrganizationDomain:
+    org = await db.get(Organization, org_id)
+    if org is None:
+        raise OrgNotFound("Organization not found")
+    if org.is_public:
+        raise OrgProtected(
+            "The public organization is the catch-all and cannot have domains"
+        )
+    normalized = organization_service.normalize_domain(domain)
+    if normalized is None:
+        raise ValueError(f"Invalid domain: {domain!r}")
+    taken = (
+        await db.execute(
+            select(OrganizationDomain.id).where(
+                OrganizationDomain.domain == normalized
+            )
+        )
+    ).scalar_one_or_none()
+    if taken is not None:
+        raise OrgConflict(
+            f"Domain {normalized!r} is already claimed by an organization"
+        )
+    row = OrganizationDomain(
+        organization_id=org_id,
+        domain=normalized,
+        include_subdomains=include_subdomains,
+    )
+    db.add(row)
+    await db.flush()
+    return row
+
+
+async def remove_domain(
+    db: AsyncSession, org_id: uuid.UUID, domain_id: uuid.UUID
+) -> None:
+    row = await db.get(OrganizationDomain, domain_id)
+    if row is None or row.organization_id != org_id:
+        raise OrgNotFound("Domain not found")
+    await db.delete(row)
+    await db.flush()
