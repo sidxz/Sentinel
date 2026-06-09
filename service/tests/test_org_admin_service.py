@@ -204,7 +204,10 @@ async def test_set_allowed_orgs_empty_clears():
 @pytest.mark.asyncio
 async def test_list_org_users_returns_users_and_total():
     user = object()
-    db = _FakeDB(execute_results=[_Result(scalar=3), _Result(scalars=[user])])
+    db = _FakeDB(
+        get_results=[object()],
+        execute_results=[_Result(scalar=3), _Result(scalars=[user])],
+    )
     users, total = await svc.list_org_users(db, uuid.uuid4(), limit=10, offset=0)
     assert total == 3
     assert users == [user]
@@ -212,6 +215,15 @@ async def test_list_org_users_returns_users_and_total():
 
 @pytest.mark.asyncio
 async def test_list_org_users_empty_org():
-    db = _FakeDB(execute_results=[_Result(scalar=0), _Result(scalars=[])])
+    db = _FakeDB(
+        get_results=[object()], execute_results=[_Result(scalar=0), _Result(scalars=[])]
+    )
     users, total = await svc.list_org_users(db, uuid.uuid4())
     assert users == [] and total == 0
+
+
+@pytest.mark.asyncio
+async def test_list_org_users_unknown_org_raises():
+    db = _FakeDB(get_results=[None])
+    with pytest.raises(svc.OrgNotFound):
+        await svc.list_org_users(db, uuid.uuid4())

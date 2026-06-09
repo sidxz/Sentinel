@@ -217,6 +217,9 @@ async def set_workspace_allowed_orgs(
 async def list_org_users(
     db: AsyncSession, org_id: uuid.UUID, limit: int = 50, offset: int = 0
 ) -> tuple[list[User], int]:
+    org = await db.get(Organization, org_id)
+    if org is None:
+        raise OrgNotFound("Organization not found")
     total = (
         await db.execute(select(func.count()).where(User.organization_id == org_id))
     ).scalar_one()

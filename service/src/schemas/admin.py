@@ -264,6 +264,8 @@ class AdminOrgResponse(BaseModel):
     domain_count: int
     user_count: int
 
+    model_config = {"from_attributes": True}
+
 
 class AdminOrgDomainResponse(BaseModel):
     id: uuid.UUID
@@ -281,6 +283,8 @@ class AdminOrgDetailResponse(BaseModel):
     enabled: bool
     user_count: int
     domains: list[AdminOrgDomainResponse]
+
+    model_config = {"from_attributes": True}
 
 
 class AdminOrgCreateRequest(BaseModel):

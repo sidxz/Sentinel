@@ -134,3 +134,9 @@ def test_set_allowed_orgs_unknown_id_returns_400(monkeypatch):
         headers=_XRW,
     )
     assert resp.status_code == 400
+
+
+def test_list_org_users_unknown_org_returns_404():
+    client = TestClient(_app(_FakeDB(get_results=[None])))
+    resp = client.get(f"/admin/organizations/{uuid.uuid4()}/users")
+    assert resp.status_code == 404

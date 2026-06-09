@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import require_admin
@@ -36,6 +36,19 @@ def _org_response(org, domain_count: int, user_count: int) -> AdminOrgResponse:
         enabled=org.enabled,
         domain_count=domain_count,
         user_count=user_count,
+    )
+
+
+def _detail_response(detail: dict) -> AdminOrgDetailResponse:
+    org = detail["org"]
+    return AdminOrgDetailResponse(
+        id=org.id,
+        name=org.name,
+        slug=org.slug,
+        is_public=org.is_public,
+        enabled=org.enabled,
+        user_count=detail["user_count"],
+        domains=[AdminOrgDomainResponse.model_validate(d) for d in detail["domains"]],
     )
 
 
@@ -77,16 +90,7 @@ async def get_organization(org_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     detail = await org_admin_service.get_organization_detail(db, org_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="Organization not found")
-    org = detail["org"]
-    return AdminOrgDetailResponse(
-        id=org.id,
-        name=org.name,
-        slug=org.slug,
-        is_public=org.is_public,
-        enabled=org.enabled,
-        user_count=detail["user_count"],
-        domains=[AdminOrgDomainResponse.model_validate(d) for d in detail["domains"]],
-    )
+    return _detail_response(detail)
 
 
 @router.patch("/organizations/{org_id}", response_model=AdminOrgDetailResponse)
@@ -102,7 +106,14 @@ async def update_organization(
         )
     except OrgNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
-    action = "org_public_toggle" if org.is_public else "org_update"
+    # Distinct audit action only when the public org's sign-in switch is toggled;
+    # a plain rename/disable is a normal org_update.
+    action = (
+        "org_public_toggle"
+        if (org.is_public and body.enabled is not None)
+        else "org_update"
+    )
+    detail = await org_admin_service.get_organization_detail(db, org_id)
     await activity_service.log_activity(
         db,
         action=action,
@@ -112,17 +123,7 @@ async def update_organization(
         detail={"name": org.name, "enabled": org.enabled},
     )
     await db.commit()
-    detail = await org_admin_service.get_organization_detail(db, org_id)
-    org = detail["org"]
-    return AdminOrgDetailResponse(
-        id=org.id,
-        name=org.name,
-        slug=org.slug,
-        is_public=org.is_public,
-        enabled=org.enabled,
-        user_count=detail["user_count"],
-        domains=[AdminOrgDomainResponse.model_validate(d) for d in detail["domains"]],
-    )
+    return _detail_response(detail)
 
 
 @router.delete("/organizations/{org_id}", status_code=204)
@@ -213,13 +214,18 @@ async def remove_domain(
 @router.get("/organizations/{org_id}/users", response_model=list[AdminUserResponse])
 async def list_org_users(
     org_id: uuid.UUID,
+    response: Response,
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    users, _total = await org_admin_service.list_org_users(
-        db, org_id, limit=limit, offset=offset
-    )
+    try:
+        users, total = await org_admin_service.list_org_users(
+            db, org_id, limit=limit, offset=offset
+        )
+    except OrgNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    response.headers["X-Total-Count"] = str(total)
     return [
         AdminUserResponse(
             id=u.id,
