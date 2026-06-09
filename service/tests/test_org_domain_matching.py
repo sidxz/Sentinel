@@ -45,3 +45,62 @@ def test_user_has_organization_id_column():
 
     assert "organization_id" in User.__table__.columns
     assert User.__table__.columns["organization_id"].nullable is True
+
+
+import pytest
+
+from src.services import organization_service as org_svc
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("Alice@TAMU.edu", "tamu.edu"),
+        ("tamu.edu", "tamu.edu"),
+        ("bob@mail.tamu.edu", "mail.tamu.edu"),
+        ("  spaced@Example.COM  ", "example.com"),
+        ("", None),
+        (None, None),
+        ("noatsign-nodot", None),
+        ("a@b@c.com", None),          # multiple '@' is malformed -> fail closed
+        ("user@", None),              # empty domain
+        ("tamu.edu.", None),          # trailing dot
+        ("@tamu.edu", "tamu.edu"),    # leading '@' ok, single '@'
+    ],
+)
+def test_normalize_domain(raw, expected):
+    assert org_svc.normalize_domain(raw) == expected
+
+
+def test_match_exact_wins():
+    a = uuid.uuid4()
+    rows = [(a, "tamu.edu", False)]
+    assert org_svc.match_org_id("tamu.edu", rows) == a
+
+
+def test_match_subdomain_only_when_flag_set():
+    a = uuid.uuid4()
+    assert org_svc.match_org_id("mail.tamu.edu", [(a, "tamu.edu", True)]) == a
+    assert org_svc.match_org_id("mail.tamu.edu", [(a, "tamu.edu", False)]) is None
+
+
+def test_match_longest_subdomain_wins():
+    a, b = uuid.uuid4(), uuid.uuid4()
+    rows = [(a, "tamu.edu", True), (b, "b.tamu.edu", True)]
+    assert org_svc.match_org_id("a.b.tamu.edu", rows) == b
+
+
+def test_match_exact_beats_subdomain_regardless_of_order():
+    a, b = uuid.uuid4(), uuid.uuid4()
+    rows = [(b, "edu", True), (a, "tamu.edu", False)]
+    assert org_svc.match_org_id("tamu.edu", rows) == a
+
+
+def test_match_anti_spoof_not_a_real_subdomain():
+    a = uuid.uuid4()
+    # "eviltamu.edu" must NOT match "tamu.edu" even with subdomains on.
+    assert org_svc.match_org_id("eviltamu.edu", [(a, "tamu.edu", True)]) is None
+
+
+def test_match_no_rows():
+    assert org_svc.match_org_id("gmail.com", []) is None
