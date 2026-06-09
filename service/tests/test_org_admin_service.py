@@ -170,11 +170,7 @@ async def test_set_allowed_orgs_replaces_and_validates():
         execute_results=[_Result(scalars=[a, b]), _Result()],
     )
     await svc.set_workspace_allowed_orgs(db, ws_id, [a, b, a])  # dup ignored
-    added = [
-        o
-        for o in db.added
-        if isinstance(o, WorkspaceAllowedOrganization)
-    ]
+    added = [o for o in db.added if isinstance(o, WorkspaceAllowedOrganization)]
     assert {o.organization_id for o in added} == {a, b}
     assert all(o.workspace_id == ws_id for o in added)
 
@@ -200,6 +196,4 @@ async def test_set_allowed_orgs_empty_clears():
     ws_id = uuid.uuid4()
     db = _FakeDB(get_results=[object()], execute_results=[_Result()])  # delete only
     await svc.set_workspace_allowed_orgs(db, ws_id, [])
-    assert not [
-        o for o in db.added if isinstance(o, WorkspaceAllowedOrganization)
-    ]
+    assert not [o for o in db.added if isinstance(o, WorkspaceAllowedOrganization)]

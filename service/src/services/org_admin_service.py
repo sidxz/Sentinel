@@ -32,9 +32,7 @@ class OrgProtected(Exception):
     """Operation not allowed on the public organization."""
 
 
-async def create_organization(
-    db: AsyncSession, name: str, slug: str
-) -> Organization:
+async def create_organization(db: AsyncSession, name: str, slug: str) -> Organization:
     # DB unique constraint on slug is the concurrency backstop; this pre-check
     # just yields a cleaner error in the common (non-racing) case.
     taken = (
@@ -101,14 +99,10 @@ async def list_organizations(db: AsyncSession) -> list[dict]:
         .order_by(Organization.is_public.desc(), Organization.name)
     )
     rows = (await db.execute(stmt)).all()
-    return [
-        {"org": org, "domain_count": d, "user_count": u} for org, d, u in rows
-    ]
+    return [{"org": org, "domain_count": d, "user_count": u} for org, d, u in rows]
 
 
-async def get_organization_detail(
-    db: AsyncSession, org_id: uuid.UUID
-) -> dict | None:
+async def get_organization_detail(db: AsyncSession, org_id: uuid.UUID) -> dict | None:
     org = await db.get(Organization, org_id)
     if org is None:
         return None
@@ -124,9 +118,7 @@ async def get_organization_detail(
         .all()
     )
     user_count = (
-        await db.execute(
-            select(func.count()).where(User.organization_id == org_id)
-        )
+        await db.execute(select(func.count()).where(User.organization_id == org_id))
     ).scalar_one()
     return {"org": org, "domains": list(domains), "user_count": user_count}
 
@@ -149,9 +141,7 @@ async def add_domain(
         raise ValueError(f"Invalid domain: {domain!r}")
     taken = (
         await db.execute(
-            select(OrganizationDomain.id).where(
-                OrganizationDomain.domain == normalized
-            )
+            select(OrganizationDomain.id).where(OrganizationDomain.domain == normalized)
         )
     ).scalar_one_or_none()
     if taken is not None:
@@ -205,19 +195,13 @@ async def set_workspace_allowed_orgs(
     ids = list(dict.fromkeys(organization_ids))  # dedupe, keep order
     if ids:
         found = set(
-            (
-                await db.execute(
-                    select(Organization.id).where(Organization.id.in_(ids))
-                )
-            )
+            (await db.execute(select(Organization.id).where(Organization.id.in_(ids))))
             .scalars()
             .all()
         )
         missing = [i for i in ids if i not in found]
         if missing:
-            raise ValueError(
-                f"Unknown organization ids: {[str(m) for m in missing]}"
-            )
+            raise ValueError(f"Unknown organization ids: {[str(m) for m in missing]}")
     await db.execute(
         delete(WorkspaceAllowedOrganization).where(
             WorkspaceAllowedOrganization.workspace_id == workspace_id
@@ -225,9 +209,7 @@ async def set_workspace_allowed_orgs(
     )
     for oid in ids:
         db.add(
-            WorkspaceAllowedOrganization(
-                workspace_id=workspace_id, organization_id=oid
-            )
+            WorkspaceAllowedOrganization(workspace_id=workspace_id, organization_id=oid)
         )
     await db.flush()
 
@@ -236,9 +218,7 @@ async def list_org_users(
     db: AsyncSession, org_id: uuid.UUID, limit: int = 50, offset: int = 0
 ) -> tuple[list[User], int]:
     total = (
-        await db.execute(
-            select(func.count()).where(User.organization_id == org_id)
-        )
+        await db.execute(select(func.count()).where(User.organization_id == org_id))
     ).scalar_one()
     users = (
         (
