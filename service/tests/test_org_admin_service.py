@@ -157,3 +157,49 @@ async def test_remove_domain_wrong_org_not_found():
     db = _FakeDB(get_results=[_Dom()])
     with pytest.raises(svc.OrgNotFound):
         await svc.remove_domain(db, uuid.uuid4(), uuid.uuid4())
+
+
+@pytest.mark.asyncio
+async def test_set_allowed_orgs_replaces_and_validates():
+    ws_id = uuid.uuid4()
+    a, b = uuid.uuid4(), uuid.uuid4()
+    # get(Workspace) -> exists; execute #1 validates ids (both found);
+    # execute #2 is the delete of existing rows.
+    db = _FakeDB(
+        get_results=[object()],
+        execute_results=[_Result(scalars=[a, b]), _Result()],
+    )
+    await svc.set_workspace_allowed_orgs(db, ws_id, [a, b, a])  # dup ignored
+    added = [
+        o
+        for o in db.added
+        if isinstance(o, WorkspaceAllowedOrganization)
+    ]
+    assert {o.organization_id for o in added} == {a, b}
+    assert all(o.workspace_id == ws_id for o in added)
+
+
+@pytest.mark.asyncio
+async def test_set_allowed_orgs_unknown_id_rejected():
+    ws_id = uuid.uuid4()
+    a, missing = uuid.uuid4(), uuid.uuid4()
+    db = _FakeDB(get_results=[object()], execute_results=[_Result(scalars=[a])])
+    with pytest.raises(ValueError):
+        await svc.set_workspace_allowed_orgs(db, ws_id, [a, missing])
+
+
+@pytest.mark.asyncio
+async def test_set_allowed_orgs_workspace_not_found():
+    db = _FakeDB(get_results=[None])
+    with pytest.raises(svc.OrgNotFound):
+        await svc.set_workspace_allowed_orgs(db, uuid.uuid4(), [])
+
+
+@pytest.mark.asyncio
+async def test_set_allowed_orgs_empty_clears():
+    ws_id = uuid.uuid4()
+    db = _FakeDB(get_results=[object()], execute_results=[_Result()])  # delete only
+    await svc.set_workspace_allowed_orgs(db, ws_id, [])
+    assert not [
+        o for o in db.added if isinstance(o, WorkspaceAllowedOrganization)
+    ]

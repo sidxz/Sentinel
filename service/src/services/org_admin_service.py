@@ -176,3 +176,81 @@ async def remove_domain(
         raise OrgNotFound("Domain not found")
     await db.delete(row)
     await db.flush()
+
+
+async def get_workspace_allowed_orgs(
+    db: AsyncSession, workspace_id: uuid.UUID
+) -> list[Organization]:
+    stmt = (
+        select(Organization)
+        .join(
+            WorkspaceAllowedOrganization,
+            WorkspaceAllowedOrganization.organization_id == Organization.id,
+        )
+        .where(WorkspaceAllowedOrganization.workspace_id == workspace_id)
+        .order_by(Organization.name)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def set_workspace_allowed_orgs(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    organization_ids: list[uuid.UUID],
+) -> None:
+    """Replace the workspace's allowed-org set. Empty list = open to all."""
+    workspace = await db.get(Workspace, workspace_id)
+    if workspace is None:
+        raise OrgNotFound("Workspace not found")
+    ids = list(dict.fromkeys(organization_ids))  # dedupe, keep order
+    if ids:
+        found = set(
+            (
+                await db.execute(
+                    select(Organization.id).where(Organization.id.in_(ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        missing = [i for i in ids if i not in found]
+        if missing:
+            raise ValueError(
+                f"Unknown organization ids: {[str(m) for m in missing]}"
+            )
+    await db.execute(
+        delete(WorkspaceAllowedOrganization).where(
+            WorkspaceAllowedOrganization.workspace_id == workspace_id
+        )
+    )
+    for oid in ids:
+        db.add(
+            WorkspaceAllowedOrganization(
+                workspace_id=workspace_id, organization_id=oid
+            )
+        )
+    await db.flush()
+
+
+async def list_org_users(
+    db: AsyncSession, org_id: uuid.UUID, limit: int = 50, offset: int = 0
+) -> tuple[list[User], int]:
+    total = (
+        await db.execute(
+            select(func.count()).where(User.organization_id == org_id)
+        )
+    ).scalar_one()
+    users = (
+        (
+            await db.execute(
+                select(User)
+                .where(User.organization_id == org_id)
+                .order_by(User.email)
+                .limit(limit)
+                .offset(offset)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(users), total
