@@ -13,6 +13,10 @@ def test_organization_models_have_expected_shape():
     assert Organization.__tablename__ == "organizations"
     for col in ("id", "slug", "name", "is_public", "enabled", "created_by"):
         assert col in Organization.__table__.columns
+    # At most one public org — the partial unique index must exist.
+    assert any(
+        idx.name == "uq_one_public_org" for idx in Organization.__table__.indexes
+    )
 
     assert OrganizationDomain.__tablename__ == "organization_domains"
     for col in ("id", "organization_id", "domain", "include_subdomains"):

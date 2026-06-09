@@ -1340,6 +1340,9 @@ def upgrade() -> None:
         ["id"],
         ondelete="SET NULL",
     )
+    op.create_index(
+        "ix_users_organization_id", "users", ["organization_id"], unique=False
+    )
 
     # Seed the public org and backfill every existing user into it. Default
     # posture is public-ON, so deploying this change locks nobody out. The id is
@@ -1357,6 +1360,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("ix_users_organization_id", table_name="users")
     op.drop_constraint("fk_users_organization_id", "users", type_="foreignkey")
     op.drop_column("users", "organization_id")
     op.drop_index(

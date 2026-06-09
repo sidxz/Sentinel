@@ -36,8 +36,12 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     # For the public org, `enabled` is the public-sign-in switch. For a real org,
     # `enabled=False` is a kill-switch that blocks all of its users at next login.
-    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_public: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
