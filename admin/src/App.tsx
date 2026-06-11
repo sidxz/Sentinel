@@ -16,6 +16,8 @@ import { UserDetail } from "./pages/UserDetail";
 import { Users } from "./pages/Users";
 import { WorkspaceDetail } from "./pages/WorkspaceDetail";
 import { Workspaces } from "./pages/Workspaces";
+import Organizations from "./pages/Organizations";
+import OrganizationDetail from "./pages/OrganizationDetail";
 
 export default function App() {
   return (
@@ -34,6 +36,8 @@ export default function App() {
           <Route path="/client-apps/:id" element={<ClientAppDetail />} />
           <Route path="/service-apps" element={<ServiceApps />} />
           <Route path="/service-apps/:id" element={<ServiceAppDetail />} />
+          <Route path="/organizations" element={<Organizations />} />
+          <Route path="/organizations/:id" element={<OrganizationDetail />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/system" element={<SystemHealth />} />
           <Route path="/settings" element={<Settings />} />
