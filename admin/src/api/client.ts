@@ -7,6 +7,10 @@ import type {
   CustomRole,
   Group,
   GroupMember,
+  Organization,
+  OrgDomain,
+  OrganizationDetail,
+  OrgUser,
   PaginatedResponse,
   RoleMember,
   ServiceAction,
@@ -429,3 +433,60 @@ async function downloadCsv(path: string, filename: string) {
 
 export const exportUsers = () => downloadCsv("/admin/export/users", "users.csv");
 export const exportWorkspaces = () => downloadCsv("/admin/export/workspaces", "workspaces.csv");
+
+// ── Organizations ────────────────────────────────────────────────────
+
+export const getOrganizations = () =>
+  request<Organization[]>("/admin/organizations");
+
+export const createOrganization = (body: { name: string; slug: string }) =>
+  request<Organization>("/admin/organizations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getOrganization = (id: string) =>
+  request<OrganizationDetail>(`/admin/organizations/${id}`);
+
+export const updateOrganization = (
+  id: string,
+  body: { name?: string; enabled?: boolean },
+) =>
+  request<OrganizationDetail>(`/admin/organizations/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+export const deleteOrganization = (id: string) =>
+  request(`/admin/organizations/${id}`, { method: "DELETE" });
+
+export const addOrgDomain = (
+  id: string,
+  body: { domain: string; include_subdomains: boolean },
+) =>
+  request<OrgDomain>(`/admin/organizations/${id}/domains`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const removeOrgDomain = (id: string, domainId: string) =>
+  request(`/admin/organizations/${id}/domains/${domainId}`, {
+    method: "DELETE",
+  });
+
+export const getOrgUsers = (id: string) =>
+  request<OrgUser[]>(`/admin/organizations/${id}/users`);
+
+export const getWorkspaceAllowedOrgs = (workspaceId: string) =>
+  request<{ organization_ids: string[] }>(
+    `/admin/workspaces/${workspaceId}/allowed-organizations`,
+  );
+
+export const setWorkspaceAllowedOrgs = (
+  workspaceId: string,
+  organization_ids: string[],
+) =>
+  request<{ organization_ids: string[] }>(
+    `/admin/workspaces/${workspaceId}/allowed-organizations`,
+    { method: "PUT", body: JSON.stringify({ organization_ids }) },
+  );

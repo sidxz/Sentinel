@@ -242,6 +242,42 @@ export interface SystemHealth {
   version: string;
 }
 
+// ── Organizations ────────────────────────────────────────────────────
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  is_public: boolean;
+  enabled: boolean;
+  domain_count: number;
+  user_count: number;
+}
+
+export interface OrgDomain {
+  id: string;
+  domain: string;
+  include_subdomains: boolean;
+}
+
+export interface OrganizationDetail {
+  id: string;
+  name: string;
+  slug: string;
+  is_public: boolean;
+  enabled: boolean;
+  user_count: number;
+  domains: OrgDomain[];
+}
+
+export interface OrgUser {
+  id: string;
+  email: string;
+  name: string;
+  avatar_url: string | null;
+  is_active: boolean;
+}
+
 // ── Settings ────────────────────────────────────────────────────────
 
 export interface OAuthProviderInfo {
