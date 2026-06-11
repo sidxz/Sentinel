@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 import {
   addGroupMember,
   addRoleActions,
@@ -11,10 +12,12 @@ import {
   deleteRole,
   deleteWorkspace,
   getGroupMembers,
+  getOrganizations,
   getRoleActions,
   getRoleMembers,
   getServiceActions,
   getWorkspace,
+  getWorkspaceAllowedOrgs,
   getWorkspaceGroups,
   getWorkspaceMembers,
   getWorkspaceRoles,
@@ -23,6 +26,7 @@ import {
   removeGroupMember,
   removeRoleAction,
   removeRoleMember,
+  setWorkspaceAllowedOrgs,
   updateGroup,
   updateMemberRole,
   updateRole,
@@ -31,7 +35,7 @@ import {
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
 
-const TABS = ["Members", "Groups", "Roles"] as const;
+const TABS = ["Members", "Groups", "Roles", "Access"] as const;
 type Tab = (typeof TABS)[number];
 
 export function WorkspaceDetail() {
@@ -138,6 +142,7 @@ export function WorkspaceDetail() {
       {tab === "Members" && <MembersTab workspaceId={id!} />}
       {tab === "Groups" && <GroupsTab workspaceId={id!} />}
       {tab === "Roles" && <RolesTab workspaceId={id!} />}
+      {tab === "Access" && <AccessTab workspaceId={id!} />}
 
       {/* Edit modal */}
       <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Workspace">
@@ -838,6 +843,121 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
           </div>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+// Loader: waits for the current allow-list, then mounts the stateful inner
+// component so its useState initializers seed from real data exactly once
+// (no useEffect-sync or null-sentinel gymnastics).
+function AccessTab({ workspaceId }: { workspaceId: string }) {
+  const { data: allowed, isLoading } = useQuery({
+    queryKey: ["workspace-allowed-orgs", workspaceId],
+    queryFn: () => getWorkspaceAllowedOrgs(workspaceId),
+  });
+  if (isLoading || !allowed) {
+    return <div className="h-32 bg-zinc-800/30 rounded-lg animate-pulse" />;
+  }
+  return (
+    <AccessTabInner
+      workspaceId={workspaceId}
+      initialAllowed={allowed.organization_ids}
+    />
+  );
+}
+
+function AccessTabInner({
+  workspaceId,
+  initialAllowed,
+}: {
+  workspaceId: string;
+  initialAllowed: string[];
+}) {
+  const queryClient = useQueryClient();
+  const { data: orgs = [] } = useQuery({
+    queryKey: ["organizations"],
+    queryFn: getOrganizations,
+  });
+
+  const [restrict, setRestrict] = useState(initialAllowed.length > 0);
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(initialAllowed),
+  );
+
+  const toggleOrg = (orgId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(orgId)) next.delete(orgId);
+      else next.add(orgId);
+      return next;
+    });
+  };
+
+  const save = useMutation({
+    mutationFn: () =>
+      setWorkspaceAllowedOrgs(
+        workspaceId,
+        restrict ? Array.from(selected) : [],
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["workspace-allowed-orgs", workspaceId],
+      });
+      toast.success("Access updated");
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  return (
+    <div className="space-y-4 max-w-xl">
+      <div>
+        <h3 className="text-sm font-semibold text-zinc-300">
+          Organization access
+        </h3>
+        <p className="text-xs text-zinc-500">
+          Restrict which organizations' users may be invited to this workspace.
+        </p>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={restrict}
+          onChange={(e) => setRestrict(e.target.checked)}
+        />
+        <span className="font-medium">Restrict to specific organizations</span>
+      </label>
+      {!restrict && (
+        <p className="text-xs text-zinc-500 -mt-2">
+          Open — members from any organization may be invited.
+        </p>
+      )}
+
+      {restrict && (
+        <ul className="space-y-1 border border-zinc-800 rounded-md p-2">
+          {orgs.map((o) => (
+            <li key={o.id}>
+              <label className="flex items-center gap-2 text-sm px-2 py-1">
+                <input
+                  type="checkbox"
+                  checked={selected.has(o.id)}
+                  onChange={() => toggleOrg(o.id)}
+                />
+                {o.is_public && <span>🌐</span>}
+                {o.name}
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <button
+        onClick={() => save.mutate()}
+        disabled={save.isPending}
+        className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
+      >
+        {save.isPending ? "Saving..." : "Save"}
+      </button>
     </div>
   );
 }
