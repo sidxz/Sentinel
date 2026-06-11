@@ -237,7 +237,10 @@ export function OrganizationDetail() {
             on next sign-in) and removes it from every workspace's allow-list.
           </p>
           <button
-            onClick={() => setShowDelete(true)}
+            onClick={() => {
+              setDeleteSlug("");
+              setShowDelete(true);
+            }}
             className="px-3 py-1.5 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 ring-1 ring-red-500/20 transition-colors"
           >
             Delete organization
