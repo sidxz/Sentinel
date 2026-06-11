@@ -934,27 +934,35 @@ function AccessTabInner({
       )}
 
       {restrict && (
-        <ul className="space-y-1 border border-zinc-800 rounded-md p-2">
-          {orgs.map((o) => (
-            <li key={o.id}>
-              <label className="flex items-center gap-2 text-sm px-2 py-1">
-                <input
-                  type="checkbox"
-                  checked={selected.has(o.id)}
-                  onChange={() => toggleOrg(o.id)}
-                />
-                {o.is_public && <span>🌐</span>}
-                {o.name}
-              </label>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-1 border border-zinc-800 rounded-md p-2">
+            {orgs.map((o) => (
+              <li key={o.id}>
+                <label className="flex items-center gap-2 text-sm px-2 py-1">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(o.id)}
+                    onChange={() => toggleOrg(o.id)}
+                  />
+                  {o.is_public && <span>🌐</span>}
+                  {o.name}
+                </label>
+              </li>
+            ))}
+          </ul>
+          {selected.size === 0 && (
+            <p className="text-xs text-amber-400 -mt-2">
+              Select at least one organization, or turn off the restriction —
+              saving with none selected leaves the workspace open to all.
+            </p>
+          )}
+        </>
       )}
 
       <button
         onClick={() => save.mutate()}
-        disabled={save.isPending}
-        className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
+        disabled={save.isPending || (restrict && selected.size === 0)}
+        className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50 transition-colors"
       >
         {save.isPending ? "Saving..." : "Save"}
       </button>
