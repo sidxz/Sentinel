@@ -9,7 +9,7 @@ import { DataTable } from "../components/DataTable";
 import { Modal } from "../components/Modal";
 import { StatusBadge } from "../components/Badge";
 
-export default function Organizations() {
+export function Organizations() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
@@ -83,7 +83,7 @@ export default function Organizations() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Organizations</h1>
+          <h1 className="text-xl font-semibold">Organizations</h1>
           <p className="text-sm text-zinc-500">
             Email-domain tenancy. The public org is the catch-all for unclaimed
             domains; its status is the public sign-in switch.
@@ -91,7 +91,7 @@ export default function Organizations() {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white"
+          className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"
         >
           New org
         </button>
@@ -125,7 +125,7 @@ export default function Organizations() {
           </div>
           <div>
             <label className="text-xs text-zinc-500">
-              Slug (lowercase, in the token's org claim — immutable)
+              Slug (in the token's org claim — immutable)
             </label>
             <input
               value={form.slug}
@@ -133,9 +133,17 @@ export default function Organizations() {
                 setForm((f) => ({ ...f, slug: e.target.value }))
               }
               placeholder="tamu"
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 font-mono placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
             />
+            <p className="mt-1 text-xs text-zinc-600">
+              Lowercase letters, digits, and hyphens; min 2 characters.
+            </p>
           </div>
+          {create.isError && (
+            <div className="text-xs text-red-400">
+              {(create.error as Error).message}
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button
               onClick={() => setShowCreate(false)}
@@ -146,7 +154,7 @@ export default function Organizations() {
             <button
               onClick={() => create.mutate()}
               disabled={!form.name || !form.slug || create.isPending}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
+              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50 transition-colors"
             >
               {create.isPending ? "Creating..." : "Create"}
             </button>

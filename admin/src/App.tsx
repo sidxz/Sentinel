@@ -16,8 +16,8 @@ import { UserDetail } from "./pages/UserDetail";
 import { Users } from "./pages/Users";
 import { WorkspaceDetail } from "./pages/WorkspaceDetail";
 import { Workspaces } from "./pages/Workspaces";
-import Organizations from "./pages/Organizations";
-import OrganizationDetail from "./pages/OrganizationDetail";
+import { Organizations } from "./pages/Organizations";
+import { OrganizationDetail } from "./pages/OrganizationDetail";
 
 export default function App() {
   return (

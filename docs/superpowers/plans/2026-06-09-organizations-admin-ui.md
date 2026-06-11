@@ -350,10 +350,10 @@ Add the two routes inside `<Routes>` (next to the service-apps routes):
 
 (`OrganizationDetail` is created in Task 3. To keep this task's build green, create a one-line stub now and replace it in Task 3:)
 
-Create `admin/src/pages/OrganizationDetail.tsx` as a temporary stub:
+Create `admin/src/pages/OrganizationDetail.tsx` as a temporary stub (named export — every page in this app uses named exports/imports):
 
 ```tsx
-export default function OrganizationDetail() {
+export function OrganizationDetail() {
   return null;
 }
 ```
@@ -410,7 +410,10 @@ import type { OrgDomain } from "../types/api";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { StatusBadge } from "../components/Badge";
 
-export default function OrganizationDetail() {
+// Named export (codebase convention). Only the OrgDomain type is imported; the
+// org object is inferred from getOrganization's return, so the page's
+// `OrganizationDetail` name doesn't collide with the `OrganizationDetail` type.
+export function OrganizationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();

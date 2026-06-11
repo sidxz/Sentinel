@@ -1,3 +1,3 @@
-export default function OrganizationDetail() {
+export function OrganizationDetail() {
   return null;
 }
