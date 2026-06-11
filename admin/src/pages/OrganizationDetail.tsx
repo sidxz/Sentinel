@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -19,7 +19,7 @@ import { StatusBadge } from "../components/Badge";
 // org object is inferred from getOrganization's return, so the page's
 // `OrganizationDetail` name doesn't collide with the `OrganizationDetail` type.
 export function OrganizationDetail() {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -95,12 +95,13 @@ export function OrganizationDetail() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <button
-        onClick={() => navigate("/organizations")}
-        className="text-xs text-zinc-500 hover:text-zinc-300"
-      >
-        ← Organizations
-      </button>
+      <div className="flex items-center gap-2 text-sm text-zinc-500">
+        <Link to="/organizations" className="hover:text-zinc-300">
+          Organizations
+        </Link>
+        <span>/</span>
+        <span className="text-zinc-200">{org.name}</span>
+      </div>
 
       {/* Header */}
       <div className="flex items-start justify-between">
@@ -116,7 +117,7 @@ export function OrganizationDetail() {
           <button
             onClick={() => toggleEnabled.mutate()}
             disabled={toggleEnabled.isPending}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
+            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50 transition-colors"
           >
             {org.enabled
               ? org.is_public
@@ -178,6 +179,10 @@ export function OrganizationDetail() {
               <input
                 value={newDomain}
                 onChange={(e) => setNewDomain(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newDomain.trim() && !addDomain.isPending)
+                    addDomain.mutate();
+                }}
                 placeholder="tamu.edu"
                 className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
               />
@@ -193,7 +198,7 @@ export function OrganizationDetail() {
             <button
               onClick={() => addDomain.mutate()}
               disabled={!newDomain.trim() || addDomain.isPending}
-              className="px-3 py-2 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
+              className="px-3 py-2 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50 transition-colors"
             >
               Add
             </button>
@@ -233,7 +238,7 @@ export function OrganizationDetail() {
           </p>
           <button
             onClick={() => setShowDelete(true)}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 ring-1 ring-red-500/20"
+            className="px-3 py-1.5 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 ring-1 ring-red-500/20 transition-colors"
           >
             Delete organization
           </button>
