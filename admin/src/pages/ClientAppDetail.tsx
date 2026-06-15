@@ -76,7 +76,7 @@ export function ClientAppDetail() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-zinc-500">
-        <Link to="/client-apps" className="hover:text-zinc-300">Client Apps</Link>
+        <Link to="/client-apps" className="hover:text-zinc-300">Login Apps</Link>
         <span>/</span>
         <span className="text-zinc-200">{app.name}</span>
       </div>
@@ -126,7 +126,7 @@ export function ClientAppDetail() {
       </div>
 
       {/* Edit modal */}
-      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Client App">
+      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Login App">
         <div className="space-y-3">
           <div>
             <label className="text-xs text-zinc-500">Name</label>
@@ -180,7 +180,7 @@ export function ClientAppDetail() {
       </Modal>
 
       {/* Deactivation confirmation */}
-      <Modal open={showDeactivate} onClose={() => setShowDeactivate(false)} title="Deactivate Client App">
+      <Modal open={showDeactivate} onClose={() => setShowDeactivate(false)} title="Deactivate Login App">
         <div className="space-y-3">
           <p className="text-sm text-zinc-400">
             This will prevent new logins through <span className="text-zinc-200 font-medium">{app.name}</span>. Users with active sessions can continue until their tokens expire.
@@ -220,7 +220,7 @@ export function ClientAppDetail() {
         open={showDelete}
         onClose={() => setShowDelete(false)}
         onConfirm={() => remove.mutate()}
-        title="Delete Client App"
+        title="Delete Login App"
         message={`This will permanently delete "${app.name}".`}
         confirmLabel="Delete App"
         danger

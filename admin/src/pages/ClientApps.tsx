@@ -73,7 +73,7 @@ export function ClientApps() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Client Apps</h1>
+        <h1 className="text-xl font-semibold">Login Apps</h1>
         <button
           onClick={() => setShowCreate(true)}
           className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"
@@ -89,11 +89,11 @@ export function ClientApps() {
           columns={columns}
           data={apps}
           onRowClick={(a) => navigate(`/client-apps/${a.id}`)}
-          emptyMessage="No client apps registered"
+          emptyMessage="No login apps registered"
         />
       )}
 
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Register Client App">
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Register Login App">
         <div className="space-y-3">
           <div>
             <label className="text-xs text-zinc-500">Name</label>

@@ -128,7 +128,7 @@ export function ServiceApps() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Service Apps</h1>
+        <h1 className="text-xl font-semibold">Services</h1>
         <button
           onClick={() => setShowCreate(true)}
           className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"
@@ -144,11 +144,11 @@ export function ServiceApps() {
           columns={columns}
           data={apps}
           onRowClick={(a) => navigate(`/service-apps/${a.id}`)}
-          emptyMessage="No service apps registered"
+          emptyMessage="No services registered"
         />
       )}
 
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Register Service App">
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Register Service">
         <div className="space-y-3">
           <div>
             <label className="text-xs text-zinc-500">Display Name</label>

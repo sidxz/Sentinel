@@ -93,7 +93,7 @@ export function ServiceAppDetail() {
       queryClient.invalidateQueries({ queryKey: ["service-app", id] });
       queryClient.invalidateQueries({ queryKey: ["service-apps"] });
       setShowEdit(false);
-      toast.success("Service app updated");
+      toast.success("Service updated");
     },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -115,7 +115,7 @@ export function ServiceAppDetail() {
     onSuccess: () => {
       setShowDelete(false);
       queryClient.invalidateQueries({ queryKey: ["service-apps"] });
-      toast.success("Service app and all its permissions deleted");
+      toast.success("Service and all its permissions deleted");
       navigate("/service-apps");
     },
     onError: (e) => toast.error((e as Error).message),
@@ -148,7 +148,7 @@ export function ServiceAppDetail() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-zinc-500">
-        <Link to="/service-apps" className="hover:text-zinc-300">Service Apps</Link>
+        <Link to="/service-apps" className="hover:text-zinc-300">Services</Link>
         <span>/</span>
         <span className="text-zinc-200">{app.name}</span>
       </div>
@@ -216,7 +216,7 @@ export function ServiceAppDetail() {
       </div>
 
       {/* Edit modal */}
-      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Service App">
+      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Service">
         <div className="space-y-3">
           <div>
             <label className="text-xs text-zinc-500">Name</label>
@@ -280,9 +280,9 @@ export function ServiceAppDetail() {
         open={showDelete}
         onClose={() => setShowDelete(false)}
         onConfirm={() => remove.mutate()}
-        title="Delete Service App"
+        title="Delete Service"
         message={`This will permanently delete "${app.name}", invalidate its API key, and purge all stored permissions for service "${app.service_name}". Type the service name to confirm.`}
-        confirmLabel="Delete Service App"
+        confirmLabel="Delete Service"
         danger
         isPending={remove.isPending}
         confirmInput={app.service_name}
