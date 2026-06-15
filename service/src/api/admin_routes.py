@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.dependencies import require_admin
 from src.config import settings
 from src.database import get_db
+from src.version import __version__
 from src.models.client_app import ClientApp
 from src.models.group import Group
 from src.models.user import User
@@ -163,7 +164,7 @@ async def system_health(
         status="healthy" if all_ok else "degraded",
         checks=checks,
         uptime_seconds=round(time.time() - start_time, 1),
-        version="0.1.0",
+        version=__version__,
     )
 
 
@@ -362,6 +363,9 @@ async def add_user_to_workspace(
             body.role,
             actor_id=uuid.UUID(admin["sub"]),
         )
+    except ValueError as e:
+        # User-not-found / org-not-permitted — surface the reason to the admin.
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("add_user_to_workspace failed", error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to add user to workspace")

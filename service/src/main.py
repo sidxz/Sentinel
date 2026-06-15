@@ -18,6 +18,7 @@ from src.api.workspace_routes import router as workspace_router
 from slowapi.errors import RateLimitExceeded
 
 from src.config import settings
+from src.version import __version__
 from src.middleware.rate_limit import (
     GlobalRateLimitMiddleware,
     limiter,
@@ -146,7 +147,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Sentinel Auth",
     description="Authentication, workspace management, and permissions",
-    version="0.1.0",
+    version=__version__,
     lifespan=lifespan,
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,
