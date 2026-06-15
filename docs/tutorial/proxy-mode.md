@@ -95,7 +95,7 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
 ```
 
 !!! tip "Why `clientId` is required"
-    `clientId` is the ClientApp UUID you get from the Sentinel admin panel. Sentinel uses it to bind a login to a specific registered app — a crafted link cannot redirect the OAuth flow to another app's callback. See [Vuln 7](../../../security.md) for background.
+    `clientId` is the ClientApp UUID you get from the Sentinel admin panel. Sentinel uses it to bind a login to a specific registered app — a crafted link cannot redirect the OAuth flow to another app's callback. See [Vuln 7](../security.md) for background.
 
 `sentinelClient.fetchJson()` attaches a single `Authorization: Bearer <token>` header (no `X-Authz-Token`).
 
