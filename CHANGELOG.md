@@ -16,6 +16,38 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ---
 
+## [0.12.0] – 2026-06-15 — Organizations (email-domain tenancy)
+
+Multi-tenant organizations keyed off verified email domains: users are resolved to
+an organization at sign-in, workspaces can restrict membership to specific
+organizations, and organization identity flows through JWT claims.
+
+### Added
+
+- **Organizations** — `organizations`, `organization_domains`, and `workspace_allowed_organizations` tables, plus `users.organization_id`. A seeded `public` organization is the default for users whose email domain matches no registered org.
+- **Email-domain resolution** — sign-in normalizes the user's email domain and resolves it to an organization (`resolve_organization`), persisting `users.organization_id`.
+- **Workspace org-restriction** — a workspace can be limited to one or more organizations; member invites and token issuance enforce the allow-list (`workspace_allows_org`).
+- **Org admin API + UI** — CRUD for organizations, domains, and workspace allowed-orgs; admin pages for the organizations list/detail and a workspace **Access** tab.
+- **JWT organization claims** — access and authz tokens carry `oid` / `oslug` / `opub` (organization id / slug / public flag), present-as-null when the user has no organization.
+
+### Changed
+
+- Sign-in (proxy mode) and `POST /authz/resolve` (authz mode) are organization-aware and enforce workspace allowed-orgs.
+- The service version is now derived from the installed `sentinel-auth` package metadata instead of a hardcoded literal — the admin System Health tab and OpenAPI now report the real version.
+- Admin UI: **Client Apps → Login Apps** and **Service Apps → Services** (display labels only; the `client_id` login parameter, `service_name`, and the `X-Service-Key` header are unchanged).
+
+### Fixed
+
+- Admin System Health tab and OpenAPI metadata reported a stale `0.1.0`.
+- Broken relative link in the proxy-mode tutorial that failed `mkdocs build --strict`.
+
+### Breaking changes
+
+- **Database migration required.** Run migrations (`make start` auto-migrates, or `alembic upgrade head`): adds the organizations tables and `users.organization_id`, and seeds the `public` organization.
+- **Sign-in is organization-aware.** Users are resolved to an organization by email domain; workspaces configured with an allow-list reject members (and token issuance) for users outside their permitted organizations. Deployments that do not configure org restrictions default every user to the seeded `public` organization and are otherwise unaffected.
+
+---
+
 ## [0.11.0] – 2026-05-29 — Security hardening
 
 A co-ordinated fix for 17 findings across two rounds of deep security audit of
