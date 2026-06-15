@@ -26,14 +26,25 @@ class _ScalarResult:
         return _S()
 
 
+class _Org:
+    def __init__(self, org_id, *, enabled=True, is_public=False):
+        self.id = org_id
+        self.enabled = enabled
+        self.is_public = is_public
+
+
 class _FakeSession:
-    def __init__(self, exec_results):
+    def __init__(self, exec_results, get_map=None):
         self._exec = list(exec_results)
+        self._get = get_map or {}
         self.added = []
         self.committed = False
 
     async def execute(self, _stmt):
         return self._exec.pop(0)
+
+    async def get(self, _model, pk):
+        return self._get.get(pk)
 
     def add(self, obj):
         self.added.append(obj)
@@ -51,13 +62,15 @@ def _user_with_org(org_id):
 
 @pytest.mark.asyncio
 async def test_invite_rejected_when_org_not_allowed():
-    user = _user_with_org(uuid.uuid4())
+    org_id = uuid.uuid4()
+    user = _user_with_org(org_id)
     allowed_org = uuid.uuid4()  # different from the user's org
     session = _FakeSession(
         exec_results=[
             _ScalarResult(value=user),  # select User by email
             _ScalarResult(scalars=[allowed_org]),  # workspace_allows_org query
-        ]
+        ],
+        get_map={org_id: _Org(org_id)},  # effective_org -> enabled real org
     )
     with pytest.raises(ValueError, match="organization is not permitted"):
         await workspace_service.invite_member(
@@ -74,10 +87,58 @@ async def test_invite_allowed_when_workspace_open():
         exec_results=[
             _ScalarResult(value=user),  # select User by email
             _ScalarResult(scalars=[]),  # no allowed-org rows => open
-        ]
+        ],
+        get_map={org_id: _Org(org_id)},  # effective_org -> enabled real org
     )
     membership = await workspace_service.invite_member(
         session, uuid.uuid4(), "x@tamu.edu", role="viewer"
     )
     assert membership.user_id == user.id
     assert session.committed is True
+
+
+class _SessionWithGet:
+    """Like _FakeSession but also serves get() — for paths that load the user."""
+
+    def __init__(self, *, get_results=None, exec_results=None):
+        self._get = list(get_results or [])
+        self._exec = list(exec_results or [])
+        self.added = []
+        self.flushed = False
+        self.committed = False
+
+    async def get(self, _model, _pk):
+        return self._get.pop(0) if self._get else None
+
+    async def execute(self, _stmt):
+        return self._exec.pop(0)
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def flush(self):
+        self.flushed = True
+
+    async def commit(self):
+        self.committed = True
+
+
+@pytest.mark.asyncio
+async def test_admin_add_user_rejected_when_org_not_allowed():
+    # The admin "add user to workspace" path must enforce the same allowed-orgs
+    # gate as invite, so it can't create a membership the user could never redeem.
+    from src.models.workspace import WorkspaceMembership
+    from src.services import admin_service
+
+    user = _user_with_org(uuid.uuid4())
+    allowed = uuid.uuid4()  # workspace restricted to a different org
+    session = _SessionWithGet(
+        get_results=[user],  # db.get(User)
+        exec_results=[_ScalarResult(scalars=[allowed])],  # workspace_allows_org
+    )
+    with pytest.raises(ValueError, match="organization is not permitted"):
+        await admin_service.add_user_to_workspace(
+            session, user.id, uuid.uuid4(), "viewer"
+        )
+    assert session.committed is False
+    assert not [o for o in session.added if isinstance(o, WorkspaceMembership)]

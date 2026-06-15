@@ -23,6 +23,35 @@ SafeStr = Annotated[str, AfterValidator(strip_html)]
 SafeStrOptional = Annotated[str | None, AfterValidator(strip_html_optional)]
 
 
+def strip_html_required(value: str) -> str:
+    """Like ``strip_html`` but rejects values that are empty after sanitization.
+
+    A plain ``min_length`` runs BEFORE the strip, so ``"  "`` or ``"<b></b>"``
+    would pass it and then collapse to ``""``. Validate AFTER stripping instead so
+    a name can never be blanked to the empty string.
+    """
+    cleaned = strip_html(value)
+    if not cleaned:
+        raise ValueError("must not be empty")
+    return cleaned
+
+
+def strip_html_required_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return strip_html_required(value)
+
+
+NonEmptySafeStr = Annotated[str, AfterValidator(strip_html_required)]
+NonEmptySafeStrOptional = Annotated[
+    str | None, AfterValidator(strip_html_required_optional)
+]
+
+# Single source of truth for slugs (org + workspace): lowercase letters, digits,
+# and hyphens, no leading/trailing hyphen, minimum two characters.
+SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+
+
 def sanitize_url(value: str | None) -> str | None:
     """Allow only http(s) URLs. Blocks javascript:, data:, and other schemes."""
     if value is None:

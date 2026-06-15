@@ -858,8 +858,13 @@ function AccessTab({ workspaceId }: { workspaceId: string }) {
   if (isLoading || !allowed) {
     return <div className="h-32 bg-zinc-800/30 rounded-lg animate-pulse" />;
   }
+  // Seed the editor once from the fetched allow-list, keyed on workspaceId (not the
+  // data). Keying on the data would remount the inner component on any background
+  // refetch — or another admin's concurrent save — silently discarding the admin's
+  // in-progress selections. Their edits now stand until they Save (last-write-wins).
   return (
     <AccessTabInner
+      key={workspaceId}
       workspaceId={workspaceId}
       initialAllowed={allowed.organization_ids}
     />

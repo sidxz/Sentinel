@@ -474,8 +474,15 @@ export const removeOrgDomain = (id: string, domainId: string) =>
     method: "DELETE",
   });
 
-export const getOrgUsers = (id: string) =>
-  request<OrgUser[]>(`/admin/organizations/${id}/users`);
+export const getOrgUsers = (id: string, page = 1, pageSize = 50) => {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  return request<PaginatedResponse<OrgUser>>(
+    `/admin/organizations/${id}/users?${params}`,
+  );
+};
 
 export const getWorkspaceAllowedOrgs = (workspaceId: string) =>
   request<{ organization_ids: string[] }>(

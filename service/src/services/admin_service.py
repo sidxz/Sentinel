@@ -11,7 +11,7 @@ from src.models.permission import ResourcePermission, ResourceShare
 from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.schemas.validators import strip_html
-from src.services import activity_service, token_service
+from src.services import activity_service, organization_service, token_service
 
 
 async def get_stats(db: AsyncSession) -> dict:
@@ -436,6 +436,12 @@ async def add_user_to_workspace(
     role: str,
     actor_id: uuid.UUID | None = None,
 ) -> WorkspaceMembership:
+    user = await db.get(User, user_id)
+    if user is None:
+        raise ValueError("User not found")
+    # Same allowed-orgs gate the invite path enforces, so the admin panel cannot
+    # create a membership the user could never redeem (token issuance would 403).
+    await organization_service.assert_user_allowed_in_workspace(db, user, workspace_id)
     membership = WorkspaceMembership(
         workspace_id=workspace_id, user_id=user_id, role=role
     )
@@ -546,17 +552,8 @@ async def execute_import(
         role = row["role"]
 
         try:
-            # Find or create pre-provisioned user (no SocialAccount — user must
-            # still authenticate through an external IdP before they can get tokens).
-            user_result = await db.execute(select(User).where(User.email == email))
-            user = user_result.scalar_one_or_none()
-            if not user:
-                user = User(email=email, name=name)
-                db.add(user)
-                await db.flush()
-                users_created += 1
-
-            # Find workspace
+            # Resolve the workspace first — a missing workspace (or any later
+            # rejection) must NOT leave a half-created orphan user behind.
             ws_result = await db.execute(
                 select(Workspace).where(Workspace.slug == workspace_slug)
             )
@@ -565,16 +562,49 @@ async def execute_import(
                 errors.append(f"Workspace '{workspace_slug}' not found for {email}")
                 continue
 
-            # Check existing membership
-            existing = await db.execute(
-                select(WorkspaceMembership).where(
-                    WorkspaceMembership.workspace_id == workspace.id,
-                    WorkspaceMembership.user_id == user.id,
+            # Look up — but do NOT yet create — the pre-provisioned user (no
+            # SocialAccount; they must still authenticate via an external IdP before
+            # they can get tokens).
+            user_result = await db.execute(select(User).where(User.email == email))
+            user = user_result.scalar_one_or_none()
+
+            if user is not None:
+                existing = await db.execute(
+                    select(WorkspaceMembership).where(
+                        WorkspaceMembership.workspace_id == workspace.id,
+                        WorkspaceMembership.user_id == user.id,
+                    )
                 )
-            )
-            if existing.scalar_one_or_none():
-                errors.append(f"{email} already in workspace '{workspace_slug}'")
+                if existing.scalar_one_or_none():
+                    errors.append(f"{email} already in workspace '{workspace_slug}'")
+                    continue
+
+            # Enforce the workspace's allowed-orgs gate BEFORE creating anything, so
+            # a rejected row never persists an orphan account or inflates the created
+            # count. A not-yet-created account is gated via a transient stand-in
+            # carrying the email the effective-org resolution keys on.
+            gate_user = user if user is not None else User(email=email, name=name)
+            try:
+                await organization_service.assert_user_allowed_in_workspace(
+                    db, gate_user, workspace.id
+                )
+            except ValueError as e:
+                errors.append(f"{email}: {e}")
                 continue
+
+            # All gates passed — now it is safe to create the user. Stamp the org
+            # resolved from their email domain so org user-counts/listings reflect
+            # the intended tenancy immediately (first IdP sign-in refreshes it).
+            if user is None:
+                org = await organization_service.resolve_organization(db, email)
+                user = User(
+                    email=email,
+                    name=name,
+                    organization_id=org.id if org else None,
+                )
+                db.add(user)
+                await db.flush()
+                users_created += 1
 
             membership = WorkspaceMembership(
                 workspace_id=workspace.id, user_id=user.id, role=role

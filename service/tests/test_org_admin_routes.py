@@ -90,7 +90,7 @@ def test_delete_missing_org_returns_404():
 
 
 def test_create_org_duplicate_slug_returns_409(monkeypatch):
-    async def _boom(db, name, slug):
+    async def _boom(db, name, slug, created_by=None):
         raise org_admin_service.OrgConflict("slug taken")
 
     monkeypatch.setattr(org_admin_service, "create_organization", _boom)
@@ -106,7 +106,7 @@ def test_create_org_duplicate_slug_returns_409(monkeypatch):
 def test_create_org_ok_returns_201(monkeypatch):
     org = _Org()
 
-    async def _ok(db, name, slug):
+    async def _ok(db, name, slug, created_by=None):
         return org
 
     monkeypatch.setattr(org_admin_service, "create_organization", _ok)
@@ -142,8 +142,8 @@ def test_list_org_users_unknown_org_returns_404():
     assert resp.status_code == 404
 
 
-def test_list_org_users_negative_limit_returns_422():
-    # ge=1 bound rejects a negative limit at validation time (was a 500 before).
+def test_list_org_users_invalid_page_returns_422():
+    # ge=1 bound rejects page=0 at validation time, before any DB access.
     client = TestClient(_app(_FakeDB()))
-    resp = client.get(f"/admin/organizations/{uuid.uuid4()}/users?limit=-1")
+    resp = client.get(f"/admin/organizations/{uuid.uuid4()}/users?page=0")
     assert resp.status_code == 422

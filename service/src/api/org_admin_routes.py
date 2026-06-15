@@ -2,7 +2,8 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import require_admin
@@ -18,6 +19,7 @@ from src.schemas.admin import (
     AdminUserResponse,
     AdminWorkspaceAllowedOrgsRequest,
     AdminWorkspaceAllowedOrgsResponse,
+    PaginatedResponse,
 )
 from src.services import activity_service, org_admin_service
 from src.services.org_admin_service import OrgConflict, OrgNotFound, OrgProtected
@@ -25,6 +27,26 @@ from src.services.org_admin_service import OrgConflict, OrgNotFound, OrgProtecte
 router = APIRouter(
     prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)]
 )
+
+
+async def _commit_or_conflict(
+    db: AsyncSession, *, conflict_detail: str, fk_detail: str | None = None
+) -> None:
+    """Commit, mapping a constraint race to a precise HTTP error.
+
+    A unique-violation (a concurrent insert won the race) -> 409 ``conflict_detail``.
+    A foreign-key violation (a referenced row deleted concurrently, or an ON DELETE
+    RESTRICT backstop firing) -> 400 ``fk_detail`` when provided — so a permanently
+    failing error is never reported as a transient 'please retry'.
+    """
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        pgcode = getattr(getattr(e, "orig", None), "sqlstate", None)
+        if fk_detail is not None and pgcode == "23503":  # foreign_key_violation
+            raise HTTPException(status_code=400, detail=fk_detail)
+        raise HTTPException(status_code=409, detail=conflict_detail)
 
 
 def _org_response(org, domain_count: int, user_count: int) -> AdminOrgResponse:
@@ -66,9 +88,10 @@ async def create_organization(
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    actor_id = uuid.UUID(admin["sub"])
     try:
         org = await org_admin_service.create_organization(
-            db, name=body.name, slug=body.slug
+            db, name=body.name, slug=body.slug, created_by=actor_id
         )
     except OrgConflict as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -77,11 +100,12 @@ async def create_organization(
         action="org_create",
         target_type="organization",
         target_id=org.id,
-        actor_id=uuid.UUID(admin["sub"]),
+        actor_id=actor_id,
         detail={"name": org.name, "slug": org.slug},
     )
-    await db.commit()
-    await db.refresh(org)
+    await _commit_or_conflict(
+        db, conflict_detail=f"Organization slug {body.slug!r} is already in use"
+    )
     return _org_response(org, 0, 0)
 
 
@@ -101,17 +125,16 @@ async def update_organization(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        org = await org_admin_service.update_organization(
+        org, enabled_changed = await org_admin_service.update_organization(
             db, org_id, name=body.name, enabled=body.enabled
         )
     except OrgNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
-    # Distinct audit action only when the public org's sign-in switch is toggled;
-    # a plain rename/disable is a normal org_update.
+    # Distinct audit action only when the public org's sign-in switch ACTUALLY
+    # changes value; a rename or an unchanged-`enabled` echo is a normal org_update
+    # and must not pollute the audit trail with a security-relevant toggle event.
     action = (
-        "org_public_toggle"
-        if (org.is_public and body.enabled is not None)
-        else "org_update"
+        "org_public_toggle" if (org.is_public and enabled_changed) else "org_update"
     )
     detail = await org_admin_service.get_organization_detail(db, org_id)
     await activity_service.log_activity(
@@ -145,7 +168,14 @@ async def delete_organization(
         target_id=org_id,
         actor_id=uuid.UUID(admin["sub"]),
     )
-    await db.commit()
+    # Race backstop for the ON DELETE RESTRICT FK: a workspace allow-list
+    # referencing this org may have been added between the pre-check and commit.
+    await _commit_or_conflict(
+        db,
+        conflict_detail="Could not delete the organization.",
+        fk_detail="This organization is referenced by a workspace's allowed-orgs "
+        "list. Remove it from those workspaces before deleting it.",
+    )
 
 
 @router.post(
@@ -176,6 +206,7 @@ async def add_domain(
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    domain_payload = AdminOrgDomainResponse.model_validate(row)
     await activity_service.log_activity(
         db,
         action="org_domain_add",
@@ -184,9 +215,11 @@ async def add_domain(
         actor_id=uuid.UUID(admin["sub"]),
         detail={"domain": row.domain, "include_subdomains": row.include_subdomains},
     )
-    await db.commit()
-    await db.refresh(row)
-    return AdminOrgDomainResponse.model_validate(row)
+    await _commit_or_conflict(
+        db,
+        conflict_detail=f"Domain {row.domain!r} is already claimed by an organization",
+    )
+    return domain_payload
 
 
 @router.delete("/organizations/{org_id}/domains/{domain_id}", status_code=204)
@@ -211,22 +244,20 @@ async def remove_domain(
     await db.commit()
 
 
-@router.get("/organizations/{org_id}/users", response_model=list[AdminUserResponse])
+@router.get("/organizations/{org_id}/users", response_model=PaginatedResponse)
 async def list_org_users(
     org_id: uuid.UUID,
-    response: Response,
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         users, total = await org_admin_service.list_org_users(
-            db, org_id, limit=limit, offset=offset
+            db, org_id, page=page, page_size=page_size
         )
     except OrgNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
-    response.headers["X-Total-Count"] = str(total)
-    return [
+    items = [
         AdminUserResponse(
             id=u.id,
             email=u.email,
@@ -235,10 +266,11 @@ async def list_org_users(
             is_active=u.is_active,
             is_admin=u.is_admin,
             created_at=u.created_at,
-            workspace_count=0,
+            workspace_count=workspace_count,
         )
-        for u in users
+        for u, workspace_count in users
     ]
+    return PaginatedResponse(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.get(
@@ -246,7 +278,10 @@ async def list_org_users(
     response_model=AdminWorkspaceAllowedOrgsResponse,
 )
 async def get_allowed_orgs(workspace_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    orgs = await org_admin_service.get_workspace_allowed_orgs(db, workspace_id)
+    try:
+        orgs = await org_admin_service.get_workspace_allowed_orgs(db, workspace_id)
+    except OrgNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
     return AdminWorkspaceAllowedOrgsResponse(organization_ids=[o.id for o in orgs])
 
 
@@ -261,7 +296,7 @@ async def set_allowed_orgs(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        await org_admin_service.set_workspace_allowed_orgs(
+        saved_ids = await org_admin_service.set_workspace_allowed_orgs(
             db, workspace_id, body.organization_ids
         )
     except OrgNotFound as e:
@@ -274,7 +309,13 @@ async def set_allowed_orgs(
         target_type="workspace",
         target_id=workspace_id,
         actor_id=uuid.UUID(admin["sub"]),
-        detail={"organization_ids": [str(i) for i in body.organization_ids]},
+        detail={"organization_ids": [str(i) for i in saved_ids]},
     )
-    await db.commit()
-    return AdminWorkspaceAllowedOrgsResponse(organization_ids=body.organization_ids)
+    await _commit_or_conflict(
+        db,
+        conflict_detail="Allowed organizations changed concurrently — re-open the "
+        "tab and save again.",
+        fk_detail="One of the selected organizations was just deleted. Refresh the "
+        "list and try again.",
+    )
+    return AdminWorkspaceAllowedOrgsResponse(organization_ids=saved_ids)

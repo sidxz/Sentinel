@@ -3,14 +3,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from src.schemas.validators import SafeStr, SafeStrOptional
+from src.schemas.validators import SLUG_PATTERN, SafeStr, SafeStrOptional
 
 
 class WorkspaceCreateRequest(BaseModel):
     name: SafeStr = Field(min_length=1, max_length=255)
-    slug: str = Field(
-        min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$"
-    )
+    slug: str = Field(min_length=1, max_length=100, pattern=SLUG_PATTERN)
     description: SafeStrOptional = None
 
 

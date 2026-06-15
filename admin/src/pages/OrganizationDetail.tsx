@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import {
@@ -27,21 +32,40 @@ export function OrganizationDetail() {
   const [includeSub, setIncludeSub] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [deleteSlug, setDeleteSlug] = useState("");
+  const [usersPage, setUsersPage] = useState(1);
 
-  const { data: org, isLoading } = useQuery({
+  const {
+    data: org,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
     queryKey: ["organization", id],
     queryFn: () => getOrganization(id!),
     enabled: !!id,
   });
 
-  const { data: users = [] } = useQuery({
-    queryKey: ["organization-users", id],
-    queryFn: () => getOrgUsers(id!),
+  // Clamp the requested page to the org's user count (already known from the org
+  // query) so a shrinking list can never strand the admin on an empty, out-of-range
+  // page with the pager hidden. Page size matches getOrgUsers' default.
+  const USERS_PER_PAGE = 50;
+  const usersLastPage = Math.max(
+    1,
+    Math.ceil((org?.user_count ?? 0) / USERS_PER_PAGE),
+  );
+  const usersPageClamped = Math.min(usersPage, usersLastPage);
+
+  const { data: usersData } = useQuery({
+    queryKey: ["organization-users", id, usersPageClamped],
+    queryFn: () => getOrgUsers(id!, usersPageClamped),
     enabled: !!id,
+    placeholderData: keepPreviousData,
   });
+  const users = usersData?.items ?? [];
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["organization", id] });
+    queryClient.invalidateQueries({ queryKey: ["organization-users", id] });
     queryClient.invalidateQueries({ queryKey: ["organizations"] });
   };
 
@@ -83,14 +107,35 @@ export function OrganizationDetail() {
     onSuccess: () => {
       setShowDelete(false);
       queryClient.invalidateQueries({ queryKey: ["organizations"] });
+      // Deleting an org also CASCADE-removes it from workspace allow-lists, so
+      // invalidate those so any open Access tab reseeds without the dead id.
+      queryClient.invalidateQueries({ queryKey: ["workspace-allowed-orgs"] });
       toast.success("Organization deleted");
       navigate("/organizations");
     },
     onError: (e) => toast.error((e as Error).message),
   });
 
-  if (isLoading || !org) {
+  if (isLoading) {
     return <div className="h-64 bg-zinc-800/30 rounded-lg animate-pulse" />;
+  }
+
+  if (isError || !org) {
+    return (
+      <div className="space-y-3 max-w-3xl">
+        <Link
+          to="/organizations"
+          className="text-sm text-zinc-500 hover:text-zinc-300"
+        >
+          ← Organizations
+        </Link>
+        <div className="border border-zinc-800 rounded-lg p-6 text-center">
+          <p className="text-sm text-zinc-300">
+            {(error as Error)?.message ?? "Organization not found."}
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -214,17 +259,43 @@ export function OrganizationDetail() {
         {users.length === 0 ? (
           <p className="text-sm text-zinc-500">No users.</p>
         ) : (
-          <ul className="divide-y divide-zinc-800/50 border border-zinc-800 rounded-md">
-            {users.map((u) => (
-              <li
-                key={u.id}
-                className="px-3 py-2 flex items-center justify-between"
-              >
-                <span className="text-sm text-zinc-200">{u.email}</span>
-                <span className="text-xs text-zinc-500">{u.name}</span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="divide-y divide-zinc-800/50 border border-zinc-800 rounded-md">
+              {users.map((u) => (
+                <li
+                  key={u.id}
+                  className="px-3 py-2 flex items-center justify-between"
+                >
+                  <span className="text-sm text-zinc-200">{u.email}</span>
+                  <span className="text-xs text-zinc-500">{u.name}</span>
+                </li>
+              ))}
+            </ul>
+            {usersData && usersData.total > usersData.page_size && (
+              <div className="flex items-center justify-between text-xs text-zinc-500 pt-1">
+                <span>{usersData.total} total</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    disabled={usersPageClamped <= 1}
+                    onClick={() => setUsersPage(usersPageClamped - 1)}
+                    className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    Prev
+                  </button>
+                  <span className="px-2 py-1">
+                    {usersPageClamped} / {usersLastPage}
+                  </span>
+                  <button
+                    disabled={usersPageClamped >= usersLastPage}
+                    onClick={() => setUsersPage(usersPageClamped + 1)}
+                    className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -234,7 +305,9 @@ export function OrganizationDetail() {
           <h2 className="text-sm font-semibold text-red-400">Danger zone</h2>
           <p className="text-sm text-zinc-500">
             Deleting an org un-assigns its users (they fall back to the public org
-            on next sign-in) and removes it from every workspace's allow-list.
+            on next sign-in). Deletion is blocked while the org is in <b>any</b>{" "}
+            workspace's allowed-organizations list — remove it from those
+            workspaces' access settings first.
           </p>
           <button
             onClick={() => {

@@ -3,7 +3,13 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from src.schemas.validators import SafeStr, SafeStrOptional
+from src.schemas.validators import (
+    SLUG_PATTERN,
+    NonEmptySafeStr,
+    NonEmptySafeStrOptional,
+    SafeStr,
+    SafeStrOptional,
+)
 
 
 class AdminUserResponse(BaseModel):
@@ -70,7 +76,7 @@ class AdminWorkspaceResponse(BaseModel):
 
 class AdminWorkspaceCreateRequest(BaseModel):
     name: SafeStr = Field(min_length=1, max_length=255)
-    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    slug: str = Field(pattern=SLUG_PATTERN)
     description: SafeStrOptional = None
 
 
@@ -264,8 +270,6 @@ class AdminOrgResponse(BaseModel):
     domain_count: int
     user_count: int
 
-    model_config = {"from_attributes": True}
-
 
 class AdminOrgDomainResponse(BaseModel):
     id: uuid.UUID
@@ -284,16 +288,14 @@ class AdminOrgDetailResponse(BaseModel):
     user_count: int
     domains: list[AdminOrgDomainResponse]
 
-    model_config = {"from_attributes": True}
-
 
 class AdminOrgCreateRequest(BaseModel):
-    name: SafeStr = Field(min_length=1, max_length=255)
-    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$", max_length=63)
+    name: NonEmptySafeStr = Field(max_length=255)
+    slug: str = Field(pattern=SLUG_PATTERN, max_length=63)
 
 
 class AdminOrgUpdateRequest(BaseModel):
-    name: SafeStrOptional = None
+    name: NonEmptySafeStrOptional = Field(default=None, max_length=255)
     enabled: bool | None = None
 
 

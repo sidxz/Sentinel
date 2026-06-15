@@ -278,10 +278,17 @@ async def resolve(
             .where(WorkspaceMembership.user_id == user.id)
             .order_by(Workspace.created_at)
         )
-        result = await db.execute(stmt)
+        rows = (await db.execute(stmt)).all()
+        # Only surface workspaces this user's org can actually mint for — the
+        # discovery list must not invite a guaranteed-403 on the follow-up call.
+        # Batched into one filter query rather than one check per workspace.
+        allowed_ws_ids = await organization_service.filter_workspaces_allowing_org(
+            db, [ws.id for ws, _role in rows], user.organization_id
+        )
         workspaces = [
             AuthzWorkspaceOption(id=ws.id, name=ws.name, slug=ws.slug, role=role)
-            for ws, role in result.all()
+            for ws, role in rows
+            if ws.id in allowed_ws_ids
         ]
         return AuthzResolveResponse(user=user_resp, workspaces=workspaces)
 
@@ -341,9 +348,9 @@ async def resolve(
         workspace_role=membership.role,
         actions=actions,
         service_name=service_ctx.service_name,
-        org_id=str(org.id) if org else None,
-        org_slug=org.slug if org else None,
-        org_is_public=org.is_public if org else False,
+        # org is guaranteed non-None here (the 403 gate above rejects an
+        # unresolved org), so this always carries real org claims.
+        **organization_service.org_claims(org),
     )
 
     return AuthzResolveResponse(

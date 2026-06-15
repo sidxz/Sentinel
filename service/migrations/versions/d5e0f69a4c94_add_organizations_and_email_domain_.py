@@ -92,8 +92,11 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["workspace_id"], ["workspaces.id"], ondelete="CASCADE"
         ),
+        # RESTRICT: an org referenced by a workspace allow-list cannot be deleted
+        # out from under it (a cascade could empty the list and flip the workspace
+        # 'open to all'). delete_organization refuses it first; this is the backstop.
         sa.ForeignKeyConstraint(
-            ["organization_id"], ["organizations.id"], ondelete="CASCADE"
+            ["organization_id"], ["organizations.id"], ondelete="RESTRICT"
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(

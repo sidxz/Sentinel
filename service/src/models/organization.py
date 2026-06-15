@@ -93,8 +93,13 @@ class WorkspaceAllowedOrganization(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE")
     )
+    # RESTRICT (not CASCADE): an org wired into a workspace's allow-list must not be
+    # deletable out from under it. A cascade could empty the list, and an empty
+    # allow-list means 'open to all' — silently flipping a locked-down workspace
+    # open. delete_organization refuses the delete with a clear message first; this
+    # FK is the race-proof DB backstop.
     organization_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE")
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT")
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

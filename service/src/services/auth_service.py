@@ -13,7 +13,6 @@ from src.auth.jwt import (
 from src.config import settings
 from src.schemas.validators import sanitize_url, strip_html
 from src.models.group import GroupMembership
-from src.models.organization import Organization
 from src.models.user import SocialAccount, User
 from src.models.workspace import WorkspaceMembership
 from src.services import organization_service, token_service
@@ -176,11 +175,7 @@ async def issue_tokens(
     result = await db.execute(stmt)
     group_ids = [row[0] for row in result.all()]
 
-    org = (
-        await db.get(Organization, user.organization_id)
-        if user.organization_id
-        else None
-    )
+    org = await organization_service.org_for_claims(db, user.organization_id)
     access_token = create_access_token(
         user_id=user.id,
         email=user.email,
@@ -189,9 +184,7 @@ async def issue_tokens(
         workspace_slug=workspace_slug,
         workspace_role=membership.role,
         groups=group_ids,
-        org_id=str(org.id) if org else None,
-        org_slug=org.slug if org else None,
-        org_is_public=org.is_public if org else False,
+        **organization_service.org_claims(org),
     )
     # family_id is generated inside create_refresh_token and embedded in the JWT
     refresh_token = create_refresh_token(user_id=user.id)
@@ -247,77 +240,83 @@ async def rotate_refresh_token(
         raise ValueError("Refresh token already used or expired")
 
     user_id, family_id, workspace_id, client_app_id = result
-    user = await db.get(User, user_id)
-    if not user or not user.is_active:
-        await token_service.revoke_token_family(family_id)
-        raise ValueError("User not found or inactive")
 
-    # Verify user still belongs to the original workspace
-    stmt = select(WorkspaceMembership).where(
-        WorkspaceMembership.user_id == user_id,
-        WorkspaceMembership.workspace_id == workspace_id,
-    )
-    db_result = await db.execute(stmt)
-    membership = db_result.scalar_one_or_none()
-    if not membership:
-        await token_service.revoke_token_family(family_id)
-        raise ValueError("User is no longer a member of this workspace")
+    # The old refresh token is now consumed (one-time use). Any failure from here
+    # on must revoke the whole family — otherwise a partially-rotated session
+    # (old token spent, no new pair issued, siblings still live) could linger.
+    # This covers every validation failure (inactive user, lost membership, org
+    # not permitted, disabled-tenant kill-switch) AND any unexpected error, so the
+    # path always fails closed.
+    try:
+        user = await db.get(User, user_id)
+        if not user or not user.is_active:
+            raise ValueError("User not found or inactive")
 
-    if not await organization_service.workspace_allows_org(
-        db, workspace_id, user.organization_id
-    ):
-        await token_service.revoke_token_family(family_id)
-        raise ValueError("User's organization is not permitted in this workspace")
-
-    # Get workspace slug
-    from src.models.workspace import Workspace
-
-    workspace = await db.get(Workspace, workspace_id)
-
-    # Get group IDs
-    stmt = (
-        select(GroupMembership.group_id)
-        .join(GroupMembership.group)
-        .where(
-            GroupMembership.user_id == user.id,
-            GroupMembership.group.has(workspace_id=workspace_id),
+        # Verify user still belongs to the original workspace
+        stmt = select(WorkspaceMembership).where(
+            WorkspaceMembership.user_id == user_id,
+            WorkspaceMembership.workspace_id == workspace_id,
         )
-    )
-    db_result = await db.execute(stmt)
-    group_ids = [row[0] for row in db_result.all()]
+        db_result = await db.execute(stmt)
+        membership = db_result.scalar_one_or_none()
+        if not membership:
+            raise ValueError("User is no longer a member of this workspace")
 
-    org = (
-        await db.get(Organization, user.organization_id)
-        if user.organization_id
-        else None
-    )
-    # Issue new tokens
-    new_access = create_access_token(
-        user_id=user.id,
-        email=user.email,
-        name=user.name,
-        workspace_id=workspace_id,
-        workspace_slug=workspace.slug,
-        workspace_role=membership.role,
-        groups=group_ids,
-        org_id=str(org.id) if org else None,
-        org_slug=org.slug if org else None,
-        org_is_public=org.is_public if org else False,
-    )
-    new_refresh = create_refresh_token(user_id=user.id, family_id=family_id)
+        if not await organization_service.workspace_allows_org(
+            db, workspace_id, user.organization_id
+        ):
+            raise ValueError("User's organization is not permitted in this workspace")
 
-    # Store new refresh token in same family, binding paired access jti so
-    # family revocation can blacklist it.
-    new_rt_payload = decode_token(new_refresh, audience=_AUD_REFRESH)
-    new_at_payload = decode_token(new_access, audience=_AUD_ACCESS)
-    await token_service.store_refresh_token(
-        jti=new_rt_payload["jti"],
-        user_id=user.id,
-        family_id=family_id,
-        workspace_id=workspace_id,
-        client_app_id=client_app_id,
-        access_jti=new_at_payload["jti"],
-    )
+        # Get workspace slug
+        from src.models.workspace import Workspace
+
+        workspace = await db.get(Workspace, workspace_id)
+
+        # Get group IDs
+        stmt = (
+            select(GroupMembership.group_id)
+            .join(GroupMembership.group)
+            .where(
+                GroupMembership.user_id == user.id,
+                GroupMembership.group.has(workspace_id=workspace_id),
+            )
+        )
+        db_result = await db.execute(stmt)
+        group_ids = [row[0] for row in db_result.all()]
+
+        # Enforce the real-org kill-switch on refresh too: a disabled tenant must
+        # not keep its sessions alive by rotating. org_for_claims raises OrgDisabled,
+        # which the wrapper turns into a family revocation like any other failure.
+        org = await organization_service.org_for_claims(db, user.organization_id)
+
+        # Issue new tokens
+        new_access = create_access_token(
+            user_id=user.id,
+            email=user.email,
+            name=user.name,
+            workspace_id=workspace_id,
+            workspace_slug=workspace.slug,
+            workspace_role=membership.role,
+            groups=group_ids,
+            **organization_service.org_claims(org),
+        )
+        new_refresh = create_refresh_token(user_id=user.id, family_id=family_id)
+
+        # Store new refresh token in same family, binding paired access jti so
+        # family revocation can blacklist it.
+        new_rt_payload = decode_token(new_refresh, audience=_AUD_REFRESH)
+        new_at_payload = decode_token(new_access, audience=_AUD_ACCESS)
+        await token_service.store_refresh_token(
+            jti=new_rt_payload["jti"],
+            user_id=user.id,
+            family_id=family_id,
+            workspace_id=workspace_id,
+            client_app_id=client_app_id,
+            access_jti=new_at_payload["jti"],
+        )
+    except Exception:
+        await token_service.revoke_token_family(family_id)
+        raise
 
     return {
         "access_token": new_access,

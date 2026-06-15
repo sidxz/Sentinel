@@ -39,9 +39,13 @@ export function Activity() {
     "group_member_added", "group_member_removed",
     "permission_visibility_changed", "permission_shared", "permission_revoked",
     "batch_import", "bulk_status_change", "tokens_revoked",
+    "org_create", "org_update", "org_public_toggle", "org_delete",
+    "org_domain_add", "org_domain_remove", "workspace_allowed_orgs_set",
   ];
 
-  const targetTypes = ["user", "workspace", "group", "resource_permission", "system"];
+  const targetTypes = [
+    "user", "workspace", "group", "resource_permission", "system", "organization",
+  ];
 
   const resetFilters = () => {
     setAction("");

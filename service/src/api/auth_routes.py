@@ -14,7 +14,7 @@ from src.auth.providers import get_configured_providers, oauth
 from src.config import settings
 from src.database import get_db
 from src.models.client_app import ClientApp
-from src.models.user import User
+from src.models.user import SocialAccount, User
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.schemas.auth import (
     ProviderListResponse,
@@ -330,8 +330,23 @@ async def list_workspaces_for_login(
 
     workspaces = await workspace_service.list_user_workspaces(db, user_id)
 
+    # Filter the picker to workspaces this user can ACTUALLY mint a token for —
+    # selecting one consumes the one-time auth code and then 403s at token
+    # issuance, forcing a full re-login. The user's effective org and the
+    # disabled-real-org kill-switch are the same checks issue_tokens applies; if
+    # the org was disabled after this code was issued, nothing is mintable.
+    eff_org = await organization_service.effective_org(db, user)
+    if organization_service.is_disabled_real_org(eff_org):
+        return []
+    eff_org_id = eff_org.id if eff_org is not None else None
+    allowed_ws_ids = await organization_service.filter_workspaces_allowing_org(
+        db, [ws.id for ws in workspaces], eff_org_id
+    )
+
     result = []
     for ws in workspaces:
+        if ws.id not in allowed_ws_ids:
+            continue
         stmt = select(WorkspaceMembership.role).where(
             WorkspaceMembership.workspace_id == ws.id,
             WorkspaceMembership.user_id == user_id,
@@ -509,6 +524,43 @@ async def admin_callback(
         # org-gating here would risk locking every admin out of the panel used to
         # configure orgs (e.g. if the public org is disabled).
         org = await organization_service.resolve_organization(db, email)
+
+        # This callback deliberately skips the org sign-in gate (so disabling the
+        # public org can't lock admins out of the panel). But it must NOT become a
+        # side door to JIT-provision accounts for arbitrary verified emails: decide
+        # admin eligibility WITHOUT writing, and bounce ineligible sign-ins before
+        # any user/social row is created.
+        #
+        # Key eligibility on the IDENTITY that will actually be signed in
+        # (provider + provider_user_id), mirroring find_or_create_user, so the gate
+        # and the provisioning never disagree. A by-email lookup is consulted ONLY
+        # when this identity has no social account yet — the bare pre-provisioned
+        # account it may link to. (A by-email user that already has a different
+        # provider is a cross-provider conflict find_or_create_user will reject, so
+        # granting eligibility on it would be deciding on an account this sign-in
+        # can never become.)
+        social = (
+            await db.execute(
+                select(SocialAccount).where(
+                    SocialAccount.provider == provider,
+                    SocialAccount.provider_user_id == provider_user_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if social is not None:
+            identity_user = await db.get(User, social.user_id)
+        else:
+            identity_user = (
+                await db.execute(select(User).where(User.email == email))
+            ).scalar_one_or_none()
+        is_admin_eligible = (
+            identity_user is not None and identity_user.is_admin
+        ) or email in settings.admin_email_list
+        if not is_admin_eligible:
+            return RedirectResponse(
+                url=f"{settings.admin_url}/login?error=not_admin",
+                status_code=302,
+            )
 
         try:
             user = await auth_service.find_or_create_user(

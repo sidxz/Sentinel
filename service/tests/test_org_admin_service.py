@@ -9,15 +9,19 @@ from src.services import org_admin_service as svc
 
 
 class _Result:
-    def __init__(self, *, scalar=None, scalars=None):
+    def __init__(self, *, scalar=None, scalars=None, rows=None):
         self._scalar = scalar
         self._scalars = scalars or []
+        self._rows = rows or []
 
     def scalar_one_or_none(self):
         return self._scalar
 
     def scalar_one(self):
         return self._scalar
+
+    def all(self):
+        return self._rows
 
     def scalars(self):
         parent = self
@@ -92,9 +96,27 @@ async def test_update_organization_not_found():
 async def test_update_organization_sets_fields():
     org = _Org()
     db = _FakeDB(get_results=[org])
-    await svc.update_organization(db, org.id, name="Texas A&M", enabled=False)
+    _org, enabled_changed = await svc.update_organization(
+        db, org.id, name="Texas A&M", enabled=False
+    )
     assert org.name == "Texas A&M"
     assert org.enabled is False
+    assert enabled_changed is True  # was True, now False
+
+
+@pytest.mark.asyncio
+async def test_update_organization_reports_no_enabled_change_on_echo():
+    # Regression (V10): re-sending the current `enabled` value (or omitting it) is
+    # NOT a toggle — the route must not log a public-sign-in toggle for a no-op.
+    org = _Org()  # enabled True
+    db = _FakeDB(get_results=[org])
+    _org, enabled_changed = await svc.update_organization(
+        db, org.id, name="New Name", enabled=True
+    )
+    assert enabled_changed is False
+    db = _FakeDB(get_results=[org])
+    _org, enabled_changed = await svc.update_organization(db, org.id, name="Only Name")
+    assert enabled_changed is False
 
 
 @pytest.mark.asyncio
@@ -109,9 +131,22 @@ async def test_delete_public_org_is_protected():
 @pytest.mark.asyncio
 async def test_delete_regular_org_ok():
     org = _Org()
-    db = _FakeDB(get_results=[org])
+    # execute() is the "restricted solely to this org" check -> no such workspaces.
+    db = _FakeDB(get_results=[org], execute_results=[_Result(scalars=[])])
     await svc.delete_organization(db, org.id)
     assert org in db.deleted
+
+
+@pytest.mark.asyncio
+async def test_delete_org_blocked_when_referenced_by_allow_list():
+    org = _Org()
+    ref_ws = uuid.uuid4()
+    # The org is referenced by a workspace's allow-list -> delete must be refused
+    # (cascading it away could empty the list and flip that workspace open to all).
+    db = _FakeDB(get_results=[org], execute_results=[_Result(scalars=[ref_ws])])
+    with pytest.raises(svc.OrgProtected):
+        await svc.delete_organization(db, org.id)
+    assert org not in db.deleted
 
 
 @pytest.mark.asyncio
@@ -164,12 +199,13 @@ async def test_remove_domain_wrong_org_not_found():
 @pytest.mark.asyncio
 async def test_set_allowed_orgs_replaces_and_validates():
     ws_id = uuid.uuid4()
-    a, b = uuid.uuid4(), uuid.uuid4()
-    # get(Workspace) -> exists; execute #1 validates ids (both found);
-    # execute #2 is the delete of existing rows.
+    org_a, org_b = _Org(), _Org()
+    a, b = org_a.id, org_b.id
+    # get(Workspace) -> exists; execute #1 validates ids (both found, enabled,
+    # non-public); execute #2 is the delete of existing rows.
     db = _FakeDB(
         get_results=[object()],
-        execute_results=[_Result(scalars=[a, b]), _Result()],
+        execute_results=[_Result(scalars=[org_a, org_b]), _Result()],
     )
     await svc.set_workspace_allowed_orgs(db, ws_id, [a, b, a])  # dup ignored
     added = [o for o in db.added if isinstance(o, WorkspaceAllowedOrganization)]
@@ -180,10 +216,36 @@ async def test_set_allowed_orgs_replaces_and_validates():
 @pytest.mark.asyncio
 async def test_set_allowed_orgs_unknown_id_rejected():
     ws_id = uuid.uuid4()
-    a, missing = uuid.uuid4(), uuid.uuid4()
-    db = _FakeDB(get_results=[object()], execute_results=[_Result(scalars=[a])])
-    with pytest.raises(ValueError):
+    org_a = _Org()
+    a, missing = org_a.id, uuid.uuid4()
+    db = _FakeDB(get_results=[object()], execute_results=[_Result(scalars=[org_a])])
+    with pytest.raises(ValueError, match="Unknown organization ids"):
         await svc.set_workspace_allowed_orgs(db, ws_id, [a, missing])
+
+
+@pytest.mark.asyncio
+async def test_set_allowed_orgs_rejects_public_org():
+    # Regression (V5): allow-listing the public catch-all would lock out every real
+    # member (their org != public) — reject it.
+    ws_id = uuid.uuid4()
+    pub = _Org(is_public=True)
+    db = _FakeDB(get_results=[object()], execute_results=[_Result(scalars=[pub])])
+    with pytest.raises(ValueError, match="enabled, non-public"):
+        await svc.set_workspace_allowed_orgs(db, ws_id, [pub.id])
+    assert not [o for o in db.added if isinstance(o, WorkspaceAllowedOrganization)]
+
+
+@pytest.mark.asyncio
+async def test_set_allowed_orgs_rejects_disabled_org():
+    # Regression (V5): a disabled org can never mint a token, so allow-listing only
+    # it would brick the workspace — reject it.
+    ws_id = uuid.uuid4()
+    org = _Org()
+    org.enabled = False
+    db = _FakeDB(get_results=[object()], execute_results=[_Result(scalars=[org])])
+    with pytest.raises(ValueError, match="enabled, non-public"):
+        await svc.set_workspace_allowed_orgs(db, ws_id, [org.id])
+    assert not [o for o in db.added if isinstance(o, WorkspaceAllowedOrganization)]
 
 
 @pytest.mark.asyncio
@@ -204,19 +266,20 @@ async def test_set_allowed_orgs_empty_clears():
 @pytest.mark.asyncio
 async def test_list_org_users_returns_users_and_total():
     user = object()
+    # execute #1 = count, execute #2 = page rows of (user, workspace_count).
     db = _FakeDB(
         get_results=[object()],
-        execute_results=[_Result(scalar=3), _Result(scalars=[user])],
+        execute_results=[_Result(scalar=3), _Result(rows=[(user, 2)])],
     )
-    users, total = await svc.list_org_users(db, uuid.uuid4(), limit=10, offset=0)
+    users, total = await svc.list_org_users(db, uuid.uuid4(), page=1, page_size=10)
     assert total == 3
-    assert users == [user]
+    assert users == [(user, 2)]
 
 
 @pytest.mark.asyncio
 async def test_list_org_users_empty_org():
     db = _FakeDB(
-        get_results=[object()], execute_results=[_Result(scalar=0), _Result(scalars=[])]
+        get_results=[object()], execute_results=[_Result(scalar=0), _Result(rows=[])]
     )
     users, total = await svc.list_org_users(db, uuid.uuid4())
     assert users == [] and total == 0

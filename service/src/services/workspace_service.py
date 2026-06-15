@@ -121,10 +121,7 @@ async def invite_member(
     if not user:
         raise ValueError("User not found")
 
-    if not await organization_service.workspace_allows_org(
-        db, workspace_id, user.organization_id
-    ):
-        raise ValueError("User's organization is not permitted in this workspace")
+    await organization_service.assert_user_allowed_in_workspace(db, user, workspace_id)
 
     membership = WorkspaceMembership(
         workspace_id=workspace_id, user_id=user.id, role=role

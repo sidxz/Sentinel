@@ -68,6 +68,18 @@ def test_user_has_organization_id_column():
         ("@tamu.edu", "tamu.edu"),  # leading '@' ok, single '@'
         ("a@\x00.com", None),  # null byte -> fail closed
         ("a@" + "x" * 250 + ".com", None),  # over RFC 1035 253-char limit
+        # Hardened: idna passes pure-ASCII junk through, so the LDH backstop must
+        # reject URLs, ports, spaces, and comma-lists.
+        ("https://tamu.edu", None),
+        ("tamu.edu:443", None),
+        ("exa mple.com", None),
+        ("tamu.edu, tamu.org", None),
+        # Hardened: a Unicode full-stop variant (U+3002) maps to '.' during idna
+        # encoding; it must not split into an extra label that suffix-matches a
+        # victim org's subdomain rule, nor sneak past the trailing-dot check.
+        ("evil.com。tamu.edu", None),
+        ("user@evil.com。tamu.edu", None),
+        ("tamu.edu。", None),
     ],
 )
 def test_normalize_domain(raw, expected):

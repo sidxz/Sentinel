@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from src.schemas.admin import (
     AdminOrgCreateRequest,
     AdminOrgDomainCreateRequest,
+    AdminOrgUpdateRequest,
     AdminWorkspaceAllowedOrgsRequest,
 )
 
@@ -15,6 +16,27 @@ from src.schemas.admin import (
 def test_org_create_accepts_valid_slug():
     req = AdminOrgCreateRequest(name="TAMU", slug="tamu")
     assert req.slug == "tamu"
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "<b></b>"])
+def test_org_create_rejects_blank_name(bad):
+    # Name must survive HTML-stripping non-empty (no whitespace/markup-only names).
+    with pytest.raises(ValidationError):
+        AdminOrgCreateRequest(name=bad, slug="tamu")
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "<b></b>"])
+def test_org_update_rejects_blank_name(bad):
+    # PATCH must not be able to blank an org's display name.
+    with pytest.raises(ValidationError):
+        AdminOrgUpdateRequest(name=bad)
+
+
+def test_org_update_allows_omitted_name():
+    # name is optional on update; omitting it (enabled-only PATCH) is valid.
+    req = AdminOrgUpdateRequest(enabled=False)
+    assert req.name is None
+    assert req.enabled is False
 
 
 @pytest.mark.parametrize("bad", ["Tamu", "-tamu", "tamu-", "ta mu", "a", "t@mu"])
