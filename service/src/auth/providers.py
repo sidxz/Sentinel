@@ -42,6 +42,19 @@ if settings.entra_client_id and settings.entra_tenant_id:
         code_challenge_method="S256",
     )
 
+# Dex (self-hosted OIDC) — config-gated; inert unless DEX_CLIENT_ID +
+# DEX_SERVER_METADATA_URL are set. Used by the Layer-2 isolation prover for faithful
+# token issuance against an ephemeral target. Mirrors the OIDC providers above.
+if settings.dex_client_id and settings.dex_server_metadata_url:
+    oauth.register(
+        name="dex",
+        client_id=settings.dex_client_id,
+        client_secret=settings.dex_client_secret,
+        server_metadata_url=settings.dex_server_metadata_url,
+        client_kwargs={"scope": "openid email profile"},
+        code_challenge_method="S256",
+    )
+
 
 def get_configured_providers() -> list[str]:
     providers = []
@@ -51,4 +64,6 @@ def get_configured_providers() -> list[str]:
         providers.append("github")
     if settings.entra_client_id and settings.entra_tenant_id:
         providers.append("entra_id")
+    if settings.dex_client_id and settings.dex_server_metadata_url:
+        providers.append("dex")
     return providers

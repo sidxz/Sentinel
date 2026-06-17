@@ -44,6 +44,7 @@ limiter = Limiter(
     key_func=get_client_ip,
     storage_uri=settings.redis_url,
     storage_options=settings.redis_ssl_kwargs,
+    enabled=settings.rate_limit_enabled,  # disables every @limiter.limit() when off
 )
 
 
@@ -94,8 +95,9 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
         self.window = 60  # seconds
 
     async def dispatch(self, request: Request, call_next):
-        # Skip health endpoint
-        if request.url.path == "/health":
+        # Skip health checks, and bypass entirely when rate limiting is disabled
+        # (ephemeral test/pentest targets — see settings.rate_limit_enabled).
+        if request.url.path == "/health" or not settings.rate_limit_enabled:
             return await call_next(request)
 
         ip = get_client_ip(request)

@@ -122,7 +122,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = (
             "camera=(), microphone=(), geolocation=()"
         )
-        _HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'"
+        # `form-action`/`base-uri` are no-fallback directives: `default-src 'none'` does NOT
+        # cover them, so they must be pinned explicitly. (`style-src 'unsafe-inline'` is a
+        # deliberate trade-off so the rendered login/consent HTML can use inline styles.)
+        _HTML_CSP = (
+            "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; "
+            "frame-ancestors 'none'; form-action 'none'; base-uri 'none'"
+        )
         csp_override = response.headers.get("X-CSP-Override")
         if csp_override == "html-page":
             response.headers["Content-Security-Policy"] = _HTML_CSP
@@ -131,7 +137,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             if csp_override is not None:
                 del response.headers["X-CSP-Override"]
             response.headers["Content-Security-Policy"] = (
-                "default-src 'none'; frame-ancestors 'none'"
+                "default-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'"
             )
         response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"

@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     entra_client_id: str = ""
     entra_client_secret: str = ""
     entra_tenant_id: str = ""
+    # Dex (self-hosted OIDC) — config-gated; consumed by the Layer-2 isolation prover.
+    dex_client_id: str = ""
+    dex_client_secret: str = ""
+    dex_server_metadata_url: str = ""
 
     # Service
     service_host: str = "0.0.0.0"
@@ -57,6 +61,9 @@ class Settings(BaseSettings):
     allowed_hosts: str = ""  # comma-separated override; empty = derived from BASE_URL
     debug: bool = False  # Set True for local development (enables /docs, /redoc)
     rate_limit_rpm: int = 30  # Global rate limit (requests per minute per IP)
+    rate_limit_enabled: bool = (
+        True  # master switch; False only on ephemeral test targets
+    )
     behind_proxy: bool = (
         False  # Set True when behind a reverse proxy (nginx, ALB, etc.)
     )
