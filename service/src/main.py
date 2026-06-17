@@ -25,7 +25,9 @@ from src.middleware.rate_limit import (
     limiter,
     rate_limit_exceeded_handler,
 )
+from src.middleware.access_log import AccessLogMiddleware
 from src.middleware.cors import DynamicCORSMiddleware, refresh_origins
+from src.middleware.request_context import RequestContextMiddleware
 from src.middleware.security_headers import (
     MaxBodySizeMiddleware,
     SecurityHeadersMiddleware,
@@ -183,6 +185,8 @@ if "*" not in settings.allowed_hosts_list:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list)
 
 app.add_middleware(DynamicCORSMiddleware)
+app.add_middleware(AccessLogMiddleware)  # inside RequestContext
+app.add_middleware(RequestContextMiddleware)  # last added = outermost
 
 # Rate limiting
 app.state.limiter = limiter
