@@ -301,7 +301,7 @@ async def callback(
             url=f"{redirect_uri}{separator}{urlencode({'code': code})}"
         )
     except Exception as e:
-        logger.error("auth callback error", error=str(e), exc_info=True)
+        logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         return _error_page(
             500,
             "Authentication Failed",
@@ -426,7 +426,12 @@ async def refresh_token(
     try:
         tokens = await auth_service.rotate_refresh_token(db, body.refresh_token)
     except Exception:
-        logger.error("refresh token rotation failed", exc_info=True)
+        logger.error(
+            "app.error.unhandled",
+            category="app",
+            error="refresh_token_rotation_failed",
+            exc_info=True,
+        )
         raise HTTPException(status_code=401, detail="Invalid refresh token")
     return tokens
 
@@ -615,7 +620,7 @@ async def admin_callback(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("admin callback error", error=str(e), exc_info=True)
+        logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         return JSONResponse(
             status_code=500, content={"detail": "Authentication failed"}
         )

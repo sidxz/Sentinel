@@ -46,7 +46,7 @@ async def refresh_origins(db: AsyncSession) -> None:
             origins.add(origin)
 
     _allowed_origins = origins
-    logger.info("cors_origins_refreshed", count=len(origins))
+    logger.info("app.cors.refreshed", category="app", count=len(origins))
 
 
 class DynamicCORSMiddleware(CORSMiddleware):

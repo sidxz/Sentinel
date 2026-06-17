@@ -15,7 +15,9 @@ from src.api.dependencies import ServiceKeyContext, require_service_context
 from src.auth.jwt import create_authz_token
 from src.config import settings
 from src.database import get_db
+from src.logging_events import log_security
 from src.middleware.rate_limit import limiter
+from src.middleware.request_context import bind_identity
 from src.models.service_app import ServiceApp
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.schemas.authz import (
@@ -167,7 +169,13 @@ async def idp_callback(
             headers={"Accept": "application/json"},
         )
     if resp.status_code != 200:
-        logger.warning("github_code_exchange_failed", status=resp.status_code)
+        log_security(
+            "auth.idp.exchange_failed",
+            outcome="failure",
+            reason="github_code_exchange",
+            provider="github",
+            status=resp.status_code,
+        )
         raise HTTPException(status_code=502, detail="GitHub code exchange failed")
 
     token_data = resp.json()
@@ -219,23 +227,26 @@ async def resolve(
             body.idp_token, body.provider, expected_nonce=body.nonce
         )
     except IdpValidationError as e:
-        logger.warning(
-            "authz_resolve_idp_validation_failed",
+        log_security(
+            "authz.idp.validation_failed",
+            outcome="failure",
+            reason="idp_validation",
             provider=body.provider,
-            error=str(e),
-            service=service_ctx.service_name,
+            caller_service=service_ctx.service_name,
         )
         raise HTTPException(status_code=400, detail=str(e))
 
     # 2. Resolve the org from the verified IdP email and gate sign-in — the same
     # domain restriction the browser OAuth callback applies, so AuthZ mode cannot
     # be a side door around it. Then JIT-provision the user with that org.
-    org = await organization_service.resolve_organization(db, idp_claims["email"])
+    idp_email: str = idp_claims["email"]
+    org = await organization_service.resolve_organization(db, idp_email)
     if org is None:
-        logger.warning(
-            "authz_resolve_org_not_permitted",
-            provider=body.provider,
-            service=service_ctx.service_name,
+        log_security(
+            "authz.token.denied",
+            outcome="denied",
+            reason="org_not_permitted",
+            workspace_id=str(body.workspace_id) if body.workspace_id else None,
         )
         raise HTTPException(
             status_code=403,
@@ -247,28 +258,34 @@ async def resolve(
             db=db,
             provider=body.provider,
             provider_user_id=idp_claims["sub"],
-            email=idp_claims["email"],
+            email=idp_email,
             name=idp_claims["name"],
             organization_id=org.id,
             avatar_url=idp_claims.get("picture"),
         )
     except auth_service.CrossProviderEmailConflict as e:
-        logger.warning(
-            "authz_resolve_email_conflict",
+        log_security(
+            "authz.idp.email_conflict",
+            outcome="denied",
+            reason="email_conflict",
             provider=body.provider,
-            email=idp_claims["email"],
+            email_domain=idp_email.rsplit("@", 1)[-1],
+            caller_service=service_ctx.service_name,
         )
         raise HTTPException(status_code=409, detail=str(e))
 
     if not user.is_active:
-        logger.warning(
-            "authz_resolve_inactive_user",
-            user_id=str(user.id),
-            email=user.email,
+        log_security(
+            "authz.token.denied",
+            outcome="denied",
+            reason="inactive_user",
+            actor=str(user.id),
         )
         raise HTTPException(status_code=403, detail="User account is inactive")
 
-    user_resp = AuthzUserResponse(id=user.id, email=user.email, name=user.name)
+    user_resp = AuthzUserResponse.model_validate(
+        {"id": user.id, "email": user.email, "name": user.name}
+    )
 
     # 3. If no workspace specified, return workspace list
     if not body.workspace_id:
@@ -300,9 +317,11 @@ async def resolve(
     result = await db.execute(stmt)
     membership = result.scalar_one_or_none()
     if not membership:
-        logger.warning(
-            "authz_resolve_not_member",
-            user_id=str(user.id),
+        log_security(
+            "authz.token.denied",
+            outcome="denied",
+            reason="not_member",
+            actor=str(user.id),
             workspace_id=str(body.workspace_id),
         )
         raise HTTPException(
@@ -314,9 +333,11 @@ async def resolve(
     if not await organization_service.workspace_allows_org(
         db, body.workspace_id, user.organization_id
     ):
-        logger.warning(
-            "authz_resolve_org_not_allowed",
-            user_id=str(user.id),
+        log_security(
+            "authz.token.denied",
+            outcome="denied",
+            reason="org_not_allowed",
+            actor=str(user.id),
             workspace_id=str(body.workspace_id),
         )
         raise HTTPException(
@@ -332,12 +353,19 @@ async def resolve(
     )
 
     # 6. Sign authz JWT
-    logger.info(
-        "authz_token_issued",
-        user_id=str(user.id),
+    bind_identity(
+        request,
+        actor=str(user.id),
+        workspace_id=str(workspace.id),
+        caller_service=service_ctx.service_name,
+    )
+    log_security(
+        "authz.token.issued",
+        outcome="success",
+        actor=str(user.id),
         workspace_id=str(workspace.id),
         workspace_role=membership.role,
-        service=service_ctx.service_name,
+        caller_service=service_ctx.service_name,
         actions_count=len(actions),
     )
     authz_token = create_authz_token(

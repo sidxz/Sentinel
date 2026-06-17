@@ -367,7 +367,7 @@ async def add_user_to_workspace(
         # User-not-found / org-not-permitted — surface the reason to the admin.
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error("add_user_to_workspace failed", error=str(e), exc_info=True)
+        logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to add user to workspace")
     return {"status": "ok"}
 
@@ -426,7 +426,7 @@ async def create_workspace(
             description=body.description,
         )
     except Exception as e:
-        logger.error("create_workspace failed", error=str(e), exc_info=True)
+        logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to create workspace")
 
     await activity_service.log_activity(
@@ -707,7 +707,7 @@ async def add_group_member(
     try:
         await group_service.add_member(db, group_id, grp.workspace_id, user_id)
     except Exception as e:
-        logger.error("add_group_member failed", error=str(e), exc_info=True)
+        logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to add group member")
 
     await activity_service.log_activity(
@@ -856,7 +856,7 @@ async def share_permission(
             actor_id,
         )
     except Exception as e:
-        logger.error("share_permission failed", error=str(e), exc_info=True)
+        logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to share permission")
 
     await activity_service.log_activity(
@@ -917,7 +917,8 @@ async def purge_service_permissions(
     )
     await db.commit()
     logger.info(
-        "permissions_purged",
+        "admin.permissions.purged",
+        category="audit",
         service_name=service_name,
         deleted_count=count,
         actor=admin["sub"],
@@ -1133,7 +1134,7 @@ async def assign_role_member(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error("assign_user_role failed", error=str(e), exc_info=True)
+        logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to assign role")
 
     await activity_service.log_activity(
@@ -1299,7 +1300,7 @@ async def create_service_app(
             allowed_origins=body.allowed_origins,
         )
     except Exception as e:
-        logger.error("create_service_app failed", error=str(e), exc_info=True)
+        logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to create service app")
 
     await activity_service.log_activity(
@@ -1432,7 +1433,8 @@ async def delete_service_app(
     )
     if perm_count:
         logger.info(
-            "service_permissions_purged_on_delete",
+            "admin.service.permissions_purged_on_delete",
+            category="audit",
             service_name=app.service_name,
             deleted_count=perm_count,
         )

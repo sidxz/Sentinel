@@ -4,6 +4,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.logging_events import log_audit
 from src.middleware.rate_limit import limiter
 
 from src.api.dependencies import (
@@ -160,8 +161,8 @@ async def register_resource(
         owner_id=body.owner_id,
         visibility=body.visibility,
     )
-    logger.info(
-        "permission_registered",
+    log_audit(
+        "permission.resource.registered",
         service=svc.service_name,
         resource_type=body.resource_type,
         resource_id=str(body.resource_id),
@@ -185,8 +186,8 @@ async def update_visibility(
     result = await permission_service.update_visibility(
         db, permission_id, body.visibility
     )
-    logger.info(
-        "permission_visibility_updated",
+    log_audit(
+        "permission.resource.visibility_updated",
         service=svc.service_name,
         permission_id=str(permission_id),
         visibility=body.visibility,
@@ -211,8 +212,8 @@ async def revoke_share(
         grantee_type=body.grantee_type,
         grantee_id=body.grantee_id,
     )
-    logger.info(
-        "permission_share_revoked",
+    log_audit(
+        "permission.resource.share_revoked",
         service=svc.service_name,
         permission_id=str(permission_id),
         grantee_type=body.grantee_type,
@@ -239,8 +240,8 @@ async def deregister_resource(
         )
     except ValueError:
         raise HTTPException(status_code=404, detail="Resource not found")
-    logger.info(
-        "permission_deregistered",
+    log_audit(
+        "permission.resource.deregistered",
         service=svc.service_name,
         resource_type=resource_type,
         resource_id=str(resource_id),

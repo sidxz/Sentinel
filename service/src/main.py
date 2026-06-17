@@ -107,12 +107,10 @@ async def lifespan(app: FastAPI):
                 "Redis URL has no authentication — set a password in REDIS_URL (redis://:password@host:port/db)"
             )
         if _redis_no_tls:
-            logger.warning(
-                "Redis URL is not using TLS — use rediss:// if Redis is outside a trusted network"
-            )
+            logger.warning("app.config.insecure", category="app", reason="redis_no_tls")
         if _redis_no_cert_verify:
             logger.warning(
-                "Redis TLS certificate verification is disabled — set REDIS_TLS_VERIFY=required in production"
+                "app.config.insecure", category="app", reason="redis_no_cert_verify"
             )
         if "*" in settings.allowed_hosts_list:
             errors.append(
@@ -120,7 +118,7 @@ async def lifespan(app: FastAPI):
             )
         if errors:
             for e in errors:
-                logger.critical(e)
+                logger.critical("app.config.insecure", category="app", reason=e)
             raise RuntimeError(
                 "Refusing to start: insecure configuration with DEBUG=False. "
                 f"Fix: {'; '.join(errors)}"
@@ -128,24 +126,24 @@ async def lifespan(app: FastAPI):
     else:
         if _insecure_session:
             logger.warning(
-                "SESSION_SECRET_KEY is using the default dev value — set a random secret in production"
+                "app.config.insecure", category="app", reason="insecure_session_key"
             )
         if _insecure_cookie:
             logger.warning(
-                "COOKIE_SECURE is False — admin cookies will be sent over HTTP"
+                "app.config.insecure", category="app", reason="insecure_cookie"
             )
         if _redis_down:
-            logger.warning("Redis is unreachable — some features will not work")
+            logger.warning("app.config.insecure", category="app", reason="redis_down")
         if _redis_no_auth:
             logger.warning(
-                "Redis URL has no authentication — use redis://:password@host in production"
+                "app.config.insecure", category="app", reason="redis_no_auth"
             )
         if _redis_no_tls:
-            logger.warning("Redis URL is not using TLS — use rediss:// in production")
+            logger.warning("app.config.insecure", category="app", reason="redis_no_tls")
 
     app.state.start_time = time.time()
     yield
-    logger.info("daikon-sentinel shutting down")
+    logger.info("app.shutdown")
 
 
 app = FastAPI(
