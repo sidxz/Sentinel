@@ -26,8 +26,20 @@ def test_secrets_redacted():
 
 
 def test_non_sensitive_keys_preserved():
-    out = _r({"service_name": "docu", "workspace_id": "ws1", "actor": "u1"})
-    assert out == {"service_name": "docu", "workspace_id": "ws1", "actor": "u1"}
+    out = _r(
+        {
+            "service_name": "docu",
+            "workspace_id": "ws1",
+            "actor": "u1",
+            "caller_service": "auth-svc",
+        }
+    )
+    assert out == {
+        "service_name": "docu",
+        "workspace_id": "ws1",
+        "actor": "u1",
+        "caller_service": "auth-svc",
+    }
 
 
 def test_nested_and_list_redaction():
@@ -41,3 +53,18 @@ def test_redact_mapping_is_pure():
     src = {"email": "a@b.com"}
     redact_mapping(src)
     assert src == {"email": "a@b.com"}  # input untouched
+
+
+def test_email_key_with_non_parseable_value_yields_none_domain():
+    out = _r({"email": None})
+    assert "email" not in out
+    assert out["email_domain"] is None
+    out2 = _r({"email": "not-an-email"})
+    assert "email" not in out2
+    assert out2["email_domain"] is None  # raw value never leaked
+
+
+def test_email_key_is_case_insensitive():
+    out = _r({"Email": "bob@x.com"})
+    assert "Email" not in out
+    assert out["Email_domain"] == "x.com"

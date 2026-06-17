@@ -44,10 +44,8 @@ def redact_mapping(data: dict) -> dict:
     for key, value in data.items():
         kl = key.lower() if isinstance(key, str) else key
         if isinstance(kl, str) and _is_email_key(kl):
-            dom = _domain(value)
-            if dom is not None:
-                out[f"{key}_domain"] = dom
-            continue  # drop the raw email value entirely
+            out[f"{key}_domain"] = _domain(value)
+            continue  # raw email value never emitted; domain (or None) kept
         if isinstance(kl, str) and kl in _DENY_EXACT:
             out[key] = _REDACTED
             continue
