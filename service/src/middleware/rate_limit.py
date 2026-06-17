@@ -11,6 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from src.config import settings
+from src.logging_events import log_security
 
 # Module-level fallback counter for when Redis is unavailable
 _fallback_counts: dict[str, list[float]] = defaultdict(list)
@@ -51,6 +52,13 @@ limiter = Limiter(
 async def rate_limit_exceeded_handler(
     request: Request, exc: RateLimitExceeded
 ) -> JSONResponse:
+    log_security(
+        "ratelimit.exceeded",
+        outcome="denied",
+        reason="route_limit",
+        source_ip=get_client_ip(request),
+        **{"http.route": request.url.path},
+    )
     return JSONResponse(
         status_code=429,
         content={"detail": "Too many requests"},
@@ -109,6 +117,14 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
 
             if count > self.rpm:
                 ttl = await r.ttl(key)
+                log_security(
+                    "ratelimit.exceeded",
+                    outcome="denied",
+                    reason="global_ip",
+                    limit=self.rpm,
+                    source_ip=ip,
+                    **{"http.route": request.url.path},
+                )
                 return JSONResponse(
                     status_code=429,
                     content={"detail": "Too many requests"},
@@ -123,6 +139,14 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
                 t for t in _fallback_counts[key] if now - t < _FALLBACK_WINDOW
             ]
             if len(_fallback_counts[key]) >= _FALLBACK_LIMIT:
+                log_security(
+                    "ratelimit.exceeded",
+                    outcome="denied",
+                    reason="global_ip_fallback",
+                    limit=_FALLBACK_LIMIT,
+                    source_ip=ip,
+                    **{"http.route": request.url.path},
+                )
                 return Response(status_code=429, content="Rate limit exceeded")
             _fallback_counts[key].append(now)
 
