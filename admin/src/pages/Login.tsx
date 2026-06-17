@@ -32,7 +32,6 @@ export function Login() {
         "An account with this email already exists under a different sign-in provider. Sign in with your original provider.",
     };
     if (errorCode && errorMessages[errorCode]) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot URL param consumed on mount
       setError(errorMessages[errorCode]);
       clientLog("client.login.failed", "warning", { reason: errorCode });
       window.history.replaceState({}, "", "/login");
