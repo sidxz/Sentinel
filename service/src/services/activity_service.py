@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.logging_events import log_audit
 from src.models.activity import ActivityLog
 from src.models.user import User
 
@@ -27,6 +28,14 @@ async def log_activity(
     )
     db.add(entry)
     await db.flush()
+    log_audit(
+        action=action,
+        target_type=target_type,
+        target_id=str(target_id),
+        actor=str(actor_id) if actor_id else "system",
+        workspace_id=str(workspace_id) if workspace_id else None,
+        detail=detail,
+    )
     return entry
 
 
