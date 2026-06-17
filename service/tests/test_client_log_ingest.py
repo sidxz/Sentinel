@@ -1,3 +1,4 @@
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from structlog.testing import capture_logs
@@ -9,13 +10,18 @@ from src.middleware.rate_limit import limiter
 _XRW = {"X-Requested-With": "XMLHttpRequest"}
 
 
+@pytest.fixture(autouse=True)
+def _disable_limiter(monkeypatch):
+    # slowapi skips @limiter.limit checks when disabled — keeps the test off Redis.
+    monkeypatch.setattr(limiter, "enabled", False)
+
+
 def _app():
     app = FastAPI()
     app.include_router(client_log_router)
     app.dependency_overrides[require_admin] = lambda: {"sub": "admin-1", "admin": True}
-    # slowapi requires app.state.limiter; disable it so no Redis call is made in tests
+    # slowapi requires app.state.limiter; the @pytest.fixture above disables it
     app.state.limiter = limiter
-    limiter.enabled = False
     return app
 
 
@@ -39,6 +45,7 @@ def test_accepts_and_reemits():
     assert ev
     assert ev[0]["category"] == "security"
     assert ev[0]["client_origin"] is True
+    assert "source_ip" in ev[0]
 
 
 def test_rejects_non_client_event_name():
