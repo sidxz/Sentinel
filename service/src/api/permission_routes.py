@@ -163,7 +163,7 @@ async def register_resource(
     )
     log_audit(
         "permission.resource.registered",
-        service=svc.service_name,
+        caller_service=svc.service_name,
         resource_type=body.resource_type,
         resource_id=str(body.resource_id),
         workspace_id=str(body.workspace_id),
@@ -188,7 +188,7 @@ async def update_visibility(
     )
     log_audit(
         "permission.resource.visibility_updated",
-        service=svc.service_name,
+        caller_service=svc.service_name,
         permission_id=str(permission_id),
         visibility=body.visibility,
     )
@@ -214,7 +214,7 @@ async def revoke_share(
     )
     log_audit(
         "permission.resource.share_revoked",
-        service=svc.service_name,
+        caller_service=svc.service_name,
         permission_id=str(permission_id),
         grantee_type=body.grantee_type,
         grantee_id=str(body.grantee_id),
@@ -242,7 +242,7 @@ async def deregister_resource(
         raise HTTPException(status_code=404, detail="Resource not found")
     log_audit(
         "permission.resource.deregistered",
-        service=svc.service_name,
+        caller_service=svc.service_name,
         resource_type=resource_type,
         resource_id=str(resource_id),
     )

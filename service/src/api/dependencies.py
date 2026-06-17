@@ -128,8 +128,13 @@ async def require_admin(request: Request, db: AsyncSession = Depends(get_db)) ->
                 status_code=403, detail="Missing X-Requested-With header"
             )
 
+    identity_kwargs: dict = {}
     if actor := payload.get("sub"):
-        bind_identity(request, actor=actor)
+        identity_kwargs["actor"] = actor
+    if wid := payload.get("wid"):
+        identity_kwargs["workspace_id"] = str(wid)
+    if identity_kwargs:
+        bind_identity(request, **identity_kwargs)
 
     return payload
 

@@ -28,6 +28,7 @@ def test_emits_single_access_event_with_route_template():
     assert e["http.status"] == 200
     assert "duration_ms" in e
     assert e["log_level"] == "info"
+    assert "user_agent" in e
 
 
 def test_4xx_logged_as_warning():

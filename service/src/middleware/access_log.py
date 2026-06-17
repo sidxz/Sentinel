@@ -62,13 +62,15 @@ class AccessLogMiddleware:
                 level = (
                     "info" if status < 400 else "warning" if status < 500 else "error"
                 )
+                req = Request(scope)
                 fields = {
                     "http.method": scope.get("method"),
                     "http.route": _route_template(scope),
                     "http.status": status,
                     "duration_ms": round((time.perf_counter() - start) * 1000, 2),
                     "resp_bytes": state["bytes"],
-                    "source_ip": get_client_ip(Request(scope)),
+                    "source_ip": get_client_ip(req),
+                    "user_agent": req.headers.get("user-agent", ""),
                 }
                 state_obj = scope.get("state")
                 for k in ("actor", "workspace_id", "caller_service"):

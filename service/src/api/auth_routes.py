@@ -333,6 +333,13 @@ async def callback(
             url=f"{redirect_uri}{separator}{urlencode({'code': code})}"
         )
     except Exception as e:
+        log_security(
+            "auth.login.failed",
+            outcome="failure",
+            reason="callback_error",
+            provider=provider,
+            error_type=type(e).__name__,
+        )
         logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         return _error_page(
             500,

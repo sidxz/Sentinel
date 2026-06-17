@@ -94,18 +94,34 @@ async def lifespan(app: FastAPI):
         _redis_down = True
 
     if not settings.debug:
-        errors = []
+        errors: list[tuple[str, str]] = []
         if _insecure_session:
-            errors.append("SESSION_SECRET_KEY is using the default dev value")
+            errors.append(
+                (
+                    "insecure_session",
+                    "SESSION_SECRET_KEY is using the default dev value",
+                )
+            )
         if _insecure_cookie:
-            errors.append("COOKIE_SECURE is False — cookies will be sent over HTTP")
+            errors.append(
+                (
+                    "insecure_cookie",
+                    "COOKIE_SECURE is False — cookies will be sent over HTTP",
+                )
+            )
         if _redis_down:
             errors.append(
-                "Redis is unreachable — auth codes, refresh tokens, and denylist will fail"
+                (
+                    "redis_down",
+                    "Redis is unreachable — auth codes, refresh tokens, and denylist will fail",
+                )
             )
         if _redis_no_auth:
             errors.append(
-                "Redis URL has no authentication — set a password in REDIS_URL (redis://:password@host:port/db)"
+                (
+                    "redis_no_auth",
+                    "Redis URL has no authentication — set a password in REDIS_URL (redis://:password@host:port/db)",
+                )
             )
         if _redis_no_tls:
             logger.warning("app.config.insecure", category="app", reason="redis_no_tls")
@@ -115,14 +131,19 @@ async def lifespan(app: FastAPI):
             )
         if "*" in settings.allowed_hosts_list:
             errors.append(
-                "ALLOWED_HOSTS is wildcard — set explicit hosts via ALLOWED_HOSTS or BASE_URL/ADMIN_URL"
+                (
+                    "allowed_hosts_wildcard",
+                    "ALLOWED_HOSTS is wildcard — set explicit hosts via ALLOWED_HOSTS or BASE_URL/ADMIN_URL",
+                )
             )
         if errors:
-            for e in errors:
-                logger.critical("app.config.insecure", category="app", reason=e)
+            for code, detail in errors:
+                logger.critical(
+                    "app.config.insecure", category="app", reason=code, detail=detail
+                )
             raise RuntimeError(
                 "Refusing to start: insecure configuration with DEBUG=False. "
-                f"Fix: {'; '.join(errors)}"
+                f"Fix: {'; '.join(detail for _, detail in errors)}"
             )
     else:
         if _insecure_session:
