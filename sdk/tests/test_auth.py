@@ -215,7 +215,6 @@ class TestProtocolStructuralCompatibility:
     """Verify RequestAuth satisfies a DDD-style Protocol without SDK imports."""
 
     def test_satisfies_auth_context_protocol(self):
-
         @runtime_checkable
         class AuthContext(Protocol):
             @property

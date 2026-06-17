@@ -23,6 +23,7 @@ from src.schemas.auth import (
     TokenResponse,
     WorkspaceOptionResponse,
 )
+from src.logging_events import log_security
 from src.middleware.rate_limit import get_client_ip, limiter
 from src.services import (
     activity_service,
@@ -183,6 +184,12 @@ async def callback(
                 None,
             )
             if not primary:
+                log_security(
+                    "auth.login.failed",
+                    outcome="failure",
+                    reason="email_not_verified",
+                    provider=provider,
+                )
                 return _error_page(
                     403,
                     "Email Not Verified",
@@ -198,6 +205,12 @@ async def callback(
             # OIDC providers (Google, EntraID) — parse ID token
             userinfo = token.get("userinfo", {})
             if not auth_service.is_email_verified_claim(userinfo):
+                log_security(
+                    "auth.login.failed",
+                    outcome="failure",
+                    reason="email_not_verified",
+                    provider=provider,
+                )
                 return _error_page(
                     403,
                     "Email Not Verified",
@@ -212,6 +225,13 @@ async def callback(
 
         org = await organization_service.resolve_organization(db, email)
         if org is None:
+            log_security(
+                "auth.login.failed",
+                outcome="failure",
+                reason="org_not_permitted",
+                provider=provider,
+                email_domain=email.split("@", 1)[-1] if "@" in email else None,
+            )
             return _error_page(
                 403,
                 "Sign-In Not Permitted",
@@ -232,6 +252,12 @@ async def callback(
                 provider_data=profile,
             )
         except auth_service.CrossProviderEmailConflict:
+            log_security(
+                "auth.login.failed",
+                outcome="failure",
+                reason="cross_provider_conflict",
+                provider=provider,
+            )
             return _error_page(
                 409,
                 "Email Already Used",
@@ -295,6 +321,12 @@ async def callback(
             client_app_id=client_app.id,
             code_challenge=code_challenge,
             code_challenge_method=code_challenge_method,
+        )
+        log_security(
+            "auth.login.succeeded",
+            outcome="success",
+            provider=provider,
+            actor=str(user.id),
         )
         separator = "&" if "?" in redirect_uri else "?"
         return RedirectResponse(
@@ -453,6 +485,12 @@ async def logout(
             await token_service.blacklist_access_token(jti, payload["exp"])
     except Exception:
         pass  # Token already expired — jti blacklisting not needed
+    log_security(
+        "auth.token.revoked",
+        outcome="success",
+        actor=str(user.user_id),
+        reason="logout",
+    )
     response = JSONResponse({"ok": True})
     response.headers["Clear-Site-Data"] = '"cookies", "storage"'
     return response

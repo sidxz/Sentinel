@@ -134,7 +134,9 @@ async def _validate_oidc_token(
         # Gated test provider — verify the signature against a statically-configured public
         # key, but enforce issuer + audience (and the shared email_verified / nonce checks
         # below) exactly like a real OIDC provider.
-        audience = config["audience"]() if callable(config["audience"]) else config["audience"]
+        audience = (
+            config["audience"]() if callable(config["audience"]) else config["audience"]
+        )
         issuer = config["issuer"]() if callable(config["issuer"]) else config["issuer"]
         try:
             payload = jwt.decode(

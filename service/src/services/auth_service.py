@@ -11,6 +11,7 @@ from src.auth.jwt import (
     decode_token,
 )
 from src.config import settings
+from src.logging_events import log_security
 from src.schemas.validators import sanitize_url, strip_html
 from src.models.group import GroupMembership
 from src.models.user import SocialAccount, User
@@ -235,6 +236,14 @@ async def rotate_refresh_token(
         # Already consumed or expired — possible theft.
         # Extract family_id from the JWT and revoke the entire family.
         family_id = payload.get("fid")
+        actor = payload.get("sub")
+        log_security(
+            "auth.token.reuse_detected",
+            outcome="failure",
+            reason="refresh_reuse",
+            actor=str(actor) if actor else None,
+            family_id=family_id,
+        )
         if family_id:
             await token_service.revoke_token_family(family_id)
         raise ValueError("Refresh token already used or expired")
@@ -318,6 +327,11 @@ async def rotate_refresh_token(
         await token_service.revoke_token_family(family_id)
         raise
 
+    log_security(
+        "auth.token.refreshed",
+        outcome="success",
+        actor=str(user.id),
+    )
     return {
         "access_token": new_access,
         "refresh_token": new_refresh,

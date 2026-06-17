@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.jwt import _AUD_ACCESS, _AUD_ADMIN, _AUD_AUTHZ, decode_token
 from src.database import get_db
+from src.middleware.request_context import bind_identity
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,7 @@ async def require_service_context(
                 status_code=401, detail="Invalid or missing service API key"
             )
         service_name, _app_id = result
+        bind_identity(request, caller_service=service_name)
         return ServiceKeyContext(service_name=service_name)
 
     # 2. Try origin (browser frontends) — lower trust than service key
@@ -60,6 +62,7 @@ async def require_service_context(
         result = await service_app_service.validate_origin(origin, db)
         if result:
             service_name, _app_id = result
+            bind_identity(request, caller_service=service_name)
             return ServiceKeyContext(
                 service_name=service_name, origin_authenticated=True
             )
@@ -125,6 +128,9 @@ async def require_admin(request: Request, db: AsyncSession = Depends(get_db)) ->
                 status_code=403, detail="Missing X-Requested-With header"
             )
 
+    if actor := payload.get("sub"):
+        bind_identity(request, actor=actor)
+
     return payload
 
 
@@ -152,12 +158,18 @@ async def get_current_user(request: Request) -> CurrentUser:
 
     await _enforce_token_hygiene(payload)
 
-    return CurrentUser(
+    current_user = CurrentUser(
         user_id=uuid.UUID(payload["sub"]),
         workspace_id=uuid.UUID(payload["wid"]),
         workspace_role=payload["wrole"],
         groups=[uuid.UUID(g) for g in payload.get("groups", [])],
     )
+    bind_identity(
+        request,
+        actor=str(current_user.user_id),
+        workspace_id=str(current_user.workspace_id),
+    )
+    return current_user
 
 
 async def _enforce_token_hygiene(payload: dict) -> None:
