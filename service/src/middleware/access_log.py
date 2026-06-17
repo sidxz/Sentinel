@@ -62,7 +62,6 @@ class AccessLogMiddleware:
                 level = (
                     "info" if status < 400 else "warning" if status < 500 else "error"
                 )
-                shared = scope.get("state") or {}
                 fields = {
                     "http.method": scope.get("method"),
                     "http.route": _route_template(scope),
@@ -71,9 +70,15 @@ class AccessLogMiddleware:
                     "resp_bytes": state["bytes"],
                     "source_ip": get_client_ip(Request(scope)),
                 }
+                state_obj = scope.get("state")
                 for k in ("actor", "workspace_id", "caller_service"):
-                    if shared.get(k) is not None:
-                        fields[k] = shared[k]
+                    v = (
+                        state_obj.get(k)
+                        if isinstance(state_obj, dict)
+                        else getattr(state_obj, k, None)
+                    )
+                    if v is not None:
+                        fields[k] = v
                 log_access("http.access", level=level, **fields)
             except Exception:
                 pass  # never let logging break the response

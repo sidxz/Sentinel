@@ -38,6 +38,26 @@ def test_4xx_logged_as_warning():
     assert e["log_level"] == "warning"
 
 
+def test_access_log_enriches_from_request_state():
+    from starlette.requests import Request
+    from src.middleware.request_context import RequestContextMiddleware, bind_identity
+
+    app = FastAPI()
+    app.add_middleware(AccessLogMiddleware)
+    app.add_middleware(RequestContextMiddleware)  # outermost
+
+    @app.get("/who")
+    def who(request: Request):
+        bind_identity(request, actor="u1", workspace_id="ws1")
+        return {"ok": True}
+
+    with capture_logs() as logs:
+        TestClient(app).get("/who")
+    e = [x for x in logs if x["event"] == "http.access"][0]
+    assert e["actor"] == "u1"
+    assert e["workspace_id"] == "ws1"
+
+
 def test_skips_health():
     app = FastAPI()
     app.add_middleware(AccessLogMiddleware)
