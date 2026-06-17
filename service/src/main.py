@@ -18,6 +18,7 @@ from src.api.workspace_routes import router as workspace_router
 from slowapi.errors import RateLimitExceeded
 
 from src.config import settings
+from src.logging_config import configure_logging
 from src.version import __version__
 from src.middleware.rate_limit import (
     GlobalRateLimitMiddleware,
@@ -51,9 +52,10 @@ async def _run_migrations():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("daikon-sentinel starting", port=settings.service_port)
+    configure_logging()
+    logger.info("app.startup", port=settings.service_port)
     await _run_migrations()
-    logger.info("database migrations applied")
+    logger.info("app.db.migrated")
 
     # Warm CORS origin cache from active client apps
     from src.database import engine as db_engine
