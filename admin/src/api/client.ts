@@ -26,6 +26,7 @@ import type {
   WorkspaceMember,
   WorkspaceOption,
 } from "../types/api";
+import { clientLog, setLastRequestId } from "../lib/logger";
 
 const BASE = "/api";
 
@@ -38,6 +39,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     },
     ...options,
   });
+  setLastRequestId(res.headers.get("x-request-id"));
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const detail = body.detail;
@@ -47,6 +49,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
         : Array.isArray(detail)
           ? detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join("; ")
           : `HTTP ${res.status}`;
+    if (!path.startsWith("/internal/client-logs")) {
+      const event = res.status === 401 || res.status === 403 ? "client.auth.denied" : "client.api.error";
+      clientLog(event, res.status >= 500 ? "error" : "warning", { status: res.status, path });
+    }
     throw new Error(message);
   }
   if (res.status === 204) return undefined as T;
