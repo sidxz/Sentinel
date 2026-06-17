@@ -123,6 +123,28 @@ All instances must share the same JWT keys, PostgreSQL, and Redis.
 
 ---
 
+## Structured Logging
+
+Sentinel emits one JSON object per line to stdout. The Docker swarm log driver
+collects it automatically — no sidecar or file-based shipping required.
+
+Set the following in your production environment (or `.env.prod`):
+
+```bash
+LOG_LEVEL=INFO
+LOG_FORMAT=json         # one JSON object per line
+LOG_PII_REDACTION=true  # always true in production
+```
+
+The log stream is additive to the existing database `ActivityLog` table. No database
+migration is required. The `ActivityLog` table is unchanged and remains the
+compliance system-of-record for auditable actions.
+
+For the full log schema, event vocabulary, and anomaly-detection guidance see
+[Observability → Logging](../observability/logging.md).
+
+---
+
 ## Health Check
 
 The service exposes `GET /health` which returns `{"status": "ok"}`. Use this for load balancer health checks and container orchestration.

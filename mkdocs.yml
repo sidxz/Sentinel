@@ -116,6 +116,8 @@ nav:
     - Roles: api/roles.md
     - Schemas: api/schemas.md
   - Security: security.md
+  - Observability:
+    - Logging: observability/logging.md
   - Deployment:
     - deployment/index.md
     - Environment Variables: deployment/environment.md
