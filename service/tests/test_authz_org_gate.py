@@ -81,7 +81,7 @@ def _app(db) -> FastAPI:
     return app
 
 
-async def _fake_validate(token, provider, expected_nonce=None):
+async def _fake_validate(token, provider, expected_nonce=None, expected_audiences=None):
     return _CLAIMS
 
 

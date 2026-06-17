@@ -23,6 +23,12 @@ class ServiceApp(Base):
     allowed_origins: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default="{}", nullable=False
     )
+    # The app's registered IdP audience(s) — its OIDC client_id(s). When set, /authz/resolve
+    # requires an IdP token's ``aud`` to be one of these, binding the token to the app it was
+    # issued for. Empty (default) => fall back to the deployment-wide provider audience.
+    allowed_idp_audiences: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default="{}", nullable=False
+    )
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

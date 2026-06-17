@@ -59,6 +59,16 @@ def _load_pem_pubkey(raw: str):
     return serialization.load_pem_public_key(pem.encode())
 
 
+def _effective_audience(config: dict[str, Any], expected_audiences: list[str] | None):
+    """The audience(s) the token must match. When the calling app supplies its registered
+    IdP audience(s) (per-app binding), validate against those; otherwise fall back to the
+    provider's single deployment-wide configured audience (preserves prior behavior)."""
+    if expected_audiences:
+        return list(expected_audiences)
+    aud = config["audience"]
+    return aud() if callable(aud) else aud
+
+
 def _register_test_provider() -> None:
     """Register a gated, static-key 'test_oidc' enrichment provider when the rig env var
     ``TEST_TRUSTED_ISSUER_PUBKEY`` is set. UNSET (prod default) => not registered =>
@@ -124,6 +134,7 @@ async def _validate_oidc_token(
     provider: str,
     *,
     expected_nonce: str | None = None,
+    expected_audiences: list[str] | None = None,
     _override_key: Any | None = None,
 ) -> dict[str, Any]:
     """Validate an OIDC JWT and return normalised claims."""
@@ -134,9 +145,7 @@ async def _validate_oidc_token(
         # Gated test provider — verify the signature against a statically-configured public
         # key, but enforce issuer + audience (and the shared email_verified / nonce checks
         # below) exactly like a real OIDC provider.
-        audience = (
-            config["audience"]() if callable(config["audience"]) else config["audience"]
-        )
+        audience = _effective_audience(config, expected_audiences)
         issuer = config["issuer"]() if callable(config["issuer"]) else config["issuer"]
         try:
             payload = jwt.decode(
@@ -167,9 +176,7 @@ async def _validate_oidc_token(
         except jwt.PyJWTError as exc:
             raise IdpValidationError(f"Invalid token: {exc}")
     else:
-        audience = config["audience"]
-        if callable(audience):
-            audience = audience()
+        audience = _effective_audience(config, expected_audiences)
         issuer = config["issuer"]
         if callable(issuer):
             issuer = issuer()
@@ -298,6 +305,7 @@ async def validate_idp_token(
     provider: str,
     *,
     expected_nonce: str | None = None,
+    expected_audiences: list[str] | None = None,
     _override_key: Any | None = None,
 ) -> dict[str, Any]:
     """Validate an IdP token and return normalised user claims.
@@ -311,6 +319,12 @@ async def validate_idp_token(
     expected_nonce:
         If provided (OIDC providers only), require the token's ``nonce``
         claim to match this value. Ignored for GitHub (opaque token).
+    expected_audiences:
+        If provided (OIDC providers only), require the token's ``aud`` to match
+        one of these — the calling app's registered IdP client_id(s). Binds the
+        token to the app it was issued for, so a token minted for one app cannot
+        mint via another app's service key. Unset => fall back to the provider's
+        single deployment-wide audience (prior behavior). Ignored for GitHub.
     _override_key:
         **Test hook** — when provided, uses this key instead of fetching JWKS
         and skips audience/issuer verification.
@@ -322,14 +336,16 @@ async def validate_idp_token(
     Raises
     ------
     IdpValidationError
-        If the token is invalid, expired, the email is not verified, or the
-        nonce claim does not match ``expected_nonce``.
+        If the token is invalid, expired, the email is not verified, the nonce
+        claim does not match ``expected_nonce``, or the audience is not one of
+        ``expected_audiences``.
     """
     if provider in _PROVIDER_CONFIG:
         return await _validate_oidc_token(
             idp_token,
             provider,
             expected_nonce=expected_nonce,
+            expected_audiences=expected_audiences,
             _override_key=_override_key,
         )
     elif provider == "github":

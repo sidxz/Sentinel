@@ -221,10 +221,15 @@ async def resolve(
             ),
         )
 
-    # 1. Validate IdP token against provider's JWKS
+    # 1. Validate IdP token against provider's JWKS. Bind the token to the calling app's
+    # registered IdP audience(s) when configured: a token minted for one app must not mint
+    # via another app's service key, even though both share the deployment-wide provider.
     try:
         idp_claims = await validate_idp_token(
-            body.idp_token, body.provider, expected_nonce=body.nonce
+            body.idp_token,
+            body.provider,
+            expected_nonce=body.nonce,
+            expected_audiences=list(service_ctx.allowed_idp_audiences) or None,
         )
     except IdpValidationError as e:
         log_security(

@@ -34,6 +34,7 @@ async def create_service_app(
     service_name: str,
     created_by: uuid.UUID | None = None,
     allowed_origins: list[str] | None = None,
+    allowed_idp_audiences: list[str] | None = None,
 ) -> tuple[ServiceApp, str]:
     """Create a new service app. Returns (app, plaintext_key)."""
     plaintext, sha, prefix = _generate_key()
@@ -45,6 +46,7 @@ async def create_service_app(
         key_prefix=prefix,
         created_by=created_by,
         allowed_origins=allowed_origins or [],
+        allowed_idp_audiences=allowed_idp_audiences or [],
     )
     db.add(app)
     await db.flush()
@@ -101,12 +103,20 @@ async def get_service_app(db: AsyncSession, app_id: uuid.UUID) -> ServiceApp | N
     return await db.get(ServiceApp, app_id)
 
 
+async def get_idp_audiences(db: AsyncSession, app_id: uuid.UUID) -> tuple[str, ...]:
+    """The app's registered IdP audience(s) (OIDC client_id(s)) for per-app token binding
+    at /authz/resolve. Empty tuple when unset (=> fall back to deployment-wide audience)."""
+    app = await db.get(ServiceApp, app_id)
+    return tuple(app.allowed_idp_audiences) if app and app.allowed_idp_audiences else ()
+
+
 async def update_service_app(
     db: AsyncSession,
     app_id: uuid.UUID,
     name: str | None = None,
     is_active: bool | None = None,
     allowed_origins: list[str] | None = None,
+    allowed_idp_audiences: list[str] | None = None,
 ) -> ServiceApp:
     app = await db.get(ServiceApp, app_id)
     if not app:
@@ -117,6 +127,8 @@ async def update_service_app(
         app.is_active = is_active
     if allowed_origins is not None:
         app.allowed_origins = allowed_origins
+    if allowed_idp_audiences is not None:
+        app.allowed_idp_audiences = allowed_idp_audiences
     await db.flush()
     await _invalidate_cache()
     return app

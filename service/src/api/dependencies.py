@@ -23,6 +23,10 @@ class ServiceKeyContext:
 
     service_name: str  # bound service name, or "" in dev mode
     origin_authenticated: bool = False  # True when resolved via Origin, not service key
+    # The calling app's registered IdP audience(s) (its OIDC client_id(s)). Empty =>
+    # not configured => IdP-token validation falls back to the deployment-wide audience.
+    # Used by /authz/resolve to bind an IdP token to the app it was issued for.
+    allowed_idp_audiences: tuple[str, ...] = ()
 
 
 def verify_service_scope(ctx: ServiceKeyContext, service_name: str) -> None:
@@ -52,19 +56,25 @@ async def require_service_context(
             raise HTTPException(
                 status_code=401, detail="Invalid or missing service API key"
             )
-        service_name, _app_id = result
+        service_name, app_id = result
         bind_identity(request, caller_service=service_name)
-        return ServiceKeyContext(service_name=service_name)
+        audiences = await service_app_service.get_idp_audiences(db, app_id)
+        return ServiceKeyContext(
+            service_name=service_name, allowed_idp_audiences=audiences
+        )
 
     # 2. Try origin (browser frontends) — lower trust than service key
     origin = request.headers.get("Origin")
     if origin:
         result = await service_app_service.validate_origin(origin, db)
         if result:
-            service_name, _app_id = result
+            service_name, app_id = result
             bind_identity(request, caller_service=service_name)
+            audiences = await service_app_service.get_idp_audiences(db, app_id)
             return ServiceKeyContext(
-                service_name=service_name, origin_authenticated=True
+                service_name=service_name,
+                origin_authenticated=True,
+                allowed_idp_audiences=audiences,
             )
 
     raise HTTPException(

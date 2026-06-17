@@ -333,3 +333,96 @@ async def test_test_oidc_provider_absent_by_default():
     """With no pubkey configured (prod default), test_oidc is unregistered => fail closed."""
     with pytest.raises(IdpValidationError, match="Unsupported"):
         await validate_idp_token("x.y.z", "test_oidc")
+
+
+# ---------------------------------------------------------------------------
+# Per-app audience binding (expected_audiences).
+#
+# Regression: the id_token's audience is otherwise validated only against the
+# single, deployment-wide provider client_id. So a token minted for app A is
+# accepted no matter which app's service key presents it — a stolen id_token
+# works at *any* app's mint route. expected_audiences lets /authz/resolve bind
+# the token to the CALLING app's registered IdP client_id(s): a token whose aud
+# matches the deployment-wide audience is still rejected when the caller's
+# registered audience differs.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def test_oidc_static(rsa_keypair, monkeypatch):
+    """Register the gated static-key test_oidc provider with a known deployment audience."""
+    from src.services import idp_validator
+
+    _, public_key = rsa_keypair
+    pub_pem = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    monkeypatch.setenv("TEST_TRUSTED_ISSUER_PUBKEY", pub_pem)
+    monkeypatch.setenv("TEST_TRUSTED_ISSUER", "https://rogue.test")
+    monkeypatch.setenv("TEST_TRUSTED_AUDIENCE", "deployment-wide-client")
+    idp_validator._register_test_provider()
+    try:
+        yield
+    finally:
+        idp_validator._PROVIDER_CONFIG.pop("test_oidc", None)
+
+
+@pytest.mark.asyncio
+async def test_expected_audiences_rejects_token_minted_for_another_app(
+    make_token, test_oidc_static
+):
+    """A token whose aud matches the deployment-wide provider audience is REJECTED when the
+    calling app's registered audience differs (cross-app replay containment)."""
+    token = make_token(
+        {
+            "sub": "u1",
+            "email": "u1@x.test",
+            "email_verified": True,
+            "iss": "https://rogue.test",
+            "aud": "deployment-wide-client",
+        }
+    )
+    with pytest.raises(IdpValidationError):
+        await validate_idp_token(
+            token, "test_oidc", expected_audiences=["some-other-apps-client"]
+        )
+
+
+@pytest.mark.asyncio
+async def test_expected_audiences_accepts_token_for_the_calling_app(
+    make_token, test_oidc_static
+):
+    """When the token's aud is in the calling app's registered audiences, it validates."""
+    token = make_token(
+        {
+            "sub": "u1",
+            "email": "u1@x.test",
+            "email_verified": True,
+            "iss": "https://rogue.test",
+            "aud": "deployment-wide-client",
+        }
+    )
+    result = await validate_idp_token(
+        token, "test_oidc", expected_audiences=["deployment-wide-client"]
+    )
+    assert result["sub"] == "u1"
+
+
+@pytest.mark.asyncio
+async def test_no_expected_audiences_falls_back_to_provider_audience(
+    make_token, test_oidc_static
+):
+    """No registered audience (unset, the default) => fall back to the deployment-wide
+    provider audience: today's behavior is preserved, nothing breaks on upgrade."""
+    token = make_token(
+        {
+            "sub": "u1",
+            "email": "u1@x.test",
+            "email_verified": True,
+            "iss": "https://rogue.test",
+            "aud": "deployment-wide-client",
+        }
+    )
+    result = await validate_idp_token(token, "test_oidc")
+    assert result["sub"] == "u1"

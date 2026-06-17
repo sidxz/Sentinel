@@ -1298,6 +1298,7 @@ async def create_service_app(
             service_name=body.service_name,
             created_by=actor_id,
             allowed_origins=body.allowed_origins,
+            allowed_idp_audiences=body.allowed_idp_audiences,
         )
     except Exception as e:
         logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
@@ -1320,6 +1321,7 @@ async def create_service_app(
         key_prefix=app.key_prefix,
         is_active=app.is_active,
         allowed_origins=app.allowed_origins,
+        allowed_idp_audiences=app.allowed_idp_audiences,
         last_used_at=app.last_used_at,
         created_by=app.created_by,
         created_at=app.created_at,
@@ -1353,6 +1355,7 @@ async def update_service_app(
             name=body.name,
             is_active=body.is_active,
             allowed_origins=body.allowed_origins,
+            allowed_idp_audiences=body.allowed_idp_audiences,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1403,6 +1406,7 @@ async def rotate_service_app_key(
         key_prefix=app.key_prefix,
         is_active=app.is_active,
         allowed_origins=app.allowed_origins,
+        allowed_idp_audiences=app.allowed_idp_audiences,
         last_used_at=app.last_used_at,
         created_by=app.created_by,
         created_at=app.created_at,
