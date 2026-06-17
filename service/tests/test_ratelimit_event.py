@@ -49,3 +49,51 @@ async def test_global_limit_emits_event_when_exceeded(monkeypatch):
     assert events[0]["outcome"] == "denied"
     assert events[0]["source_ip"] == "10.0.0.9"
     assert events[0]["http.route"] == "/x"
+    assert len(events) == 1
+
+
+@pytest.mark.asyncio
+async def test_fallback_path_emits_global_ip_fallback(monkeypatch):
+    monkeypatch.setattr(settings, "rate_limit_enabled", True)
+
+    async def _get_failing():
+        raise RuntimeError("Redis unavailable")
+
+    monkeypatch.setattr(rl, "_get_redis", _get_failing)
+
+    # Pre-fill the fallback counter so the limit is already reached
+    import time
+
+    rl._fallback_counts["10.0.0.9"] = [time.time()] * rl._FALLBACK_LIMIT
+
+    mw = rl.GlobalRateLimitMiddleware(app=None, requests_per_minute=1)
+
+    async def call_next(_req):
+        raise AssertionError("must not pass through when over the fallback limit")
+
+    try:
+        with capture_logs() as logs:
+            resp = await mw.dispatch(_request(ip="10.0.0.9"), call_next)
+    finally:
+        rl._fallback_counts.pop("10.0.0.9", None)
+
+    assert resp.status_code == 429
+    events = [e for e in logs if e["event"] == "ratelimit.exceeded"]
+    assert len(events) == 1
+    assert events[0]["reason"] == "global_ip_fallback"
+    assert events[0]["source_ip"] == "10.0.0.9"
+
+
+@pytest.mark.asyncio
+async def test_slowapi_handler_emits_route_limit():
+    class _Exc:
+        retry_after = 5
+
+    with capture_logs() as logs:
+        resp = await rl.rate_limit_exceeded_handler(_request(path="/admin/x"), _Exc())
+
+    assert resp.status_code == 429
+    events = [e for e in logs if e["event"] == "ratelimit.exceeded"]
+    assert len(events) == 1
+    assert events[0]["reason"] == "route_limit"
+    assert events[0]["http.route"] == "/admin/x"
