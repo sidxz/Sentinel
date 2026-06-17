@@ -250,3 +250,86 @@ async def test_github_token_binding_uses_basic_auth_with_client_secret(
         "Binding check must authenticate as the OAuth app via HTTP Basic; "
         "otherwise GitHub rejects the request regardless of token validity."
     )
+
+
+# ---------------------------------------------------------------------------
+# Gated static-key test_oidc provider (Layer-2 trust-boundary pentest seam).
+# Off in prod (empty pubkey => unregistered => fail closed). Validates exactly like a real
+# OIDC provider but against a statically-configured public key.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_gated_test_oidc_provider_validates_static_key(
+    rsa_keypair, make_token, monkeypatch
+):
+    """When configured, test_oidc validates tokens signed by the static key and enforces
+    issuer/audience/email_verified; forged or unverified tokens are rejected."""
+    from src.services import idp_validator
+
+    _, public_key = rsa_keypair
+    pub_pem = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    monkeypatch.setenv("TEST_TRUSTED_ISSUER_PUBKEY", pub_pem)
+    monkeypatch.setenv("TEST_TRUSTED_ISSUER", "https://rogue.test")
+    monkeypatch.setenv("TEST_TRUSTED_AUDIENCE", "sentinel:authz")
+    idp_validator._register_test_provider()
+    try:
+        good = make_token(
+            {
+                "sub": "u1",
+                "email": "u1@x.test",
+                "email_verified": True,
+                "iss": "https://rogue.test",
+                "aud": "sentinel:authz",
+            }
+        )
+        result = await validate_idp_token(good, "test_oidc")
+        assert result["sub"] == "u1"
+
+        unverified = make_token(
+            {
+                "sub": "u1",
+                "email": "u1@x.test",
+                "email_verified": False,
+                "iss": "https://rogue.test",
+                "aud": "sentinel:authz",
+            }
+        )
+        with pytest.raises(IdpValidationError, match="not verified"):
+            await validate_idp_token(unverified, "test_oidc")
+
+        # forged: signed by a DIFFERENT key -> signature must be rejected
+        attacker = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        attacker_pem = attacker.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        now = int(time.time())
+        forged = pyjwt.encode(
+            {
+                "sub": "u1",
+                "email": "u1@x.test",
+                "email_verified": True,
+                "iss": "https://rogue.test",
+                "aud": "sentinel:authz",
+                "iat": now,
+                "exp": now + 3600,
+            },
+            attacker_pem,
+            algorithm="RS256",
+        )
+        with pytest.raises(IdpValidationError, match="Invalid token"):
+            await validate_idp_token(forged, "test_oidc")
+    finally:
+        idp_validator._PROVIDER_CONFIG.pop("test_oidc", None)
+
+
+@pytest.mark.asyncio
+async def test_test_oidc_provider_absent_by_default():
+    """With no pubkey configured (prod default), test_oidc is unregistered => fail closed."""
+    with pytest.raises(IdpValidationError, match="Unsupported"):
+        await validate_idp_token("x.y.z", "test_oidc")

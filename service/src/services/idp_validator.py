@@ -8,11 +8,14 @@ Supports:
 
 from __future__ import annotations
 
+import base64
+import os
 import time
 from typing import Any
 
 import httpx
 import jwt
+from cryptography.hazmat.primitives import serialization
 from jwt.algorithms import RSAAlgorithm
 
 from src.config import settings
@@ -48,6 +51,37 @@ _PROVIDER_CONFIG: dict[str, dict[str, Any]] = {
         "audience": lambda: settings.entra_client_id,
     },
 }
+
+
+def _load_pem_pubkey(raw: str):
+    """Load an RSA public key from raw PEM or base64-encoded PEM (rig env convenience)."""
+    pem = raw if "BEGIN" in raw else base64.b64decode(raw).decode()
+    return serialization.load_pem_public_key(pem.encode())
+
+
+def _register_test_provider() -> None:
+    """Register a gated, static-key 'test_oidc' enrichment provider when the rig env var
+    ``TEST_TRUSTED_ISSUER_PUBKEY`` is set. UNSET (prod default) => not registered =>
+    /authz/resolve returns 'Unsupported provider' (fail closed). Validates exactly like a real
+    OIDC provider (signature + issuer + audience + email_verified + nonce) but against a
+    statically-configured public key instead of a fetched JWKS — the seam used by the Layer-2
+    trust-boundary pentest to present validly-signed-but-malicious-claim tokens.
+
+    Read from os.environ (not Settings) on purpose: a test-only hook must NOT enter the prod
+    config surface (e.g. /admin/system/settings). Mirrors the existing out-of-band
+    ``_override_key`` test hook. Pubkey may be raw PEM or base64-encoded PEM."""
+    raw = os.getenv("TEST_TRUSTED_ISSUER_PUBKEY", "").strip()
+    if not raw:
+        _PROVIDER_CONFIG.pop("test_oidc", None)
+        return
+    _PROVIDER_CONFIG["test_oidc"] = {
+        "static_pubkey": raw,
+        "issuer": os.getenv("TEST_TRUSTED_ISSUER", ""),
+        "audience": os.getenv("TEST_TRUSTED_AUDIENCE", ""),
+    }
+
+
+_register_test_provider()
 
 # ---------------------------------------------------------------------------
 # JWKS cache (with TTL)
@@ -94,8 +128,27 @@ async def _validate_oidc_token(
 ) -> dict[str, Any]:
     """Validate an OIDC JWT and return normalised claims."""
     config = _PROVIDER_CONFIG[provider]
+    static_pubkey = config.get("static_pubkey")
 
-    if _override_key is not None:
+    if static_pubkey is not None:
+        # Gated test provider — verify the signature against a statically-configured public
+        # key, but enforce issuer + audience (and the shared email_verified / nonce checks
+        # below) exactly like a real OIDC provider.
+        audience = config["audience"]() if callable(config["audience"]) else config["audience"]
+        issuer = config["issuer"]() if callable(config["issuer"]) else config["issuer"]
+        try:
+            payload = jwt.decode(
+                idp_token,
+                _load_pem_pubkey(static_pubkey),
+                algorithms=["RS256"],
+                audience=audience,
+                issuer=issuer,
+            )
+        except jwt.ExpiredSignatureError:
+            raise IdpValidationError("Token expired")
+        except jwt.PyJWTError as exc:
+            raise IdpValidationError(f"Invalid token: {exc}")
+    elif _override_key is not None:
         # Test mode — skip audience/issuer verification, use supplied key
         try:
             payload = jwt.decode(
