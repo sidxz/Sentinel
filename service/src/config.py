@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     admin_emails: str = ""
     admin_url: str = "http://localhost:9004"
 
+    # Logging
+    log_level: str = "INFO"  # DEBUG|INFO|WARNING|ERROR|CRITICAL
+    log_format: str = "json"  # "json" (prod) | "console" (dev)
+    log_pii_redaction: bool = True  # mask emails/secrets in logs (always on in prod)
+
     @property
     def redis_ssl_kwargs(self) -> dict:
         """Extra kwargs for redis.from_url() when using rediss:// scheme."""
@@ -113,6 +118,11 @@ class Settings(BaseSettings):
         if not self.admin_emails:
             return []
         return [e.strip() for e in self.admin_emails.split(",") if e.strip()]
+
+    @property
+    def environment(self) -> str:
+        """Coarse env label for log lines; derived from DEBUG."""
+        return "dev" if self.debug else "prod"
 
     @property
     def allowed_hosts_list(self) -> list[str]:
