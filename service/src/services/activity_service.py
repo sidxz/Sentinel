@@ -28,14 +28,19 @@ async def log_activity(
     )
     db.add(entry)
     await db.flush()
-    log_audit(
-        action=action,
-        target_type=target_type,
-        target_id=str(target_id),
-        actor=str(actor_id) if actor_id else "system",
-        workspace_id=str(workspace_id) if workspace_id else None,
-        detail=detail,
-    )
+    try:
+        log_audit(
+            action=action,
+            target_type=target_type,
+            target_id=str(target_id),
+            actor=str(actor_id) if actor_id else "system",
+            workspace_id=str(workspace_id) if workspace_id else None,
+            detail=detail,
+        )
+    except Exception:
+        # The DB ActivityLog row is the system-of-record; a log-stream emit
+        # failure must never break the audit write.
+        pass
     return entry
 
 
