@@ -7,6 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from src.api.admin_routes import router as admin_router
+from src.api.client_log_routes import router as client_log_router
 from src.api.org_admin_routes import router as org_admin_router
 from src.api.auth_routes import router as auth_router
 from src.api.authz_routes import router as authz_router
@@ -199,6 +200,7 @@ app.include_router(group_router)
 app.include_router(permission_router)
 app.include_router(role_router)
 app.include_router(authz_router)
+app.include_router(client_log_router)
 
 
 @app.get("/health")
