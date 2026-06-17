@@ -246,6 +246,8 @@ async def resolve(
             "authz.token.denied",
             outcome="denied",
             reason="org_not_permitted",
+            provider=body.provider,
+            caller_service=service_ctx.service_name,
             workspace_id=str(body.workspace_id) if body.workspace_id else None,
         )
         raise HTTPException(
@@ -283,8 +285,8 @@ async def resolve(
         )
         raise HTTPException(status_code=403, detail="User account is inactive")
 
-    user_resp = AuthzUserResponse.model_validate(
-        {"id": user.id, "email": user.email, "name": user.name}
+    user_resp = AuthzUserResponse(
+        **{"id": user.id, "email": user.email, "name": user.name}
     )
 
     # 3. If no workspace specified, return workspace list
