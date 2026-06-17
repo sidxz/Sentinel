@@ -238,6 +238,12 @@ async def get_user_for_service_call(
                 detail="Authz token was issued for a different service",
             )
 
+    bind_identity(
+        request,
+        actor=payload["sub"],
+        workspace_id=payload["wid"],
+        caller_service=svc_ctx.service_name,
+    )
     return CurrentUser(
         user_id=uuid.UUID(payload["sub"]),
         workspace_id=uuid.UUID(payload["wid"]),
@@ -302,6 +308,12 @@ async def get_current_user_flexible(
                 detail="Authz token was issued for a different service",
             )
 
+    bind_identity(
+        request,
+        actor=payload["sub"],
+        workspace_id=payload["wid"],
+        caller_service=service_key_service_name,
+    )
     return CurrentUser(
         user_id=uuid.UUID(payload["sub"]),
         workspace_id=uuid.UUID(payload["wid"]),
