@@ -23,9 +23,12 @@ class ServiceKeyContext:
 
     service_name: str  # bound service name, or "" in dev mode
     origin_authenticated: bool = False  # True when resolved via Origin, not service key
-    # The calling app's registered IdP audience(s) (its OIDC client_id(s)). Empty =>
-    # not configured => IdP-token validation falls back to the deployment-wide audience.
-    # Used by /authz/resolve to bind an IdP token to the app it was issued for.
+    # The resolved app's id. /authz/resolve uses it to lazily load the app's
+    # registered IdP audience(s) for per-app token binding — only that endpoint
+    # needs them, so the lookup is deferred off the hot service-auth path.
+    app_id: uuid.UUID | None = None
+    # Pre-resolved IdP audience(s) (OIDC client_id(s)). Normally empty here and
+    # loaded lazily from ``app_id`` in /authz/resolve; tests may set it directly.
     allowed_idp_audiences: tuple[str, ...] = ()
 
 
@@ -58,10 +61,7 @@ async def require_service_context(
             )
         service_name, app_id = result
         bind_identity(request, caller_service=service_name)
-        audiences = await service_app_service.get_idp_audiences(db, app_id)
-        return ServiceKeyContext(
-            service_name=service_name, allowed_idp_audiences=audiences
-        )
+        return ServiceKeyContext(service_name=service_name, app_id=app_id)
 
     # 2. Try origin (browser frontends) — lower trust than service key
     origin = request.headers.get("Origin")
@@ -70,11 +70,10 @@ async def require_service_context(
         if result:
             service_name, app_id = result
             bind_identity(request, caller_service=service_name)
-            audiences = await service_app_service.get_idp_audiences(db, app_id)
             return ServiceKeyContext(
                 service_name=service_name,
                 origin_authenticated=True,
-                allowed_idp_audiences=audiences,
+                app_id=app_id,
             )
 
     raise HTTPException(

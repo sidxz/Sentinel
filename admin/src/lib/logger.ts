@@ -53,6 +53,13 @@ async function flush(): Promise<void> {
     });
   } catch {
     // best-effort; drop on failure to avoid unbounded growth
+  } finally {
+    // A burst >MAX_BUFFER leaves a tail behind; re-arm the timer so it is
+    // delivered on the normal cadence instead of waiting for the next
+    // clientLog() call (or only on pagehide).
+    if (buffer.length > 0 && !timer) {
+      timer = setTimeout(() => void flush(), FLUSH_MS);
+    }
   }
 }
 

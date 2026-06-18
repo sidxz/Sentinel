@@ -15,8 +15,13 @@ router = APIRouter(prefix="/internal", tags=["internal"])
 _VALID_LEVELS = {"debug", "info", "warning", "error"}
 _SECURITY_EVENTS = {"client.login.failed", "client.auth.denied"}
 
-# Keys that collide with structlog reserved kwargs — drop before **-unpacking
-_STRUCTLOG_RESERVED = frozenset({"event", "level", "category"})
+# Keys that collide with structlog reserved kwargs OR with the kwargs we set
+# ourselves below (category/client_origin/actor/source_ip). Dropped before the
+# client-supplied fields are **-unpacked, so a client field can never cause a
+# "got multiple values for keyword argument" TypeError.
+_STRUCTLOG_RESERVED = frozenset(
+    {"event", "level", "category", "client_origin", "actor", "source_ip"}
+)
 
 
 class ClientEvent(BaseModel):

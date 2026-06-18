@@ -1,12 +1,39 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.logging_events import log_audit
 from src.models.activity import ActivityLog
 from src.models.user import User
+
+
+def _emit_audit(payload: dict) -> None:
+    """Emit one audit.activity log event. The DB ActivityLog row is the
+    system-of-record; a log-stream emit failure must never break the audit."""
+    try:
+        log_audit(**payload)
+    except Exception:
+        pass
+
+
+def _register_commit_flush(sync_session) -> None:
+    """Install (once per session) hooks that drain pending audit events on commit
+    and discard them on rollback — so a rolled-back transaction never emits a
+    phantom audit.activity event for an action the DB never durably recorded."""
+    if sync_session.info.get("_audit_hook_installed"):
+        return
+    sync_session.info["_audit_hook_installed"] = True
+
+    @event.listens_for(sync_session, "after_commit")
+    def _on_commit(session):
+        for payload in session.info.pop("pending_audit", []):
+            _emit_audit(payload)
+
+    @event.listens_for(sync_session, "after_rollback")
+    def _on_rollback(session):
+        session.info.pop("pending_audit", None)
 
 
 async def log_activity(
@@ -28,19 +55,24 @@ async def log_activity(
     )
     db.add(entry)
     await db.flush()
-    try:
-        log_audit(
-            action=action,
-            target_type=target_type,
-            target_id=str(target_id),
-            actor=str(actor_id) if actor_id else "system",
-            workspace_id=str(workspace_id) if workspace_id else None,
-            detail=detail,
-        )
-    except Exception:
-        # The DB ActivityLog row is the system-of-record; a log-stream emit
-        # failure must never break the audit write.
-        pass
+
+    payload = {
+        "action": action,
+        "target_type": target_type,
+        "target_id": str(target_id) if target_id is not None else None,
+        "actor": str(actor_id) if actor_id else "system",
+        "workspace_id": str(workspace_id) if workspace_id else None,
+        "detail": detail,
+    }
+    sync_session = getattr(db, "sync_session", None)
+    if sync_session is not None:
+        # Defer the log-stream emit to the transaction's commit so a later
+        # rollback doesn't leave a phantom audit.activity event.
+        _register_commit_flush(sync_session)
+        sync_session.info.setdefault("pending_audit", []).append(payload)
+    else:
+        # No ORM session (unit tests / non-ORM callers) — emit immediately.
+        _emit_audit(payload)
     return entry
 
 

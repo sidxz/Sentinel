@@ -3,7 +3,6 @@
 import time
 
 from starlette.requests import Request
-from starlette.routing import Match
 
 from src.logging_events import log_access
 from src.middleware.rate_limit import get_client_ip
@@ -16,22 +15,32 @@ _SKIP_PATHS = {
     "/.well-known/jwks.json",
 }
 
+# Placeholder for requests that matched no route at all (404, and OPTIONS CORS
+# preflights, which the CORS middleware answers without ever invoking the
+# router). We never log the raw path for these: it can embed PII (e.g.
+# /users/by-email/alice@acme.com) and explodes http.route cardinality, which
+# violates the "route template, never raw URL" contract in
+# docs/observability/logging.md. (A 405 method-mismatch is a PARTIAL match, for
+# which Starlette still sets scope["endpoint"], so those log their real low-
+# cardinality template — which is fine.)
+_UNMATCHED = "__unmatched__"
+
 
 def _route_template(scope) -> str:
-    """Low-cardinality route template (e.g. /echo/{name}) via re-match against
-    the app's routes; falls back to the raw path when nothing matches (404)."""
-    path = scope.get("path", "")
-    app = scope.get("app")
-    if app is None:
-        return path
-    for route in getattr(app, "routes", []):
-        try:
-            match, _ = route.matches(scope)
-        except Exception:
-            continue
-        if match == Match.FULL:
-            return getattr(route, "path", path)
-    return path
+    """Low-cardinality route template (e.g. /echo/{name}).
+
+    Uses the endpoint Starlette recorded on the scope during routing and maps it
+    back to its route template — O(routes) identity checks, no regex re-match
+    (the router already did the matching). Unmatched requests resolve to a
+    constant placeholder rather than leaking the raw path.
+    """
+    endpoint = scope.get("endpoint")
+    if endpoint is None:
+        return _UNMATCHED  # 404 / 405 / OPTIONS preflight — never log the raw path
+    for route in getattr(scope.get("app"), "routes", []):
+        if getattr(route, "endpoint", None) is endpoint:
+            return getattr(route, "path", None) or _UNMATCHED
+    return _UNMATCHED
 
 
 class AccessLogMiddleware:

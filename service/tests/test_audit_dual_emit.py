@@ -62,3 +62,41 @@ async def test_log_activity_survives_emit_failure(monkeypatch):
     )
     assert db.added  # DB row still created despite emit failure
     assert entry is not None
+
+
+def _sync_session():
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session
+
+    session = Session(create_engine("sqlite://"))
+    session.execute(text("SELECT 1"))  # ensure a transaction is active
+    return session
+
+
+def test_audit_emit_is_deferred_to_commit(monkeypatch):
+    """With a real ORM session the audit event fires on commit, not before."""
+    emitted = []
+    monkeypatch.setattr(activity_service, "log_audit", lambda **kw: emitted.append(kw))
+
+    session = _sync_session()
+    activity_service._register_commit_flush(session)
+    session.info.setdefault("pending_audit", []).append({"action": "workspace_created"})
+
+    assert emitted == []  # nothing emitted before commit
+    session.commit()
+    assert emitted == [{"action": "workspace_created"}]  # emitted on commit
+
+
+def test_audit_emit_discarded_on_rollback(monkeypatch):
+    """A rolled-back transaction must not emit a phantom audit event."""
+    emitted = []
+    monkeypatch.setattr(activity_service, "log_audit", lambda **kw: emitted.append(kw))
+
+    session = _sync_session()
+    activity_service._register_commit_flush(session)
+    session.info.setdefault("pending_audit", []).append({"action": "workspace_created"})
+
+    session.rollback()
+    assert emitted == []  # discarded
+    session.commit()
+    assert emitted == []  # nothing stranded to emit later

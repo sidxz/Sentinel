@@ -69,6 +69,36 @@ def test_rejects_oversized_batch():
     assert r.status_code == 422
 
 
+def test_client_field_colliding_with_reserved_kwarg_does_not_500():
+    """A client-supplied field named like one of the kwargs we set ourselves
+    (actor/source_ip/client_origin) must not cause a 'multiple values for keyword
+    argument' TypeError -> 500. The collider is dropped; our value is authoritative."""
+    with capture_logs() as logs:
+        r = TestClient(_app()).post(
+            "/internal/client-logs",
+            json={
+                "events": [
+                    {
+                        "event": "client.api.error",
+                        "level": "warning",
+                        "fields": {
+                            "actor": "spoofed",
+                            "source_ip": "1.2.3.4",
+                            "client_origin": False,
+                            "status": 500,
+                        },
+                    }
+                ]
+            },
+            headers=_XRW,
+        )
+    assert r.status_code == 202
+    ev = [e for e in logs if e["event"] == "client.api.error"][0]
+    assert ev["actor"] == "admin-1"  # our value, not the client's
+    assert ev["client_origin"] is True
+    assert ev["status"] == 500  # non-colliding client field preserved
+
+
 def test_redacts_client_supplied_pii():
     with capture_logs() as logs:
         TestClient(_app()).post(

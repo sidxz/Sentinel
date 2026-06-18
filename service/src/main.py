@@ -136,6 +136,20 @@ async def lifespan(app: FastAPI):
                     "ALLOWED_HOSTS is wildcard — set explicit hosts via ALLOWED_HOSTS or BASE_URL/ADMIN_URL",
                 )
             )
+        if not settings.rate_limit_enabled:
+            errors.append(
+                (
+                    "rate_limit_disabled",
+                    "RATE_LIMIT_ENABLED is False — brute-force/DoS protection is off (intended only for ephemeral test/pentest targets)",
+                )
+            )
+        if not settings.log_pii_redaction:
+            errors.append(
+                (
+                    "pii_redaction_disabled",
+                    "LOG_PII_REDACTION is False — raw emails/secrets would be written to the log stream",
+                )
+            )
         if errors:
             for code, detail in errors:
                 logger.critical(

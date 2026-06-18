@@ -27,7 +27,7 @@ from src.schemas.authz import (
     AuthzWorkspaceOption,
     AuthzWorkspaceResponse,
 )
-from src.services import auth_service, organization_service
+from src.services import auth_service, organization_service, service_app_service
 from src.services.idp_validator import IdpValidationError, validate_idp_token
 from src.services.role_service import get_user_actions
 
@@ -224,12 +224,19 @@ async def resolve(
     # 1. Validate IdP token against provider's JWKS. Bind the token to the calling app's
     # registered IdP audience(s) when configured: a token minted for one app must not mint
     # via another app's service key, even though both share the deployment-wide provider.
+    # Audiences are loaded lazily here (only this endpoint needs them) rather than on the
+    # shared service-auth dependency that every endpoint pays for.
+    audiences = list(service_ctx.allowed_idp_audiences)
+    if not audiences and service_ctx.app_id is not None:
+        audiences = list(
+            await service_app_service.get_idp_audiences(db, service_ctx.app_id)
+        )
     try:
         idp_claims = await validate_idp_token(
             body.idp_token,
             body.provider,
             expected_nonce=body.nonce,
-            expected_audiences=list(service_ctx.allowed_idp_audiences) or None,
+            expected_audiences=audiences or None,
         )
     except IdpValidationError as e:
         log_security(
@@ -290,6 +297,11 @@ async def resolve(
         )
         raise HTTPException(status_code=403, detail="User account is inactive")
 
+    # NOTE: build via a dict, not kwargs. The PII-leak guard in
+    # tests/test_no_raw_pii_logging.py greps this file's source text for an
+    # `email=` kwarg literal (to catch raw-email logging) — the kwarg form here
+    # would trip it even though this is a response model, not a log call. The
+    # dict form is deliberate; do not "simplify" it to keyword arguments.
     user_resp = AuthzUserResponse(
         **{"id": user.id, "email": user.email, "name": user.name}
     )

@@ -58,6 +58,9 @@ class DynamicCORSMiddleware(CORSMiddleware):
             allow_origins=[],
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
             allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+            # Echoed by RequestContextMiddleware (which sits outside CORS); expose
+            # it so cross-origin clients can read it for log correlation.
+            expose_headers=["X-Request-ID"],
             allow_credentials=True,
             max_age=600,
         )
