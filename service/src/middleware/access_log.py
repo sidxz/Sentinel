@@ -29,17 +29,28 @@ _UNMATCHED = "__unmatched__"
 def _route_template(scope) -> str:
     """Low-cardinality route template (e.g. /echo/{name}).
 
-    Uses the endpoint Starlette recorded on the scope during routing and maps it
-    back to its route template — O(routes) identity checks, no regex re-match
-    (the router already did the matching). Unmatched requests resolve to a
-    constant placeholder rather than leaking the raw path.
+    Reads the route the router recorded on the scope during routing (no regex
+    re-match) and returns its template. Version-robust across the framework's
+    routing reworks: prefers ``scope["route"]`` (newer Starlette sets it) and
+    reads ``path_format`` (newer) or ``path`` (older); falls back to mapping the
+    recorded ``scope["endpoint"]`` back to its route. Unmatched requests (404 /
+    OPTIONS preflight) resolve to a constant placeholder rather than leaking the
+    raw path (which can carry PII and explode http.route cardinality).
     """
-    endpoint = scope.get("endpoint")
-    if endpoint is None:
-        return _UNMATCHED  # 404 / 405 / OPTIONS preflight — never log the raw path
-    for route in getattr(scope.get("app"), "routes", []):
-        if getattr(route, "endpoint", None) is endpoint:
-            return getattr(route, "path", None) or _UNMATCHED
+    route = scope.get("route")
+    if route is None:
+        endpoint = scope.get("endpoint")
+        if endpoint is not None:
+            for r in getattr(scope.get("app"), "routes", []):
+                if getattr(r, "endpoint", None) is endpoint:
+                    route = r
+                    break
+    if route is not None:
+        return (
+            getattr(route, "path_format", None)
+            or getattr(route, "path", None)
+            or _UNMATCHED
+        )
     return _UNMATCHED
 
 
