@@ -2,7 +2,44 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from structlog.testing import capture_logs
 
-from src.middleware.access_log import AccessLogMiddleware
+from src.middleware.access_log import AccessLogMiddleware, _route_template
+
+
+class _FakeRoute:
+    def __init__(self, *, endpoint=None, path=None, path_format=None):
+        self.endpoint = endpoint
+        if path is not None:
+            self.path = path
+        if path_format is not None:
+            self.path_format = path_format
+
+
+def test_route_template_reads_path_format_then_path():
+    # Newer Starlette sets scope["route"] and exposes the template as path_format
+    # (route.path is None); older exposes it as path. Be robust to both — the
+    # regression that logged "__unmatched__" for every request came from reading
+    # only .path against a newer Starlette where it is None.
+    newer = _FakeRoute(path_format="/users/{id}")  # 1.x: path absent/None
+    assert _route_template({"route": newer}) == "/users/{id}"
+    older = _FakeRoute(path="/users/{id}")  # 0.x: only path
+    assert _route_template({"route": older}) == "/users/{id}"
+
+
+def test_route_template_falls_back_to_endpoint_mapping():
+    def ep():
+        pass
+
+    route = _FakeRoute(endpoint=ep, path_format="/echo/{name}")
+
+    class _App:
+        routes = [route]
+
+    # No scope["route"], but scope["endpoint"] + app.routes lets us recover it.
+    assert _route_template({"endpoint": ep, "app": _App()}) == "/echo/{name}"
+
+
+def test_route_template_unmatched_when_nothing_recorded():
+    assert _route_template({}) == "__unmatched__"  # 404 / OPTIONS preflight
 
 
 def _app():
