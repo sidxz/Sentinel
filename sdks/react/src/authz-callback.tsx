@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { parseJwt } from '@sentinel-auth/js'
 import type { AuthzWorkspaceOption, SentinelUser } from '@sentinel-auth/js'
 import { useAuthz } from './authz-hooks'
 
@@ -10,10 +9,21 @@ export interface AuthzWorkspaceSelectorProps {
 }
 
 export interface AuthzCallbackProps {
-  /** Called after successful authentication. */
-  onSuccess: (user: SentinelUser) => void
+  /**
+   * Called after successful authentication. `returnTo` is the same-origin path
+   * the user was on before a silent re-auth redirect (null if none) — navigate
+   * there to restore their place.
+   */
+  onSuccess: (user: SentinelUser, returnTo?: string | null) => void
   /** Called on error. */
   onError?: (error: Error) => void
+  /**
+   * Called when a silent (`prompt=none`) re-auth could not complete without
+   * user interaction. The stale session has already been cleared. Typically
+   * trigger an interactive `login(provider)` or redirect to your login page.
+   * If omitted, this falls through to `onError`.
+   */
+  onSilentReauthFailed?: (returnTo: string | null) => void
   /** Shown while loading. */
   loadingComponent?: ReactNode
   /** Shown on error. */
@@ -34,34 +44,47 @@ const capturedCallback =
     : ''
 
 /**
- * AuthZ mode OAuth callback component. Reads `id_token` from URL hash,
- * resolves workspaces, auto-selects if one, shows picker if multiple.
+ * AuthZ mode OAuth callback component. Interprets the IdP response via the
+ * SDK's `handleCallback` (nonce-verified), resolves workspaces, auto-selects
+ * if one, shows a picker if multiple, and recovers from failed silent re-auth.
  *
  * Drop-in equivalent of proxy mode's `AuthCallback`.
  */
 export function AuthzCallback({
   onSuccess,
   onError,
+  onSilentReauthFailed,
   loadingComponent,
   errorComponent,
   workspaceSelector,
 }: AuthzCallbackProps) {
-  const { resolve, selectWorkspace, client } = useAuthz()
+  const { resolve, selectWorkspace, client, logout } = useAuthz()
   const [workspaces, setWorkspaces] = useState<AuthzWorkspaceOption[]>([])
   const [idpToken, setIdpToken] = useState<string | null>(null)
+  const [provider, setProvider] = useState<string>('google')
+  const [returnTo, setReturnTo] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selecting, setSelecting] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const resolvedRef = useRef(false)
 
-  // Determine provider from sessionStorage (set by login()) or default to google
-  const provider = sessionStorage.getItem('sentinel_authz_provider') || 'google'
-
   useEffect(() => {
     if (resolvedRef.current) return
     resolvedRef.current = true
 
-    if (!capturedCallback) {
+    // Delegate parsing + nonce verification to the SDK (single tested path).
+    let result
+    try {
+      result = client.handleCallback(capturedCallback)
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error('Authentication failed')
+      setError(err)
+      setLoading(false)
+      onError?.(err)
+      return
+    }
+
+    if (!result) {
       const err = new Error('No IdP response in callback URL')
       setError(err)
       setLoading(false)
@@ -69,77 +92,32 @@ export function AuthzCallback({
       return
     }
 
-    const params = new URLSearchParams(capturedCallback)
-    const idToken = params.get('id_token')
-    const oauthError = params.get('error')
-
-    if (oauthError) {
-      const err = new Error(params.get('error_description') || oauthError)
-      setError(err)
+    if (result.status === 'silent_failed') {
+      // Silent re-auth needs interaction. Clear the stale session so the app
+      // shows login instead of a broken page, then hand off to the consumer.
+      logout()
       setLoading(false)
-      onError?.(err)
+      if (onSilentReauthFailed) onSilentReauthFailed(result.returnTo)
+      else onError?.(new Error('Silent re-authentication failed — interactive login required'))
       return
     }
 
-    if (!idToken) {
-      const err = new Error('No ID token in IdP response')
-      setError(err)
-      setLoading(false)
-      onError?.(err)
-      return
-    }
+    const { idpToken: token, provider: prov, returnTo: ret } = result
+    setIdpToken(token)
+    setProvider(prov)
+    setReturnTo(ret)
 
-    // Verify nonce to prevent token replay / login-CSRF injection. If no nonce
-    // was stored at login start, the callback did NOT originate from a flow
-    // we initiated — fail closed so an attacker cannot inject an id_token by
-    // pointing the victim at the callback URL directly.
-    const expectedNonce = sessionStorage.getItem('sentinel_authz_nonce')
-    if (!expectedNonce) {
-      const err = new Error(
-        'No login flow in progress — callback rejected. Start login from this tab.',
-      )
-      setError(err)
-      setLoading(false)
-      onError?.(err)
-      return
-    }
-    const hashNonce = params.get('nonce')
-    try {
-      if (hashNonce) {
-        if (hashNonce !== expectedNonce) {
-          throw new Error('Nonce mismatch — possible token replay')
-        }
-      } else {
-        const claims = parseJwt(idToken)
-        if ((claims as unknown as Record<string, unknown>).nonce !== expectedNonce) {
-          throw new Error('Nonce mismatch — possible token replay')
-        }
-      }
-    } catch (e) {
-      const err = e instanceof Error ? e : new Error('Nonce verification failed')
-      setError(err)
-      setLoading(false)
-      onError?.(err)
-      return
-    }
-
-    // Clean up session storage only after successful nonce verification
-    sessionStorage.removeItem('sentinel_authz_nonce')
-    sessionStorage.removeItem('sentinel_authz_provider')
-
-    setIdpToken(idToken)
-
-    resolve(idToken, provider)
-      .then(async (result) => {
-        if (!result.workspaces || result.workspaces.length === 0) {
+    resolve(token, prov)
+      .then(async (resolved) => {
+        if (!resolved.workspaces || resolved.workspaces.length === 0) {
           throw new Error('No workspaces available. Ask an admin to add you to a workspace.')
         }
-        if (result.workspaces.length === 1) {
-          await selectWorkspace(idToken, provider, result.workspaces[0].id)
-          onSuccess(client.getUser()!)
+        if (resolved.workspaces.length === 1) {
+          await selectWorkspace(token, prov, resolved.workspaces[0].id)
+          onSuccess(client.getUser()!, ret)
           return
         }
-        setWorkspaces(result.workspaces)
+        setWorkspaces(resolved.workspaces)
         setLoading(false)
       })
       .catch((e: unknown) => {
@@ -155,7 +133,7 @@ export function AuthzCallback({
     setSelecting(true)
     try {
       await selectWorkspace(idpToken, provider, workspaceId)
-      onSuccess(client.getUser()!)
+      onSuccess(client.getUser()!, returnTo)
     } catch (e: unknown) {
       const err = e instanceof Error ? e : new Error('Workspace selection failed')
       setError(err)

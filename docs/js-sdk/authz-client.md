@@ -102,12 +102,16 @@ authz.login('google')
 
 ### handleCallback()
 
-Extract `id_token` from URL hash after IdP redirect. Verifies nonce. Returns `null` if no hash present.
+Interpret the IdP response in the URL hash after a redirect. Verifies the nonce. Returns a discriminated result (or `null` if there is no IdP response in the URL):
 
 ```typescript
 const cb = authz.handleCallback()
-// { idpToken: 'eyJ...', provider: 'google' } | null
+//  | { status: 'success', idpToken, provider, returnTo }   -> proceed to resolve/selectWorkspace
+//  | { status: 'silent_failed', error, provider, returnTo } -> silentLogin() couldn't complete; fall back to login()
+//  | null                                                    -> not a callback
 ```
+
+Throws on a genuine OAuth error or a nonce mismatch (possible replay). `returnTo` is the same-origin path the user was on before a `silentLogin()` redirect (or `null`). Accepts an optional pre-captured hash, `handleCallback(hash)`, for React StrictMode.
 
 ### resolve(idpToken, provider)
 
@@ -127,12 +131,29 @@ Exchange IdP token for a Sentinel authz token scoped to a workspace. POSTs to th
 await authz.selectWorkspace(idpToken, 'google', 'ws-uuid')
 ```
 
-### getUser() / isAuthenticated
+### getAuthState() / getUser() / isAuthenticated / needsReauth
+
+Auth state is derived from **both** tokens. A valid authz token alone is not enough — the memory-only IdP token (gone after a reload) is also required to authenticate a request. `getAuthState()` reports this honestly so the app never renders "logged in" while every request 401s:
 
 ```typescript
-const user = authz.getUser()
-// { userId, email, name, workspaceId, workspaceSlug, workspaceRole, groups }
-if (authz.isAuthenticated) { /* ... */ }
+authz.getAuthState()
+//  'authenticated'   -> authz token + IdP token present; requests work
+//  'needs_reauth'    -> authz token survived (e.g. reload) but IdP token is gone
+//  'unauthenticated' -> no usable authz token
+
+const user = authz.getUser()       // non-null ONLY when authenticated
+if (authz.isAuthenticated) { /* ... */ }   // === getAuthState() === 'authenticated'
+if (authz.needsReauth) { authz.silentLogin() }  // re-auth after reload (see below)
+```
+
+### silentLogin(provider?) / consumeReturnTo()
+
+Recover from `needs_reauth` (e.g. after a page reload) without a full manual login. `silentLogin()` does a top-level `prompt=none` redirect to the IdP using the stored provider; with a live IdP session it bounces straight back with a fresh `id_token` (usually no UI). Returns `false` if it no-ops (no provider known, or an attempt is already in flight — there is a built-in loop guard). A full-page redirect is used deliberately over a hidden iframe, which third-party-cookie rules make unreliable.
+
+```typescript
+if (authz.needsReauth) authz.silentLogin()        // → resolves on the callback
+// on the callback, handleCallback() returns 'silent_failed' if interaction is needed
+const returnTo = authz.consumeReturnTo()          // same-origin path to restore, or null
 ```
 
 ### getHeaders()
@@ -176,7 +197,7 @@ const authz = new SentinelAuthz({
 !!! info "IdP token is not persisted"
     `AuthzLocalStorageStore` deliberately keeps the IdP token (which is long-lived and trust-critical — a Google ID token lasts ~1h and authenticates on every request) **in instance memory only**. It does not survive a page reload. This reduces the blast radius of XSS: an attacker who reads `localStorage` does not get the IdP token, only the short-lived (~5 min) authz token.
 
-    Trade-off: after a page reload the SDK has no IdP token, so silent refresh fails and the user is re-sent through the IdP login flow. If you need persistent sessions, front your frontend with a backend route that sets an `HttpOnly` cookie holding the tokens server-side.
+    Trade-off: after a page reload the SDK has no IdP token. `getAuthState()` then reports `needs_reauth` (and `isAuthenticated` is `false`, `getUser()` is `null`) — so the app shows login instead of a broken "zombie" page that 401s on every request. Call `silentLogin()` to re-auth seamlessly via the IdP's existing session, or front your frontend with a backend route that sets an `HttpOnly` cookie holding the tokens server-side for true persistent sessions.
 
 ## `handleCallback()` nonce enforcement
 
@@ -205,13 +226,18 @@ authz.login('google')
 
 // Callback page (/auth/callback)
 const cb = authz.handleCallback()
-if (cb) {
+if (cb?.status === 'success') {
   const result = await authz.resolve(cb.idpToken, cb.provider)
   if (result.workspaces?.length === 1) {
     await authz.selectWorkspace(cb.idpToken, cb.provider, result.workspaces[0].id)
-    window.location.href = '/dashboard'
+    window.location.href = cb.returnTo ?? '/dashboard'
   }
+} else if (cb?.status === 'silent_failed') {
+  authz.login('google') // silent re-auth needs interaction → fall back to interactive
 }
+
+// Protected page boot: recover a reloaded session seamlessly
+if (authz.needsReauth) authz.silentLogin()
 
 // After auth
 const notes = await authz.fetchJson<Note[]>('/api/notes')

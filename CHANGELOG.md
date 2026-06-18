@@ -12,6 +12,20 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ## [Unreleased]
 
+### Fixed
+
+- **AuthZ "zombie session" after page reload** (`@sentinel-auth/js`, `react`, `nextjs`) — auth state was derived from the `localStorage` authz token alone, so after a reload (when the memory-only IdP token is gone) the app rendered as authenticated while every API request 401'd with `Missing IdP token`. `getUser()` / `isAuthenticated` now require a usable IdP token, so a reloaded session honestly reports as needing re-auth and the app shows login instead of a broken page.
+
+### Added
+
+- **`SentinelAuthz.getAuthState()`** → `'authenticated' | 'needs_reauth' | 'unauthenticated'`, plus a `needsReauth` getter. `needs_reauth` = authz token present but IdP token gone (e.g. after reload).
+- **`SentinelAuthz.silentLogin(provider?)`** — seamless re-auth via a top-level `prompt=none` redirect to the IdP (full-page, not iframe; fresh nonce; `login_hint`; same-origin return-path; built-in loop guard). **`consumeReturnTo()`** returns the validated return path.
+- **React `AuthzProvider` `autoReauth` prop** (opt-in) — automatically attempts `silentLogin()` on mount when `needs_reauth`. Context now exposes `authState`, `needsReauth`, `silentLogin`, `consumeReturnTo`. `AuthzCallback` gained an `onSilentReauthFailed` prop and passes `returnTo` to `onSuccess`.
+
+### Breaking changes
+
+- **`SentinelAuthz.handleCallback()`** now returns a discriminated result — `{ status: 'success', idpToken, provider, returnTo } | { status: 'silent_failed', error, provider, returnTo } | null` — instead of `{ idpToken, provider } | null`. Migration: gate on `cb?.status === 'success'` before reading `cb.idpToken` / `cb.provider`. It also accepts an optional pre-captured hash argument for React StrictMode.
+
 <!-- Add next-version entries here -->
 
 ---

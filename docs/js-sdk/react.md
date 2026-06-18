@@ -28,6 +28,14 @@ function App() {
 
 Pass a pre-created client via the `client` prop when you need the instance outside React.
 
+Add the **`autoReauth`** prop (opt-in) for seamless persistence: when a reload leaves the session in `needs_reauth` (authz token survived, IdP token gone), the provider automatically runs `silentLogin()` (`prompt=none`) on mount. It has a built-in loop guard; if silent auth needs interaction, the callback falls back to interactive login.
+
+```tsx
+<AuthzProvider autoReauth config={{ /* … */ }}>
+  <YourApp />
+</AuthzProvider>
+```
+
 ## useAuthz()
 
 Full auth context. Throws if used outside `AuthzProvider`.
@@ -35,9 +43,13 @@ Full auth context. Throws if used outside `AuthzProvider`.
 ```tsx
 const {
   user,             // SentinelUser | null
-  isAuthenticated,  // boolean
+  isAuthenticated,  // boolean (authz token AND IdP token present)
+  authState,        // 'authenticated' | 'needs_reauth' | 'unauthenticated'
+  needsReauth,      // boolean — authz token survived a reload but IdP token is gone
   isLoading,        // boolean
   login,            // (provider: string) => void
+  silentLogin,      // (provider?: string) => boolean — prompt=none re-auth redirect
+  consumeReturnTo,  // () => string | null — same-origin return path after re-auth
   resolve,          // (idpToken, provider) => Promise<AuthzResolveResponse>
   selectWorkspace,  // (idpToken, provider, wsId) => Promise<void>
   logout,           // () => void
@@ -104,8 +116,9 @@ Handles the OAuth callback. Reads `id_token` from the URL hash, resolves workspa
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `onSuccess` | `(user: SentinelUser) => void` | Called after auth completes |
+| `onSuccess` | `(user: SentinelUser, returnTo?: string \| null) => void` | Called after auth completes; `returnTo` is the same-origin path to restore after a silent re-auth |
 | `onError` | `(error: Error) => void` | Called on error |
+| `onSilentReauthFailed` | `(returnTo: string \| null) => void` | Called when a silent (`prompt=none`) re-auth needs interaction. The stale session is already cleared — trigger interactive `login()`. Falls through to `onError` if omitted |
 | `loadingComponent` | `ReactNode` | Loading UI |
 | `errorComponent` | `(error: Error) => ReactNode` | Error UI |
 | `workspaceSelector` | `(props) => ReactNode` | Custom workspace picker |
@@ -119,7 +132,7 @@ import { IdpConfigs } from '@sentinel-auth/js'
 
 function App() {
   return (
-    <AuthzProvider config={{
+    <AuthzProvider autoReauth config={{
       sentinelUrl: 'http://localhost:9003',
       idps: { google: IdpConfigs.google(import.meta.env.VITE_GOOGLE_CLIENT_ID) },
     }}>
@@ -144,7 +157,13 @@ function Login() {
 
 function Callback() {
   const navigate = useNavigate()
-  return <AuthzCallback onSuccess={() => navigate('/', { replace: true })} />
+  const { login } = useAuthz()
+  return (
+    <AuthzCallback
+      onSuccess={(_user, returnTo) => navigate(returnTo ?? '/', { replace: true })}
+      onSilentReauthFailed={() => login('google')}
+    />
+  )
 }
 
 function Dashboard() {

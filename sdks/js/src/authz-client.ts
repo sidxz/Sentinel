@@ -5,6 +5,8 @@ import type {
   SentinelAuthzConfig,
   AuthzTokenStore,
   AuthzResolveResponse,
+  AuthState,
+  AuthzCallbackResult,
   IdpConfig,
   WorkspaceMember,
   GroupInfo,
@@ -14,6 +16,14 @@ import type {
 import type { SentinelUser } from './types'
 
 type AuthStateListener = (user: SentinelUser | null) => void
+
+// How long a silent (`prompt=none`) re-auth is considered "in flight". The marker
+// stores the attempt's start time; once it is older than this, the loop guard no
+// longer blocks a fresh attempt. This bounds recovery: a silent attempt that never
+// completes (Back button, stalled redirect, an errored callback that didn't clear
+// the marker, a multi-workspace picker the user abandoned) can no longer wedge the
+// session — silentLogin can retry after the window instead of no-op'ing forever.
+const SILENT_TTL_MS = 60_000
 
 /**
  * Browser auth client for Sentinel AuthZ mode.
@@ -69,6 +79,9 @@ export class SentinelAuthz {
     const nonce = crypto.randomUUID()
     sessionStorage.setItem('sentinel_authz_nonce', nonce)
     sessionStorage.setItem('sentinel_authz_provider', provider)
+    // Interactive login supersedes any in-flight silent attempt so the callback
+    // is not misclassified as silent (which would suppress real errors).
+    sessionStorage.removeItem('sentinel_authz_silent')
 
     const params = new URLSearchParams({
       client_id: idp.clientId,
@@ -83,22 +96,51 @@ export class SentinelAuthz {
   }
 
   /**
-   * Handle the OAuth callback. Extracts the id_token from the URL hash,
-   * calls resolve, and returns the result.
+   * Handle the OAuth callback. Extracts the id_token from the URL hash and
+   * returns a discriminated result.
    *
-   * Call this from your callback route. Returns null if no hash is present.
+   * Call this from your callback route. Returns:
+   * - ``{ status: 'success', idpToken, provider, returnTo }`` — proceed to
+   *   ``resolve`` / ``selectWorkspace``, then navigate to ``returnTo ?? '/'``.
+   * - ``{ status: 'silent_failed', ... }`` — a ``silentLogin`` ``prompt=none``
+   *   attempt could not complete without user interaction. NOT fatal: fall back
+   *   to interactive ``login(provider)``.
+   * - ``null`` — no IdP response in the URL (not a callback).
+   *
+   * Throws on a genuine OAuth error or a nonce mismatch (possible replay).
+   *
+   * @param capturedHash Optional pre-captured URL fragment (without the leading
+   *   ``#``). React components capture the hash at module load to survive
+   *   StrictMode double-mount; pass it here so the same value is interpreted.
    */
-  handleCallback(): { idpToken: string; provider: string } | null {
-    const hash = window.location.hash.substring(1)
+  handleCallback(capturedHash?: string): AuthzCallbackResult | null {
+    const hash = capturedHash ?? window.location.hash.substring(1)
     if (!hash) return null
 
     const params = new URLSearchParams(hash)
     const idpToken = params.get('id_token')
     const error = params.get('error')
+    const silent = this.isSilentAttempt()
+    const storedProvider =
+      (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('sentinel_authz_provider')) || null
 
     if (error) {
+      // Clean the URL, consume markers regardless of outcome.
+      window.history.replaceState({}, '', window.location.pathname)
+      const returnTo = this.consumeReturnTo()
+      this.clearCallbackMarkers()
+      // Any IdP error during a silent (prompt=none) attempt is recoverable:
+      // signal silent_failed so the caller falls back to interactive login
+      // (which surfaces a genuine error there) rather than throwing here.
+      // Throwing under autoReauth would turn a persistent error — login_required,
+      // but also account_selection_required, access_denied, etc. — into a
+      // reload-driven loop.
+      if (silent) {
+        return { status: 'silent_failed', error, provider: storedProvider, returnTo }
+      }
       throw new Error(params.get('error_description') || error)
     }
+
     if (!idpToken) return null
 
     // Verify nonce to prevent token replay / login-CSRF injection.
@@ -128,11 +170,122 @@ export class SentinelAuthz {
     // Clean the URL
     window.history.replaceState({}, '', window.location.pathname)
 
-    const provider = sessionStorage.getItem('sentinel_authz_provider') || 'google'
+    const returnTo = this.consumeReturnTo()
+    // Consume the replay nonce + provider now, but DEFER clearing the silent
+    // marker to selectWorkspace(): until the IdP token is actually set the
+    // session is still ``needs_reauth``, so a parent provider's autoReauth must
+    // keep no-op'ing (React fires child effects before parent effects, so the
+    // callback runs first — clearing the marker here would let the provider
+    // fire a second redirect mid-resolve).
     sessionStorage.removeItem('sentinel_authz_nonce')
     sessionStorage.removeItem('sentinel_authz_provider')
 
-    return { idpToken, provider }
+    return { status: 'success', idpToken, provider: storedProvider ?? 'google', returnTo }
+  }
+
+  /**
+   * Begin a silent re-authentication via a top-level ``prompt=none`` redirect
+   * to the IdP. Use this when {@link getAuthState} is ``needs_reauth`` (e.g.
+   * after a page reload, where the memory-only IdP token is gone).
+   *
+   * With a live IdP session and prior consent the IdP bounces straight back to
+   * the callback with a fresh ``id_token`` (usually no UI). On the callback,
+   * {@link handleCallback} returns ``status: 'silent_failed'`` if the IdP needs
+   * interaction — fall back to {@link login} then.
+   *
+   * A full-page redirect is used deliberately rather than a hidden iframe:
+   * third-party-cookie restrictions make iframe ``prompt=none`` unreliable.
+   *
+   * @returns ``true`` if a redirect was started, ``false`` if it was a no-op
+   *   (no provider known, or a silent attempt is already in flight).
+   * @throws if the resolved provider is not configured in ``idps``.
+   */
+  silentLogin(provider?: string): boolean {
+    if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return false
+    // Loop guard: never start a second silent attempt while one is genuinely in
+    // flight. A stale marker (older than SILENT_TTL_MS) no longer blocks, so an
+    // abandoned/errored attempt can't wedge the session permanently.
+    if (this.silentInFlight()) return false
+
+    const prov = provider ?? this.store.getProvider()
+    if (!prov) return false // no IdP to silently re-auth against
+
+    const idp = this.idps[prov]
+    if (!idp) {
+      throw new Error(
+        `IdP "${prov}" not configured. Pass it via idps in SentinelAuthzConfig, ` +
+        `e.g. { idps: { google: IdpConfigs.google('your-client-id') } }`,
+      )
+    }
+
+    const nonce = crypto.randomUUID()
+    sessionStorage.setItem('sentinel_authz_nonce', nonce)
+    sessionStorage.setItem('sentinel_authz_provider', prov)
+    // Store the attempt start time (not a bare flag) so the loop guard can expire it.
+    sessionStorage.setItem('sentinel_authz_silent', String(Date.now()))
+    sessionStorage.setItem('sentinel_authz_return_to', window.location.pathname + window.location.search)
+
+    // Spread extraParams FIRST so the silent-flow essentials below (notably
+    // prompt='none') always win — a configured extraParams.prompt (e.g. Google's
+    // 'select_account') must not silently turn this into an interactive redirect.
+    const params = new URLSearchParams({
+      ...idp.extraParams,
+      client_id: idp.clientId,
+      redirect_uri: this.redirectUri,
+      response_type: idp.responseType ?? 'id_token',
+      scope: (idp.scopes ?? ['openid', 'email', 'profile']).join(' '),
+      nonce,
+      prompt: 'none',
+    })
+    // login_hint targets the previously-signed-in account so the IdP can
+    // resolve the session without an account picker. Email is non-secret.
+    const email = this.store.getUserIdentity()?.email
+    if (email) params.set('login_hint', email)
+
+    window.location.href = `${idp.authorizationUrl}?${params}`
+    return true
+  }
+
+  /**
+   * Read and clear the stored post-reauth return path, validated to be a
+   * same-origin absolute path. Returns null if absent or unsafe (open-redirect
+   * guard): rejects protocol-relative (``//host``), scheme-bearing (``http:``),
+   * and non-rooted values.
+   */
+  consumeReturnTo(): string | null {
+    if (typeof sessionStorage === 'undefined') return null
+    const raw = sessionStorage.getItem('sentinel_authz_return_to')
+    sessionStorage.removeItem('sentinel_authz_return_to')
+    if (!raw) return null
+    if (!raw.startsWith('/') || raw.startsWith('//')) return null
+    if (raw.includes('://') || raw.includes('\\')) return null
+    return raw
+  }
+
+  /** True if THIS callback is the result of a silent attempt we started (marker
+   *  present, regardless of age — the redirect round-trip may exceed the TTL). */
+  private isSilentAttempt(): boolean {
+    return typeof sessionStorage !== 'undefined' && sessionStorage.getItem('sentinel_authz_silent') != null
+  }
+
+  /** True only while a recent silent attempt is genuinely in flight (used by the
+   *  loop guard). A stale marker is treated as not-in-flight so a new attempt can
+   *  start, which is what stops an abandoned attempt from wedging the session. */
+  private silentInFlight(): boolean {
+    if (typeof sessionStorage === 'undefined') return false
+    const raw = sessionStorage.getItem('sentinel_authz_silent')
+    if (raw == null) return false
+    const startedAt = Number(raw)
+    if (!Number.isFinite(startedAt)) return false
+    return Date.now() - startedAt < SILENT_TTL_MS
+  }
+
+  private clearCallbackMarkers(): void {
+    if (typeof sessionStorage === 'undefined') return
+    sessionStorage.removeItem('sentinel_authz_nonce')
+    sessionStorage.removeItem('sentinel_authz_provider')
+    sessionStorage.removeItem('sentinel_authz_silent')
+    sessionStorage.removeItem('sentinel_authz_return_to')
   }
 
   // ── Auth flow ───────────────────────────────────────────────────────
@@ -191,28 +344,51 @@ export class SentinelAuthz {
       this.store.setUserIdentity({ email: data.user.email, name: data.user.name })
     }
     this.store.setTokens(idpToken, data.authz_token, provider, workspaceId)
+    // The IdP token is now set, so the session is fully authenticated — release
+    // the silent-reauth loop guard (see handleCallback's deferred clear).
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem('sentinel_authz_silent')
+    }
     this.notify()
     if (this.autoRefresh) this.scheduleRefresh()
   }
 
   // ── Token access ──────────────────────────────────────────────────
 
+  /**
+   * Current derived auth state.
+   *
+   * Crucially this consults BOTH tokens. A valid authz token alone is not
+   * enough to authenticate a request — the memory-only IdP token is also
+   * required and is gone after a reload. Reporting that honestly (as
+   * ``needs_reauth``) is what prevents the "zombie session" where the app
+   * renders logged-in but every request 401s with "Missing IdP token".
+   */
+  getAuthState(): AuthState {
+    const authzToken = this.store.getAuthzToken()
+    if (!authzToken || isTokenExpired(authzToken)) return 'unauthenticated'
+    if (!this.store.getIdpToken()) return 'needs_reauth'
+    return 'authenticated'
+  }
+
   /** Parse the current authz token + cached identity into a SentinelUser, or null. */
   getUser(): SentinelUser | null {
-    const token = this.store.getAuthzToken()
-    if (!token) return null
+    if (this.getAuthState() !== 'authenticated') return null
     try {
-      if (isTokenExpired(token)) return null
-      return authzTokenToUser(token, this.store.getUserIdentity())
+      return authzTokenToUser(this.store.getAuthzToken()!, this.store.getUserIdentity())
     } catch {
       return null
     }
   }
 
-  /** True if a non-expired authz token exists. */
+  /** True only when a request can actually be authenticated (authz + IdP token). */
   get isAuthenticated(): boolean {
-    const token = this.store.getAuthzToken()
-    return !!token && !isTokenExpired(token)
+    return this.getAuthState() === 'authenticated'
+  }
+
+  /** True when an authz token survives but the IdP token is gone (e.g. after reload). */
+  get needsReauth(): boolean {
+    return this.getAuthState() === 'needs_reauth'
   }
 
   /** Get auth headers for API requests (both IdP and authz tokens). */
@@ -312,6 +488,11 @@ export class SentinelAuthz {
   logout(): void {
     this.store.clear()
     this.clearRefreshTimer()
+    // Also drop any in-flight silent-reauth markers so a later mount starts clean.
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem('sentinel_authz_silent')
+      sessionStorage.removeItem('sentinel_authz_return_to')
+    }
     this.notify()
   }
 

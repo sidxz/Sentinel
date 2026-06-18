@@ -34,6 +34,8 @@ export type {
   AuthzUserInfo,
   AuthzWorkspaceOption,
   AuthzWorkspaceInfo,
+  AuthState,
+  AuthzCallbackResult,
   IdpConfig,
   UserIdentity,
   WorkspaceMember,

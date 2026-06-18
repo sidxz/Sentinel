@@ -362,7 +362,7 @@ close this at the cost of a per-request network call.)
 
 ### Browser Storage (`AuthzLocalStorageStore`)
 
-The JS SDK's persistent store keeps the short-lived authz token in `localStorage` but **not** the long-lived IdP token — that stays in instance memory only. After a page reload the SDK has no IdP token, so silent refresh fails and the user re-authenticates via the IdP. This limits the XSS blast radius: an attacker reading `localStorage` gets a token that expires in minutes, not an IdP token that continues to mint new authz tokens for the next hour.
+The JS SDK's persistent store keeps the short-lived authz token in `localStorage` but **not** the long-lived IdP token — that stays in instance memory only. After a page reload the SDK has no IdP token, so `getAuthState()` reports `needs_reauth` (`isAuthenticated` is `false`) and the user re-authenticates via the IdP — either with one click, or seamlessly via `silentLogin()` (`prompt=none`). This limits the XSS blast radius: an attacker reading `localStorage` gets a token that expires in minutes, not an IdP token that continues to mint new authz tokens for the next hour. The surviving authz token is not independently usable — the backend binds it to a freshly-signed IdP token (`idp_sub` must match), which is never persisted.
 
 ### Nonce on the Callback
 

@@ -70,6 +70,24 @@ export interface UserIdentity {
   name: string
 }
 
+/**
+ * Derived auth state for AuthZ mode.
+ *
+ * - ``authenticated``   — a valid authz token AND a usable IdP token are present;
+ *                          requests can be made.
+ * - ``needs_reauth``    — a valid authz token exists but the IdP token is gone
+ *                          (e.g. after a page reload, where the IdP token is
+ *                          memory-only). Requests cannot be authenticated until
+ *                          the user re-auths with the IdP (see ``silentLogin``).
+ * - ``unauthenticated`` — no usable authz token (absent or expired).
+ */
+export type AuthState = 'authenticated' | 'needs_reauth' | 'unauthenticated'
+
+/** Outcome of {@link SentinelAuthz.handleCallback}. */
+export type AuthzCallbackResult =
+  | { status: 'success'; idpToken: string; provider: string; returnTo: string | null }
+  | { status: 'silent_failed'; error: string; provider: string | null; returnTo: string | null }
+
 export interface AuthzTokenStore {
   getIdpToken(): string | null
   getAuthzToken(): string | null

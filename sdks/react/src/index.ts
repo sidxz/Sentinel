@@ -18,6 +18,8 @@ export type {
   SentinelAuthzConfig,
   AuthzTokenStore,
   AuthzResolveResponse,
+  AuthState,
+  AuthzCallbackResult,
   WorkspaceMember,
   GroupInfo,
   GroupMemberInfo,
