@@ -226,12 +226,12 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 [slowapi](https://github.com/laurents/slowapi) is the sole rate-limiting mechanism. It applies two complementary layers via Redis-backed per-IP counters:
 
-1. **Aggregate** (`RATE_LIMIT_AGGREGATE`, default `600/minute`) — a volumetric ceiling applied to every route that does **not** carry a per-route decorator. Provides baseline abuse prevention for undecorated read paths.
+1. **Aggregate** (`RATE_LIMIT_AGGREGATE`, default `300/minute`) — a volumetric ceiling applied to every route that does **not** carry a per-route decorator. Provides baseline abuse prevention for undecorated read paths.
 2. **Per-route tiers** — decorated endpoints enforce a more specific limit from the tier set below. The aggregate does **not** additionally apply to these routes.
 
 | Tier | Env var | Default | Covered endpoints |
 |------|---------|---------|-------------------|
-| Aggregate | `RATE_LIMIT_AGGREGATE` | `600/minute` | All undecorated routes |
+| Aggregate | `RATE_LIMIT_AGGREGATE` | `300/minute` | All undecorated routes |
 | Default | `RATE_LIMIT_DEFAULT` | `120/minute` | Decorated routes without a specific tier |
 | Auth | `RATE_LIMIT_AUTH` | `10/minute` | `/auth/login`, `/auth/callback`, `/auth/token`, `/auth/refresh` |
 | Auth admin | `RATE_LIMIT_AUTH_ADMIN` | `5/minute` | `/auth/admin/login`, `/auth/admin/callback` |
