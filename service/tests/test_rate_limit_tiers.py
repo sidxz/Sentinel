@@ -1,0 +1,71 @@
+"""slowapi keying: authenticated routes bucket per user/service, not per IP, so
+one busy actor (or a shared NAT/proxy IP) can't throttle everyone else. Also
+asserts the live limiter is configured fail-open.
+
+Uses fresh in-memory Limiters so the suite never touches Redis and never mutates
+the module singleton's route registry.
+"""
+
+from fastapi import Depends, FastAPI, Request
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from starlette.testclient import TestClient
+
+import src.middleware.rate_limit as rl
+
+
+def _client(*, key_func, identity_header, field):
+    lim = Limiter(
+        key_func=rl.get_client_ip, storage_uri="memory://", swallow_errors=True
+    )
+    app = FastAPI()
+    app.state.limiter = lim
+    app.add_exception_handler(RateLimitExceeded, rl.rate_limit_exceeded_handler)
+
+    async def bind(request: Request):
+        # Mirror bind_identity(): write the identity into scope state, which
+        # request.state reads, BEFORE the decorator's check runs in the wrapper.
+        val = request.headers.get(identity_header)
+        if val:
+            request.scope.setdefault("state", {})[field] = val
+
+    @app.get("/r")
+    @lim.limit("2/minute", key_func=key_func)
+    async def r(request: Request, _: None = Depends(bind)):
+        return {"ok": True}
+
+    return TestClient(app)
+
+
+def test_per_user_keying_isolates_users():
+    c = _client(key_func=rl.user_or_ip_key, identity_header="X-Actor", field="actor")
+    assert c.get("/r", headers={"X-Actor": "alice"}).status_code == 200
+    assert c.get("/r", headers={"X-Actor": "alice"}).status_code == 200
+    assert (
+        c.get("/r", headers={"X-Actor": "alice"}).status_code == 429
+    )  # alice exhausted
+    assert c.get("/r", headers={"X-Actor": "bob"}).status_code == 200  # bob unaffected
+
+
+def test_per_service_keying_isolates_services():
+    c = _client(
+        key_func=rl.service_or_ip_key,
+        identity_header="X-Service",
+        field="caller_service",
+    )
+    assert c.get("/r", headers={"X-Service": "svc-a"}).status_code == 200
+    assert c.get("/r", headers={"X-Service": "svc-a"}).status_code == 200
+    assert c.get("/r", headers={"X-Service": "svc-a"}).status_code == 429
+    assert c.get("/r", headers={"X-Service": "svc-b"}).status_code == 200
+
+
+def test_falls_back_to_ip_without_identity():
+    c = _client(key_func=rl.user_or_ip_key, identity_header="X-Actor", field="actor")
+    assert c.get("/r").status_code == 200
+    assert c.get("/r").status_code == 200
+    assert c.get("/r").status_code == 429  # same TestClient IP shares one bucket
+
+
+def test_singleton_limiter_is_fail_open():
+    # A Redis blip must let traffic through, not 500 or throttle.
+    assert rl.limiter._swallow_errors is True

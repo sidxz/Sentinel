@@ -41,11 +41,44 @@ def get_client_ip(request: Request) -> str:
     return "unknown"
 
 
+def user_or_ip_key(request: Request) -> str:
+    """Rate-limit key for authenticated endpoints: bucket by user, fall back to IP.
+
+    ``bind_identity`` (request_context) writes the authenticated subject to
+    ``request.state.actor`` during dependency resolution, which runs *before*
+    slowapi's per-route check fires in the endpoint wrapper — so the actor is
+    available here. IP fallback keeps the limit meaningful on any path where no
+    user is resolved.
+    """
+    actor = getattr(request.state, "actor", None)
+    if actor:
+        return f"user:{actor}"
+    return f"ip:{get_client_ip(request)}"
+
+
+def service_or_ip_key(request: Request) -> str:
+    """Rate-limit key for service-to-service endpoints: bucket by calling service.
+
+    Used by POST /authz/resolve, where no user exists at dependency time (the IdP
+    token is in the request body and the user is provisioned inside the handler).
+    ``require_service_context`` binds ``caller_service`` before the check fires.
+    """
+    svc = getattr(request.state, "caller_service", None)
+    if svc:
+        return f"svc:{svc}"
+    return f"ip:{get_client_ip(request)}"
+
+
 limiter = Limiter(
     key_func=get_client_ip,
+    default_limits=[settings.rate_limit_default] if settings.rate_limit_default else [],
+    application_limits=(
+        [settings.rate_limit_aggregate] if settings.rate_limit_aggregate else []
+    ),
     storage_uri=settings.redis_url,
     storage_options=settings.redis_ssl_kwargs,
-    enabled=settings.rate_limit_enabled,  # disables every @limiter.limit() when off
+    swallow_errors=True,  # fail OPEN: a Redis blip must not 500 or throttle legit traffic
+    enabled=settings.rate_limit_enabled,  # master switch (False on ephemeral pentest targets)
 )
 
 
@@ -62,7 +95,6 @@ async def rate_limit_exceeded_handler(
     return JSONResponse(
         status_code=429,
         content={"detail": "Too many requests"},
-        headers={"Retry-After": str(exc.retry_after)},
     )
 
 
