@@ -77,7 +77,7 @@ from src.services import (
     service_app_service,
 )
 from src.middleware.cors import refresh_origins
-from src.middleware.rate_limit import limiter
+from src.middleware.rate_limit import limiter, user_or_ip_key
 from src.services import token_service
 
 logger = structlog.get_logger()
@@ -260,7 +260,7 @@ async def system_settings(
 
 
 @router.post("/users/bulk-status")
-@limiter.limit("5/minute")
+@limiter.limit(settings.rate_limit_sensitive, key_func=user_or_ip_key)
 async def bulk_user_status(
     request: Request,
     body: BulkUserStatusRequest,
@@ -373,7 +373,7 @@ async def add_user_to_workspace(
 
 
 @router.post("/users/{user_id}/revoke-tokens")
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_admin_write, key_func=user_or_ip_key)
 async def revoke_user_tokens(
     request: Request,
     user_id: uuid.UUID,
@@ -898,7 +898,7 @@ async def revoke_permission_share(
 
 
 @router.delete("/permissions/service/{service_name}", status_code=200)
-@limiter.limit("5/minute")
+@limiter.limit(settings.rate_limit_sensitive, key_func=user_or_ip_key)
 async def purge_service_permissions(
     request: Request,
     service_name: str,
@@ -1283,7 +1283,7 @@ async def list_service_apps(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/service-apps", response_model=ServiceAppCreateResponse, status_code=201)
-@limiter.limit("5/minute")
+@limiter.limit(settings.rate_limit_sensitive, key_func=user_or_ip_key)
 async def create_service_app(
     request: Request,
     body: ServiceAppCreateRequest,
@@ -1460,13 +1460,14 @@ async def _read_csv(file: UploadFile) -> str:
 
 
 @router.post("/import/csv/preview", response_model=CsvImportPreview)
-async def csv_preview(file: UploadFile = File(...)):
+@limiter.limit(settings.rate_limit_sensitive, key_func=user_or_ip_key)
+async def csv_preview(request: Request, file: UploadFile = File(...)):
     content = await _read_csv(file)
     return admin_service.parse_csv(content)
 
 
 @router.post("/import/csv/execute", response_model=CsvImportResult)
-@limiter.limit("5/minute")
+@limiter.limit(settings.rate_limit_sensitive, key_func=user_or_ip_key)
 async def csv_execute(
     request: Request,
     file: UploadFile = File(...),

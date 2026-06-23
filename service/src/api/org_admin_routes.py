@@ -7,8 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import require_admin
+from src.config import settings
 from src.database import get_db
-from src.middleware.rate_limit import limiter
+from src.middleware.rate_limit import limiter, user_or_ip_key
 from src.schemas.admin import (
     AdminOrgCreateRequest,
     AdminOrgDetailResponse,
@@ -81,7 +82,7 @@ async def list_organizations(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/organizations", response_model=AdminOrgResponse, status_code=201)
-@limiter.limit("5/minute")
+@limiter.limit(settings.rate_limit_sensitive, key_func=user_or_ip_key)
 async def create_organization(
     request: Request,
     body: AdminOrgCreateRequest,
@@ -183,7 +184,7 @@ async def delete_organization(
     response_model=AdminOrgDomainResponse,
     status_code=201,
 )
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_admin_write, key_func=user_or_ip_key)
 async def add_domain(
     request: Request,
     org_id: uuid.UUID,

@@ -4,8 +4,9 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import settings
 from src.logging_events import log_audit
-from src.middleware.rate_limit import limiter
+from src.middleware.rate_limit import limiter, user_or_ip_key
 
 from src.api.dependencies import (
     CurrentUser,
@@ -272,7 +273,7 @@ async def get_resource_acl(
     "/resource/{service_name}/{resource_type}/{resource_id}/enriched",
     response_model=EnrichedResourcePermissionResponse,
 )
-@limiter.limit("30/minute")
+@limiter.limit(settings.rate_limit_read, key_func=user_or_ip_key)
 async def get_enriched_resource_acl(
     request: Request,
     service_name: str,

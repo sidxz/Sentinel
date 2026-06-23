@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 
 from src.api.dependencies import require_admin
+from src.config import settings
 from src.logging_redaction import redact_mapping
-from src.middleware.rate_limit import get_client_ip, limiter
+from src.middleware.rate_limit import get_client_ip, limiter, user_or_ip_key
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -59,7 +60,7 @@ class ClientLogBatch(BaseModel):
 
 
 @router.post("/client-logs", status_code=202)
-@limiter.limit("60/minute")
+@limiter.limit(settings.rate_limit_read, key_func=user_or_ip_key)
 async def ingest_client_logs(
     request: Request,
     batch: ClientLogBatch,

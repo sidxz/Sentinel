@@ -97,7 +97,7 @@ async def list_providers():
 
 
 @router.get("/login/{provider}")
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_auth)
 async def login(
     provider: str,
     request: Request,
@@ -154,7 +154,7 @@ async def login(
 
 
 @router.get("/callback/{provider}")
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_auth)
 async def callback(
     provider: str,
     request: Request,
@@ -349,7 +349,7 @@ async def callback(
 
 
 @router.get("/workspaces", response_model=list[WorkspaceOptionResponse])
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_auth)
 async def list_workspaces_for_login(
     request: Request,
     code: str = Query(...),
@@ -399,7 +399,7 @@ async def list_workspaces_for_login(
 
 
 @router.post("/token", response_model=TokenResponse)
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_auth)
 async def select_workspace_and_issue_tokens(
     request: Request,
     body: SelectWorkspaceRequest,
@@ -456,7 +456,7 @@ async def select_workspace_and_issue_tokens(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_auth)
 async def refresh_token(
     request: Request,
     body: RefreshRequest,
@@ -507,7 +507,7 @@ async def logout(
 
 
 @router.get("/admin/login/{provider}")
-@limiter.limit("5/minute")
+@limiter.limit(settings.rate_limit_auth_admin)
 async def admin_login(provider: str, request: Request):
     configured = get_configured_providers()
     if provider not in configured:
@@ -520,7 +520,7 @@ async def admin_login(provider: str, request: Request):
 
 
 @router.get("/admin/callback/{provider}")
-@limiter.limit("5/minute")
+@limiter.limit(settings.rate_limit_auth_admin)
 async def admin_callback(
     provider: str,
     request: Request,

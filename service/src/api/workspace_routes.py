@@ -3,7 +3,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.middleware.rate_limit import limiter
+from src.config import settings
+from src.middleware.rate_limit import limiter, user_or_ip_key
 
 from src.api.dependencies import (
     CurrentUser,
@@ -106,7 +107,7 @@ async def delete_workspace(
 
 
 @router.get("/{workspace_id}/members", response_model=list[WorkspaceMemberResponse])
-@limiter.limit("60/minute")
+@limiter.limit(settings.rate_limit_read, key_func=user_or_ip_key)
 async def list_members(
     request: Request,
     workspace_id: uuid.UUID,

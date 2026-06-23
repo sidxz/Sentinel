@@ -71,3 +71,16 @@ def test_falls_back_to_ip_without_identity():
 def test_singleton_limiter_is_fail_open():
     # A Redis blip must let traffic through, not 500 or throttle.
     assert rl.limiter._swallow_errors is True
+
+
+def test_route_keying_is_wired():
+    # Importing main registers every router, applying the decorators onto the
+    # module-singleton limiter's route registry.
+    import src.main  # noqa: F401
+
+    all_limits = [lim for lims in rl.limiter._route_limits.values() for lim in lims]
+    # /authz/resolve must be service-keyed.
+    assert any(lim.key_func is rl.service_or_ip_key for lim in all_limits)
+    # The authenticated read/write/sensitive routes must be user-keyed (>=10 of them).
+    user_keyed = [lim for lim in all_limits if lim.key_func is rl.user_or_ip_key]
+    assert len(user_keyed) >= 10

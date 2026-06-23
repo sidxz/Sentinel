@@ -16,7 +16,7 @@ from src.auth.jwt import create_authz_token
 from src.config import settings
 from src.database import get_db
 from src.logging_events import log_security
-from src.middleware.rate_limit import limiter
+from src.middleware.rate_limit import limiter, service_or_ip_key
 from src.middleware.request_context import bind_identity
 from src.models.service_app import ServiceApp
 from src.models.workspace import Workspace, WorkspaceMembership
@@ -65,7 +65,7 @@ async def _validate_authz_redirect_uri(db: AsyncSession, redirect_uri: str) -> N
 
 
 @router.get("/idp/{provider}/login")
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_auth)
 async def idp_login(
     request: Request,
     provider: str,
@@ -116,7 +116,7 @@ async def idp_login(
 
 
 @router.get("/idp/{provider}/callback")
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_auth)
 async def idp_callback(
     request: Request,
     provider: str,
@@ -192,7 +192,7 @@ async def idp_callback(
 
 
 @router.post("/resolve", response_model=AuthzResolveResponse)
-@limiter.limit("10/minute")
+@limiter.limit(settings.rate_limit_authz_resolve, key_func=service_or_ip_key)
 async def resolve(
     request: Request,
     body: AuthzResolveRequest,
