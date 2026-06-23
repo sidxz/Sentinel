@@ -232,12 +232,12 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 | Tier | Env var | Default | Covered endpoints |
 |------|---------|---------|-------------------|
 | Aggregate | `RATE_LIMIT_AGGREGATE` | `300/minute` | All undecorated routes |
-| Default | `RATE_LIMIT_DEFAULT` | `120/minute` | Decorated routes without a specific tier |
+| Default | `RATE_LIMIT_DEFAULT` | `120/minute` | Each undecorated route (per-endpoint) |
 | Auth | `RATE_LIMIT_AUTH` | `10/minute` | `/auth/login`, `/auth/callback`, `/auth/token`, `/auth/refresh` |
 | Auth admin | `RATE_LIMIT_AUTH_ADMIN` | `5/minute` | `/auth/admin/login`, `/auth/admin/callback` |
 | Authz resolve | `RATE_LIMIT_AUTHZ_RESOLVE` | `60/minute` | `POST /authz/resolve` |
-| Read | `RATE_LIMIT_READ` | `120/minute` | Member search, group listing, enriched ACL |
-| Admin write | `RATE_LIMIT_ADMIN_WRITE` | `30/minute` | Admin mutation endpoints |
+| Read | `RATE_LIMIT_READ` | `60/minute` | Member search, group listing, enriched ACL |
+| Admin write | `RATE_LIMIT_ADMIN_WRITE` | `10/minute` | Admin mutation endpoints |
 | Sensitive | `RATE_LIMIT_SENSITIVE` | `5/minute` | Service purge, key-rotation |
 
 Keys are per IP address. When `BEHIND_PROXY=true`, the client IP is read from `X-Forwarded-For` using the rightmost trusted hop (controlled by `TRUSTED_PROXY_COUNT`). Exceeding any limit returns `429 Too Many Requests` with a `Retry-After` header.

@@ -102,12 +102,12 @@ These callbacks are only used for the admin panel's server-side OAuth flow. In A
 |----------|---------|-------------|
 | `RATE_LIMIT_ENABLED` | `true` | Master switch. Set `false` to disable all rate limiting (e.g. load-test environments). |
 | `RATE_LIMIT_AGGREGATE` | `300/minute` | Per-IP volumetric ceiling applied to routes **without** a per-route limit. Empty string disables the aggregate. See the edge-limiting note in [Security](../security.md#rate-limiting). |
-| `RATE_LIMIT_DEFAULT` | `120/minute` | Fallback per-IP limit for any decorated route that does not match a more specific tier. |
+| `RATE_LIMIT_DEFAULT` | `120/minute` | Per-IP limit applied to each **undecorated** route individually (the long tail); the cross-route ceiling is `RATE_LIMIT_AGGREGATE`. |
 | `RATE_LIMIT_AUTH` | `10/minute` | Auth flow endpoints (`/auth/login`, `/auth/callback`, `/auth/token`, `/auth/refresh`). |
 | `RATE_LIMIT_AUTH_ADMIN` | `5/minute` | Admin auth endpoints (`/auth/admin/login`, `/auth/admin/callback`). |
 | `RATE_LIMIT_AUTHZ_RESOLVE` | `60/minute` | `POST /authz/resolve` — authz token minting. |
-| `RATE_LIMIT_READ` | `120/minute` | Read-heavy endpoints (member search, group listing, enriched ACL). |
-| `RATE_LIMIT_ADMIN_WRITE` | `30/minute` | Admin mutation endpoints (POST/PATCH/PUT/DELETE under `/admin/`). |
+| `RATE_LIMIT_READ` | `60/minute` | Read-heavy endpoints (member search, group listing, enriched ACL). |
+| `RATE_LIMIT_ADMIN_WRITE` | `10/minute` | Admin mutation endpoints (POST/PATCH/PUT/DELETE under `/admin/`). |
 | `RATE_LIMIT_SENSITIVE` | `5/minute` | High-sensitivity endpoints (service purge, key rotation). |
 
 **Production checklist:**
