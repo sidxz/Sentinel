@@ -86,13 +86,18 @@ async def test_fallback_path_emits_global_ip_fallback(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_slowapi_handler_emits_route_limit():
-    class _Exc:
-        retry_after = 5
+    from limits import parse
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.wrappers import Limit
+
+    lim = Limit(parse("5/minute"), lambda: "k", None, False, None, None, None, 1, True)
+    exc = RateLimitExceeded(lim)
 
     with capture_logs() as logs:
-        resp = await rl.rate_limit_exceeded_handler(_request(path="/admin/x"), _Exc())
+        resp = await rl.rate_limit_exceeded_handler(_request(path="/admin/x"), exc)
 
     assert resp.status_code == 429
+    assert int(resp.headers["Retry-After"]) > 0
     events = [e for e in logs if e["event"] == "ratelimit.exceeded"]
     assert len(events) == 1
     assert events[0]["reason"] == "route_limit"

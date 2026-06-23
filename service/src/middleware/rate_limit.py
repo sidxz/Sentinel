@@ -95,6 +95,9 @@ async def rate_limit_exceeded_handler(
     return JSONResponse(
         status_code=429,
         content={"detail": "Too many requests"},
+        # slowapi's RateLimitExceeded has no .retry_after; source it from the
+        # limit's window (e.g. 60s for any per-minute tier).
+        headers={"Retry-After": str(exc.limit.limit.get_expiry())},
     )
 
 

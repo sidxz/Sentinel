@@ -41,9 +41,11 @@ def test_per_user_keying_isolates_users():
     c = _client(key_func=rl.user_or_ip_key, identity_header="X-Actor", field="actor")
     assert c.get("/r", headers={"X-Actor": "alice"}).status_code == 200
     assert c.get("/r", headers={"X-Actor": "alice"}).status_code == 200
+    blocked = c.get("/r", headers={"X-Actor": "alice"})
+    assert blocked.status_code == 429  # alice exhausted
     assert (
-        c.get("/r", headers={"X-Actor": "alice"}).status_code == 429
-    )  # alice exhausted
+        int(blocked.headers["Retry-After"]) > 0
+    )  # handler sources Retry-After from the limit window
     assert c.get("/r", headers={"X-Actor": "bob"}).status_code == 200  # bob unaffected
 
 
