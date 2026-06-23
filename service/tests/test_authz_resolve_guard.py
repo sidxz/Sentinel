@@ -16,12 +16,23 @@ from slowapi.errors import RateLimitExceeded
 from src.api.authz_routes import router as authz_router
 from src.api.dependencies import ServiceKeyContext, require_service_context
 from src.database import get_db
+import pytest
+
 from src.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 
-# Redis-backed rate limiter would try to connect during route execution; the
-# guard we're testing runs before any rate-limit state is consulted, so we
-# disable the limiter for this test module.
-limiter.enabled = False
+
+@pytest.fixture(autouse=True)
+def _disable_limiter():
+    """Disable Redis-backed limiter for this module.
+
+    The guard under test fires before any rate-limit store is consulted, so
+    connecting to Redis is unnecessary noise. Restore the original value after
+    each test so the singleton is not permanently mutated for later test files.
+    """
+    original = limiter.enabled
+    limiter.enabled = False
+    yield
+    limiter.enabled = original
 
 
 def _make_app(origin_authenticated: bool) -> FastAPI:

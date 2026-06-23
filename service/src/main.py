@@ -22,10 +22,10 @@ from src.config import settings
 from src.logging_config import configure_logging
 from src.version import __version__
 from src.middleware.rate_limit import (
-    GlobalRateLimitMiddleware,
     limiter,
     rate_limit_exceeded_handler,
 )
+from slowapi.middleware import SlowAPIASGIMiddleware
 from src.middleware.access_log import AccessLogMiddleware
 from src.middleware.cors import DynamicCORSMiddleware, refresh_origins
 from src.middleware.request_context import RequestContextMiddleware
@@ -197,10 +197,11 @@ app = FastAPI(
 # Reject oversized request bodies (10 MB)
 app.add_middleware(MaxBodySizeMiddleware, max_bytes=10_485_760)
 
-# Global rate limiting (configurable via RATE_LIMIT_RPM, default 30 req/min per IP)
-app.add_middleware(
-    GlobalRateLimitMiddleware, requests_per_minute=settings.rate_limit_rpm
-)
+# Rate limiting (slowapi). The ASGI variant preserves our async ratelimit.exceeded
+# handler; the BaseHTTPMiddleware variant would silently fall back to slowapi's
+# default handler (no security log). Decorated routes are exempt here and enforce
+# their own per-route tier in the endpoint wrapper. See middleware/rate_limit.py.
+app.add_middleware(SlowAPIASGIMiddleware)
 
 # Security headers on every response
 app.add_middleware(SecurityHeadersMiddleware, hsts=settings.cookie_secure)

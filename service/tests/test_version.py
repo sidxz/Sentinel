@@ -18,9 +18,19 @@ from slowapi.errors import RateLimitExceeded
 from src.api import admin_routes
 from src.api.dependencies import require_admin
 from src.database import get_db
+import pytest
+
 from src.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 
-limiter.enabled = False
+
+@pytest.fixture(autouse=True)
+def _disable_limiter():
+    """Disable the Redis-backed limiter for this module; restore after each test."""
+    original = limiter.enabled
+    limiter.enabled = False
+    yield
+    limiter.enabled = original
+
 
 PACKAGE_VERSION = dist_version("sentinel-auth")
 

@@ -60,7 +60,6 @@ class Settings(BaseSettings):
     cookie_secure: bool = False  # Set True in production (requires HTTPS)
     allowed_hosts: str = ""  # comma-separated override; empty = derived from BASE_URL
     debug: bool = False  # Set True for local development (enables /docs, /redoc)
-    rate_limit_rpm: int = 30  # Global rate limit (requests per minute per IP)
     rate_limit_enabled: bool = (
         True  # master switch; False only on ephemeral test targets
     )

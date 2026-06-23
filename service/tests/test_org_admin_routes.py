@@ -15,10 +15,20 @@ from slowapi.errors import RateLimitExceeded
 from src.api.dependencies import require_admin
 from src.api.org_admin_routes import router as org_router
 from src.database import get_db
+import pytest
+
 from src.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from src.services import org_admin_service
 
-limiter.enabled = False
+
+@pytest.fixture(autouse=True)
+def _disable_limiter():
+    """Disable the Redis-backed limiter for this module; restore after each test."""
+    original = limiter.enabled
+    limiter.enabled = False
+    yield
+    limiter.enabled = original
+
 
 _XRW = {"X-Requested-With": "XMLHttpRequest"}
 

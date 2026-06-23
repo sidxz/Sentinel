@@ -1,23 +1,31 @@
-"""Rate limiting configuration using slowapi (Redis-backed) + global middleware."""
+"""Rate limiting via slowapi (Redis-backed). slowapi is the SOLE mechanism.
 
-import time
-from collections import defaultdict
+Coverage model (slowapi 0.1.10 — verified against the installed source):
+  * Routes WITHOUT a decorator → ``application_limits`` (per-IP aggregate,
+    "global" scope) + ``default_limits`` (per-IP, per-route), enforced by
+    ``SlowAPIASGIMiddleware`` BEFORE auth/dependencies run.
+  * Routes WITH an ``@limiter.limit(...)`` decorator → ONLY that decorator's
+    limit. slowapi intentionally EXEMPTS decorated routes from the middleware,
+    so aggregate/default limits do NOT apply, and the decorator's check runs in
+    the endpoint wrapper AFTER dependencies — a request rejected by an auth
+    ``Depends`` (bad token/service key) is therefore not throttled here.
 
-import redis.asyncio as aioredis
+ACCEPTED TRADEOFF: app-layer limiting provides NO volumetric DoS protection and
+NO pre-auth throttling for decorated routes (/authz/resolve, /auth/token, admin
+POSTs). Deploy EDGE rate limiting (nginx/Cloudflare/ALB) for that. See
+docs/security.md.
+
+Fail-open: ``swallow_errors=True`` — a storage (Redis) error lets the request
+through rather than 500ing or throttling. Real limit breaches still 429.
+"""
+
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
 
 from src.config import settings
 from src.logging_events import log_security
-
-# Module-level fallback counter for when Redis is unavailable
-_fallback_counts: dict[str, list[float]] = defaultdict(list)
-_FALLBACK_WINDOW = 60  # seconds
-_FALLBACK_LIMIT = 30  # requests per window
-_fallback_request_count = 0
 
 
 def get_client_ip(request: Request) -> str:
@@ -99,98 +107,3 @@ async def rate_limit_exceeded_handler(
         # limit's window (e.g. 60s for any per-minute tier).
         headers={"Retry-After": str(exc.limit.limit.get_expiry())},
     )
-
-
-_redis: aioredis.Redis | None = None
-
-
-async def _get_redis() -> aioredis.Redis:
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(
-            settings.redis_url, decode_responses=True, **settings.redis_ssl_kwargs
-        )
-    return _redis
-
-
-# Lua script: atomic INCR + EXPIRE (avoids race where crash between
-# INCR and EXPIRE leaves a key with no TTL forever).
-_INCR_WITH_EXPIRE = """
-local count = redis.call('INCR', KEYS[1])
-if count == 1 then
-    redis.call('EXPIRE', KEYS[1], ARGV[1])
-end
-return count
-"""
-
-
-class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
-    """IP-based rate limiter for all endpoints, backed by Redis.
-
-    Applies a default 30 requests/minute per IP using a Redis sliding window.
-    Endpoints with their own @limiter.limit() decorator have stricter limits
-    and hit those first.
-    """
-
-    def __init__(self, app, requests_per_minute: int = 30):
-        super().__init__(app)
-        self.rpm = requests_per_minute
-        self.window = 60  # seconds
-
-    async def dispatch(self, request: Request, call_next):
-        # Skip health checks, and bypass entirely when rate limiting is disabled
-        # (ephemeral test/pentest targets — see settings.rate_limit_enabled).
-        if request.url.path == "/health" or not settings.rate_limit_enabled:
-            return await call_next(request)
-
-        ip = get_client_ip(request)
-        key = f"rl:global:{ip}"
-
-        try:
-            r = await _get_redis()
-            count = await r.eval(_INCR_WITH_EXPIRE, 1, key, self.window)
-
-            if count > self.rpm:
-                ttl = await r.ttl(key)
-                log_security(
-                    "ratelimit.exceeded",
-                    outcome="denied",
-                    reason="global_ip",
-                    limit=self.rpm,
-                    source_ip=ip,
-                    **{"http.route": request.url.path},
-                )
-                return JSONResponse(
-                    status_code=429,
-                    content={"detail": "Too many requests"},
-                    headers={"Retry-After": str(max(ttl, 1))},
-                )
-        except Exception:
-            # In-memory fallback when Redis is unavailable
-            global _fallback_request_count
-            now = time.time()
-            key = ip
-            _fallback_counts[key] = [
-                t for t in _fallback_counts[key] if now - t < _FALLBACK_WINDOW
-            ]
-            if len(_fallback_counts[key]) >= _FALLBACK_LIMIT:
-                log_security(
-                    "ratelimit.exceeded",
-                    outcome="denied",
-                    reason="global_ip_fallback",
-                    limit=_FALLBACK_LIMIT,
-                    source_ip=ip,
-                    **{"http.route": request.url.path},
-                )
-                return Response(status_code=429, content="Rate limit exceeded")
-            _fallback_counts[key].append(now)
-
-            # Periodic cleanup: prune empty keys every ~100 requests to prevent memory growth
-            _fallback_request_count += 1
-            if _fallback_request_count >= 100:
-                _fallback_request_count = 0
-                empty_keys = [k for k, v in _fallback_counts.items() if not v]
-                for k in empty_keys:
-                    del _fallback_counts[k]
-
-        return await call_next(request)
