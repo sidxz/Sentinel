@@ -1377,7 +1377,7 @@ async def update_service_app(
 @router.post(
     "/service-apps/{app_id}/rotate-key", response_model=ServiceAppCreateResponse
 )
-@limiter.limit("3/minute")
+@limiter.limit(settings.rate_limit_sensitive, key_func=user_or_ip_key)
 async def rotate_service_app_key(
     request: Request,
     app_id: uuid.UUID,
