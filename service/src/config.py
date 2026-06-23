@@ -73,6 +73,24 @@ class Settings(BaseSettings):
         # client-controlled (leftmost) values cannot spoof the rate-limit bucket.
     )
 
+    # Rate-limit tiers — limits-library strings ("10/minute"); "" disables a tier.
+    # Read at import time (restart to change). See middleware/rate_limit.py for the
+    # slowapi coverage model and docs/security.md for the edge-rate-limiting caveat.
+    rate_limit_default: str = "120/minute"  # per IP, per undecorated route (long tail)
+    rate_limit_aggregate: str = (
+        "300/minute"  # per IP across all undecorated routes (volumetric ceiling)
+    )
+    rate_limit_auth: str = (
+        "10/minute"  # login/callback/token/refresh + authz idp (per IP)
+    )
+    rate_limit_auth_admin: str = "5/minute"  # admin login/callback (per IP)
+    rate_limit_authz_resolve: str = (
+        "60/minute"  # POST /authz/resolve (per calling service)
+    )
+    rate_limit_read: str = "60/minute"  # authenticated reads (per user)
+    rate_limit_admin_write: str = "10/minute"  # admin mutations (per user)
+    rate_limit_sensitive: str = "5/minute"  # destructive/expensive admin ops (per user)
+
     # Admin
     admin_emails: str = ""
     admin_url: str = "http://localhost:9004"
