@@ -15,9 +15,6 @@ Request
 MaxBodySizeMiddleware        -- reject bodies > 10 MB
   |
   v
-GlobalRateLimitMiddleware    -- 30 req/min per IP
-  |
-  v
 SecurityHeadersMiddleware    -- security response headers + HSTS
   |
   v
@@ -30,7 +27,7 @@ TrustedHostMiddleware        -- Host header validation (production)
 DynamicCORSMiddleware        -- cross-origin request policy
   |
   v
-Rate Limiting (slowapi)      -- per-endpoint throttling
+Rate Limiting (slowapi)      -- aggregate + per-endpoint tier throttling
   |
   v
 Application Routes
@@ -227,27 +224,29 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 ## Rate Limiting
 
-Two layers:
+[slowapi](https://github.com/laurents/slowapi) is the sole rate-limiting mechanism. It applies two complementary layers via Redis-backed per-IP counters:
 
-1. **Global** -- `GlobalRateLimitMiddleware` enforces 30 requests/minute per IP across all endpoints (except `/health`). Uses a Redis-backed atomic counter (Lua INCR+EXPIRE).
-2. **Per-endpoint** -- slowapi applies stricter limits on sensitive endpoints.
+1. **Aggregate** (`RATE_LIMIT_AGGREGATE`, default `600/minute`) — a volumetric ceiling applied to every route that does **not** carry a per-route decorator. Provides baseline abuse prevention for undecorated read paths.
+2. **Per-route tiers** — decorated endpoints enforce a more specific limit from the tier set below. The aggregate does **not** additionally apply to these routes.
 
-| Endpoint | Limit | Rationale |
-|----------|-------|-----------|
-| All endpoints | 30/min (global) | Baseline abuse prevention |
-| `GET /auth/login/{provider}` | 10/min | Prevents OAuth redirect abuse |
-| `GET /auth/callback/{provider}` | 10/min | Limits callback processing |
-| `POST /auth/token` | 10/min | Prevents auth code brute-force |
-| `POST /auth/refresh` | 10/min | Prevents refresh token brute-force |
-| `GET /auth/admin/login/{provider}` | 5/min | Stricter limit on admin login |
-| `GET /auth/admin/callback/{provider}` | 5/min | Stricter limit on admin callback |
-| `GET /workspaces/{id}/members` | 60/min | Member search/listing |
-| `GET /workspaces/{wid}/groups/{gid}/members` | 60/min | Group member listing |
-| `GET /permissions/resource/.../enriched` | 30/min | Enriched ACL with user profiles |
+| Tier | Env var | Default | Covered endpoints |
+|------|---------|---------|-------------------|
+| Aggregate | `RATE_LIMIT_AGGREGATE` | `600/minute` | All undecorated routes |
+| Default | `RATE_LIMIT_DEFAULT` | `120/minute` | Decorated routes without a specific tier |
+| Auth | `RATE_LIMIT_AUTH` | `10/minute` | `/auth/login`, `/auth/callback`, `/auth/token`, `/auth/refresh` |
+| Auth admin | `RATE_LIMIT_AUTH_ADMIN` | `5/minute` | `/auth/admin/login`, `/auth/admin/callback` |
+| Authz resolve | `RATE_LIMIT_AUTHZ_RESOLVE` | `60/minute` | `POST /authz/resolve` |
+| Read | `RATE_LIMIT_READ` | `120/minute` | Member search, group listing, enriched ACL |
+| Admin write | `RATE_LIMIT_ADMIN_WRITE` | `30/minute` | Admin mutation endpoints |
+| Sensitive | `RATE_LIMIT_SENSITIVE` | `5/minute` | Service purge, key-rotation |
 
-When `BEHIND_PROXY=true`, the rate limiter reads client IP from `X-Forwarded-For` instead of the TCP connection address.
+Keys are per IP address. When `BEHIND_PROXY=true`, the client IP is read from `X-Forwarded-For` using the rightmost trusted hop (controlled by `TRUSTED_PROXY_COUNT`). Exceeding any limit returns `429 Too Many Requests` with a `Retry-After` header.
 
-Exceeding either limit returns `429 Too Many Requests` with a `Retry-After` header.
+If Redis is unreachable the limiter **fails open** (requests are not blocked). This is intentional for availability; edge rate limiting should be the backstop for volumetric attacks.
+
+> **Volumetric DoS protection requires edge rate limiting.** The app-layer aggregate (`RATE_LIMIT_AGGREGATE`) only covers routes without a per-route limit; decorated routes (`/authz/resolve`, `/auth/token`, admin POSTs) enforce their own tier but are **not** in the aggregate and are **not** throttled before authentication. Put nginx/Cloudflare/ALB rate limiting in front of Sentinel for volumetric/bad-auth defense.
+
+To disable rate limiting entirely (e.g. in a dedicated load-test environment), set `RATE_LIMIT_ENABLED=false`.
 
 ---
 
@@ -444,6 +443,8 @@ All SDK clients (Python and JavaScript) log a warning when initialized with a pl
 - [ ] `COOKIE_SECURE=true` and service is behind TLS
 - [ ] `DEBUG=false`
 - [ ] `BEHIND_PROXY=true` if behind a reverse proxy
+- [ ] `TRUSTED_PROXY_COUNT` matches actual proxy hop count (default `1`; verify per deploy)
+- [ ] Edge rate limiting (nginx/Cloudflare/ALB) configured in front of Sentinel for volumetric/bad-auth defense
 - [ ] `ALLOWED_HOSTS` set to actual domain(s)
 - [ ] `CORS_ORIGINS` lists only your frontend origin(s)
 - [ ] RS256 key pair generated, private key `chmod 600`

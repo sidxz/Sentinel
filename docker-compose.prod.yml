@@ -103,6 +103,16 @@ services:
       COOKIE_SECURE: "true"
       DEBUG: "false"
       BEHIND_PROXY: "true"
+      # Number of trusted proxy hops in front of Sentinel (CDN/LB + nginx = 2, etc.).
+      # MUST match reality or all clients collapse into one IP bucket. Verify per deploy.
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}
+      # Rate-limit tiers (tunable without an image rebuild). Aggregate is the per-IP
+      # volumetric ceiling for undecorated routes; "" disables it. NOTE: decorated
+      # routes are NOT covered by the aggregate — deploy edge rate limiting for
+      # volumetric/bad-auth protection. See docs/security.md.
+      RATE_LIMIT_AGGREGATE: ${RATE_LIMIT_AGGREGATE:-300/minute}
+      RATE_LIMIT_DEFAULT: ${RATE_LIMIT_DEFAULT:-120/minute}
+      RATE_LIMIT_AUTHZ_RESOLVE: ${RATE_LIMIT_AUTHZ_RESOLVE:-60/minute}
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
       # OAuth providers (uncomment as needed)

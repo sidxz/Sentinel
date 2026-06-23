@@ -92,6 +92,23 @@ These callbacks are only used for the admin panel's server-side OAuth flow. In A
 | `ALLOWED_HOSTS` | `""` | Comma-separated hostnames. Empty = derived from `BASE_URL` + `ADMIN_URL`. |
 | `DEBUG` | `false` | Enables `/docs` and `/redoc` Swagger UI. Relaxes startup validation. |
 | `BEHIND_PROXY` | `false` | Set `true` behind a reverse proxy (nginx, ALB). Enables `X-Forwarded-For` for rate limiting. |
+| `TRUSTED_PROXY_COUNT` | `1` | Number of trusted reverse-proxy hops in front of Sentinel. Must match your actual topology (e.g. `2` for CDN + nginx). Incorrect values collapse all clients into one IP bucket. |
+
+---
+
+## Rate Limiting
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RATE_LIMIT_ENABLED` | `true` | Master switch. Set `false` to disable all rate limiting (e.g. load-test environments). |
+| `RATE_LIMIT_AGGREGATE` | `600/minute` | Per-IP volumetric ceiling applied to routes **without** a per-route limit. Empty string disables the aggregate. See the edge-limiting note in [Security](../security.md#rate-limiting). |
+| `RATE_LIMIT_DEFAULT` | `120/minute` | Fallback per-IP limit for any decorated route that does not match a more specific tier. |
+| `RATE_LIMIT_AUTH` | `10/minute` | Auth flow endpoints (`/auth/login`, `/auth/callback`, `/auth/token`, `/auth/refresh`). |
+| `RATE_LIMIT_AUTH_ADMIN` | `5/minute` | Admin auth endpoints (`/auth/admin/login`, `/auth/admin/callback`). |
+| `RATE_LIMIT_AUTHZ_RESOLVE` | `60/minute` | `POST /authz/resolve` — authz token minting. |
+| `RATE_LIMIT_READ` | `120/minute` | Read-heavy endpoints (member search, group listing, enriched ACL). |
+| `RATE_LIMIT_ADMIN_WRITE` | `30/minute` | Admin mutation endpoints (POST/PATCH/PUT/DELETE under `/admin/`). |
+| `RATE_LIMIT_SENSITIVE` | `5/minute` | High-sensitivity endpoints (service purge, key rotation). |
 
 **Production checklist:**
 

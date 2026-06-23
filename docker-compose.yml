@@ -67,7 +67,8 @@ services:
       REDIS_URL: "rediss://:sentinel_dev@identity-redis:6379/0"
       REDIS_TLS_CA_CERT: "/keys/tls/ca.crt"
       ALLOWED_HOSTS: "localhost,sentinel"
-      RATE_LIMIT_RPM: 10000
+      # RATE_LIMIT_RPM removed (GlobalRateLimitMiddleware deleted). Defaults are fine
+      # for dev; to disable rate limiting entirely for load testing, set RATE_LIMIT_ENABLED: "false".
     volumes:
       - ./keys:/keys:ro
     depends_on:
