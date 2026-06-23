@@ -77,7 +77,7 @@ from src.services import (
     service_app_service,
 )
 from src.middleware.cors import refresh_origins
-from src.middleware.rate_limit import limiter, user_or_ip_key
+from src.middleware.rate_limit import limiter, rate_limit_report, user_or_ip_key
 from src.services import token_service
 
 logger = structlog.get_logger()
@@ -213,12 +213,8 @@ async def system_settings(
         "admin_emails": settings.admin_email_list,
     }
 
-    # Rate limits (hardcoded from decorators)
-    rate_limits = [
-        {"endpoint": "POST /auth/*/callback", "limit": "5/minute"},
-        {"endpoint": "POST /auth/refresh", "limit": "10/minute"},
-        {"endpoint": "POST /auth/logout", "limit": "5/minute"},
-    ]
+    # Rate limits — reported live from config (see middleware/rate_limit.py).
+    rate_limits = rate_limit_report()
 
     # Service keys (from DB)
     service_keys = []

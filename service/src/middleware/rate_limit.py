@@ -77,6 +77,47 @@ def service_or_ip_key(request: Request) -> str:
     return f"ip:{get_client_ip(request)}"
 
 
+def rate_limit_report() -> list[dict[str, str]]:
+    """Live view of the active limit tiers for the admin Settings panel.
+
+    Replaces the old hardcoded list, which had drifted from the real decorators.
+    """
+    return [
+        {
+            "endpoint": "aggregate · per IP · all undecorated routes",
+            "limit": settings.rate_limit_aggregate or "disabled",
+        },
+        {
+            "endpoint": "default · per IP · per undecorated route",
+            "limit": settings.rate_limit_default or "disabled",
+        },
+        {
+            "endpoint": "auth (login/callback/token/refresh) · per IP",
+            "limit": settings.rate_limit_auth,
+        },
+        {
+            "endpoint": "admin auth (login/callback) · per IP",
+            "limit": settings.rate_limit_auth_admin,
+        },
+        {
+            "endpoint": "authz resolve · per service",
+            "limit": settings.rate_limit_authz_resolve,
+        },
+        {
+            "endpoint": "authenticated reads · per user",
+            "limit": settings.rate_limit_read,
+        },
+        {
+            "endpoint": "admin writes · per user",
+            "limit": settings.rate_limit_admin_write,
+        },
+        {
+            "endpoint": "sensitive admin ops · per user",
+            "limit": settings.rate_limit_sensitive,
+        },
+    ]
+
+
 limiter = Limiter(
     key_func=get_client_ip,
     default_limits=[settings.rate_limit_default] if settings.rate_limit_default else [],

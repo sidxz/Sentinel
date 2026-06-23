@@ -84,3 +84,17 @@ def test_route_keying_is_wired():
     # The authenticated read/write/sensitive routes must be user-keyed (>=10 of them).
     user_keyed = [lim for lim in all_limits if lim.key_func is rl.user_or_ip_key]
     assert len(user_keyed) >= 10
+
+
+def test_rate_limit_report_reflects_live_settings(monkeypatch):
+    monkeypatch.setattr(rl.settings, "rate_limit_read", "77/minute")
+    report = rl.rate_limit_report()
+    read = next(r for r in report if "reads" in r["endpoint"])
+    assert read["limit"] == "77/minute"
+
+
+def test_rate_limit_report_shows_disabled_aggregate(monkeypatch):
+    monkeypatch.setattr(rl.settings, "rate_limit_aggregate", "")
+    report = rl.rate_limit_report()
+    agg = next(r for r in report if r["endpoint"].startswith("aggregate"))
+    assert agg["limit"] == "disabled"
