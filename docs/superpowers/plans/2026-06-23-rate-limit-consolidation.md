@@ -534,8 +534,11 @@ git commit -m "refactor(ratelimit): delete GlobalRateLimitMiddleware; slowapi is
 | admin · revoke-tokens | `"10/minute"` | `settings.rate_limit_admin_write` | `user_or_ip_key` |
 | admin · purge service perms | `"5/minute"` | `settings.rate_limit_sensitive` | `user_or_ip_key` |
 | admin · create service-app | `"5/minute"` | `settings.rate_limit_sensitive` | `user_or_ip_key` |
-| admin · csv preview | `"3/minute"` | `settings.rate_limit_sensitive` | `user_or_ip_key` |
+| admin · csv preview | (was undecorated) | `settings.rate_limit_sensitive` | `user_or_ip_key` |
 | admin · csv execute | `"5/minute"` | `settings.rate_limit_sensitive` | `user_or_ip_key` |
+| admin · `rotate_service_app_key` | `"3/minute"` | `settings.rate_limit_sensitive` | `user_or_ip_key` |
+
+> Correction: an earlier draft mislabeled `admin_routes.py:1380` as "csv preview". That line was always `rotate_service_app_key`; `csv_preview` was undecorated and is newly rate-limited here. 23 decorated routes total.
 
 **Behavior changes to note in the commit body:** enriched 30→60, csv-preview 3→5, authz-resolve 10→60 (loosenings from tier consolidation + hot-path relief). The substantive fix is the keying change (IP → user/service) on every authenticated route.
 
