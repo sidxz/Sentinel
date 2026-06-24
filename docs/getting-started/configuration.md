@@ -118,6 +118,8 @@ These callbacks are only used for the admin panel's server-side OAuth flow. In A
 - `CORS_ORIGINS` -- your frontend domain(s) only
 - `REDIS_TLS_VERIFY=required`
 - `DEBUG=false`
+- `BEHIND_PROXY=true` + `TRUSTED_PROXY_COUNT` matching the real proxy hop count (default `1`; verify per deploy -- a wrong value collapses all clients into one rate-limit bucket)
+- Edge rate limiting (nginx/Cloudflare/ALB) in front of Sentinel -- required for volumetric/bad-auth defense (the app-layer aggregate does not cover decorated routes)
 
 ---
 
