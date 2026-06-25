@@ -41,8 +41,12 @@ class ServiceKeyContext:
 
 
 def verify_service_scope(ctx: ServiceKeyContext, service_name: str) -> None:
-    """Verify the service key is scoped to the requested service_name."""
-    if ctx.service_name != service_name:
+    """Verify the service key is scoped to the requested service_name.
+
+    For a realm member the authoritative scope is the realm slug (effective_scope),
+    so all members share one permission namespace.
+    """
+    if ctx.effective_scope != service_name:
         raise HTTPException(
             status_code=403,
             detail=f"Service key is not authorized for service '{service_name}'",
@@ -251,7 +255,7 @@ async def get_user_for_service_call(
 
     if token_type == "authz":
         token_svc = payload.get("svc")
-        if not token_svc or token_svc != svc_ctx.service_name:
+        if not token_svc or token_svc != svc_ctx.effective_scope:
             raise HTTPException(
                 status_code=403,
                 detail="Authz token was issued for a different service",
@@ -301,7 +305,7 @@ async def get_current_user_flexible(
         result = await service_app_service.validate_key(raw_key, db)
         if result is not None:
             service_key_service_name = result[0]
-            service_key_effective_scope = result[2] or result[0]  # noqa: F841 — used in Task 4
+            service_key_effective_scope = result[2] or result[0]
 
     has_valid_service_key = service_key_service_name is not None
     audiences = [_AUD_ACCESS, _AUD_AUTHZ] if has_valid_service_key else _AUD_ACCESS
@@ -323,7 +327,7 @@ async def get_current_user_flexible(
 
     if token_type == "authz":
         token_svc = payload.get("svc")
-        if not token_svc or token_svc != service_key_service_name:
+        if not token_svc or token_svc != service_key_effective_scope:
             raise HTTPException(
                 status_code=403,
                 detail="Authz token was issued for a different service",
