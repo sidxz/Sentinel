@@ -14,7 +14,10 @@
 - Tests use **pure unit style with fakes** — no real DB/Redis. Mark async tests with `@pytest.mark.asyncio`. No `conftest.py` exists; tests import from `src.*` directly (pytest `pythonpath = ["."]`).
 - Action/slug naming pattern in this codebase: `^[a-z][a-z0-9-]*[a-z0-9]$` (service_name uses it; realm `slug` follows the same shape).
 - Frozen dataclasses for auth contexts (`ServiceKeyContext` is `@dataclass(frozen=True)`).
-- Lint/format with ruff: `cd service && uv run ruff check . && uv run ruff format --check .`.
+- Lint/format with ruff, **changed files only**: `cd service && uv run ruff format <changed files> && uv run ruff check --fix <changed files>`. NEVER `ruff format .` or `make fmt` — they reformat unrelated **uncommitted** files in the working tree.
+- **Stage only the files each task lists** (`git add <those paths>`); never `git add -A` / `git add .`.
+- **Never modify** `service/src/services/role_service.py` or `service/tests/test_register_actions.py` — unrelated uncommitted user work that must stay untouched.
+- Test gate = the task's **own** test file (pure unit, always runnable). The broad suite may show IdP/JWKS failures under a network-restricted sandbox — those are environmental, not task failures.
 - Branch: `realm-trusted-app-group` (already checked out). Commit after every task.
 - **Non-breaking invariant:** with no realm assigned, every code path must behave exactly as today. A test must prove `effective_scope == service_name` when `realm_slug is None`.
 
@@ -238,7 +241,7 @@ Expected: applies `b2c4d6e8f0a1` with no error; `\d realms` shows the table. (If
 - [ ] **Step 9: Lint + commit**
 
 ```bash
-cd service && uv run ruff check . && uv run ruff format .
+cd service && uv run ruff format $FILES && uv run ruff check --fix $FILES   # $FILES = ONLY this task's files; never 'ruff format .' / 'make fmt'
 git add service/src/models/realm.py service/src/models/__init__.py \
   service/src/models/service_app.py \
   service/migrations/versions/b2c4d6e8f0a1_add_realms.py \
@@ -431,7 +434,7 @@ Expected: PASS (4 passed).
 - [ ] **Step 5: Lint + commit**
 
 ```bash
-cd service && uv run ruff check . && uv run ruff format .
+cd service && uv run ruff format $FILES && uv run ruff check --fix $FILES   # $FILES = ONLY this task's files; never 'ruff format .' / 'make fmt'
 git add service/src/services/realm_service.py service/tests/test_realm_service.py
 git commit -m "feat(realm): realm_service create + membership add/remove"
 ```
@@ -655,7 +658,7 @@ Expected: PASS. If any test fails on `validate_key` returning a 3-tuple, it is a
 - [ ] **Step 8: Lint + commit**
 
 ```bash
-cd service && uv run ruff check . && uv run ruff format .
+cd service && uv run ruff format $FILES && uv run ruff check --fix $FILES   # $FILES = ONLY this task's files; never 'ruff format .' / 'make fmt'
 git add service/src/api/dependencies.py service/src/services/service_app_service.py \
   service/tests/test_effective_scope.py
 git commit -m "feat(realm): effective_scope + realm-aware service-key validation"
@@ -821,7 +824,7 @@ Expected: PASS — existing dual-auth/permission tests (standalone, `realm_slug 
 - [ ] **Step 7: Lint + commit**
 
 ```bash
-cd service && uv run ruff check . && uv run ruff format .
+cd service && uv run ruff format $FILES && uv run ruff check --fix $FILES   # $FILES = ONLY this task's files; never 'ruff format .' / 'make fmt'
 git add service/src/api/dependencies.py service/tests/test_realm_scope_checks.py
 git commit -m "feat(realm): scope + dual-auth svc checks honor effective_scope"
 ```
@@ -840,7 +843,7 @@ git commit -m "feat(realm): scope + dual-auth svc checks honor effective_scope"
 
 - [ ] **Step 1: Write the failing test**
 
-This isolates the two-line change without standing up the full resolve handler: it asserts the handler passes `effective_scope` (not `service_name`) to both `get_user_actions` and `create_authz_token`, by spying on those two functions.
+**Controller note — decision overrides the sketch below.** The user chose a *behavioral* test over source-inspection. The controller will supply the concrete test in the Task 5 dispatch, modeled on the existing `service/tests/test_authz_resolve_*.py` mock scaffolding: set up a fake DB where the calling service is a realm member + the user has a workspace membership, mock `validate_idp_token`, drive `/authz/resolve`, decode the returned `authz_token`, and assert `svc == realm slug` with RBAC actions resolved under the realm scope — while audit still records the real `service_name`. The `inspect.getsource` sketch below is **superseded — do not use it**.
 
 ```python
 # service/tests/test_realm_authz_minting.py
@@ -906,7 +909,7 @@ Expected: PASS — standalone resolve tests still pass (`effective_scope == serv
 - [ ] **Step 7: Lint + commit**
 
 ```bash
-cd service && uv run ruff check . && uv run ruff format .
+cd service && uv run ruff format $FILES && uv run ruff check --fix $FILES   # $FILES = ONLY this task's files; never 'ruff format .' / 'make fmt'
 git add service/src/api/authz_routes.py service/tests/test_realm_authz_minting.py
 git commit -m "feat(realm): mint realm-scoped authz tokens (svc + RBAC = effective_scope)"
 ```
