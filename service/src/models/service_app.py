@@ -29,6 +29,12 @@ class ServiceApp(Base):
     allowed_idp_audiences: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default="{}", nullable=False
     )
+    # Trusted-group membership. NULL = standalone (effective_scope = service_name).
+    realm_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("realms.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
