@@ -24,6 +24,7 @@ _AUD_ACCESS = "sentinel:access"
 _AUD_ADMIN = "sentinel:admin"
 _AUD_REFRESH = "sentinel:refresh"
 _AUD_AUTHZ = "sentinel:authz"
+_AUD_M2M = "sentinel:m2m"
 _ISSUER = settings.base_url
 
 
@@ -130,6 +131,39 @@ def create_authz_token(
         "iat": now,
         "exp": now + timedelta(minutes=settings.authz_token_expire_minutes),
         "type": "authz",
+    }
+    return _sign(payload)
+
+
+def create_m2m_token(
+    svc: str,
+    caller: str,
+    ttl_s: int,
+    actions: list[str] | None = None,
+    aud_target: str | None = None,
+) -> str:
+    """Create a short-lived no-user (machine-to-machine) realm token.
+
+    Carries SERVICE identity only — no ``sub``/``email``/``idp_sub`` — so it can
+    never be mistaken for a human. ``svc`` is the realm slug (the shared scope a
+    receiving member checks against); ``caller`` is the minting member's
+    ``service_name``, server-stamped for audit. ``actions=["*"]`` is full in-realm
+    trust in v1; a narrowed list is enforceable later with no token-shape change.
+    ``aud_target`` is reserved (off by default) for future per-call narrowing —
+    when set, the receiver checks it equals its own ``service_name``.
+    """
+    now = datetime.now(UTC)
+    payload = {
+        "iss": _ISSUER,
+        "aud": _AUD_M2M,
+        "type": "m2m",
+        "svc": svc,
+        "caller": caller,
+        "actions": actions if actions is not None else ["*"],
+        "aud_target": aud_target,
+        "jti": str(uuid.uuid4()),  # enables future denylist-based hard revoke
+        "iat": now,
+        "exp": now + timedelta(seconds=ttl_s),
     }
     return _sign(payload)
 
