@@ -30,6 +30,14 @@ class ServiceKeyContext:
     # Pre-resolved IdP audience(s) (OIDC client_id(s)). Normally empty here and
     # loaded lazily from ``app_id`` in /authz/resolve; tests may set it directly.
     allowed_idp_audiences: tuple[str, ...] = ()
+    # The member's realm slug, if this service belongs to a realm; else None.
+    realm_slug: str | None = None
+
+    @property
+    def effective_scope(self) -> str:
+        """Shared scope for permission + token binding: the realm slug for a member,
+        else the service's own name (standalone — today's behavior)."""
+        return self.realm_slug or self.service_name
 
 
 def verify_service_scope(ctx: ServiceKeyContext, service_name: str) -> None:
@@ -59,9 +67,11 @@ async def require_service_context(
             raise HTTPException(
                 status_code=401, detail="Invalid or missing service API key"
             )
-        service_name, app_id = result
+        service_name, app_id, realm_slug = result
         bind_identity(request, caller_service=service_name)
-        return ServiceKeyContext(service_name=service_name, app_id=app_id)
+        return ServiceKeyContext(
+            service_name=service_name, app_id=app_id, realm_slug=realm_slug
+        )
 
     # 2. Try origin (browser frontends) — lower trust than service key
     origin = request.headers.get("Origin")
@@ -283,6 +293,7 @@ async def get_current_user_flexible(
 
     # Validate the service key against the database — not just check for presence
     service_key_service_name: str | None = None
+    service_key_effective_scope: str | None = None
     raw_key = request.headers.get("X-Service-Key")
     if raw_key:
         from src.services import service_app_service
@@ -290,6 +301,7 @@ async def get_current_user_flexible(
         result = await service_app_service.validate_key(raw_key, db)
         if result is not None:
             service_key_service_name = result[0]
+            service_key_effective_scope = result[2] or result[0]  # noqa: F841 — used in Task 4
 
     has_valid_service_key = service_key_service_name is not None
     audiences = [_AUD_ACCESS, _AUD_AUTHZ] if has_valid_service_key else _AUD_ACCESS

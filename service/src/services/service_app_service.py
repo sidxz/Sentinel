@@ -8,12 +8,27 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.realm import Realm
 from src.models.service_app import ServiceApp
 from src.services.token_service import get_redis
 
 _CACHE_KEY = "svc:key_cache"
 _CACHE_TTL = 300  # 5 minutes
 _ORIGIN_CACHE_KEY = "svc:origin_cache"
+
+
+def _encode_cache(service_name: str, app_id: uuid.UUID, realm_slug: str | None) -> str:
+    return f"{service_name}:{app_id}:{realm_slug or ''}"
+
+
+def _decode_cache(value: str) -> tuple[str, uuid.UUID, str | None]:
+    """Parse a cache value. Tolerates legacy 2-part ('svc:app_id') entries."""
+    parts = value.split(":", 2)
+    if len(parts) == 2:
+        service_name, app_id_str = parts
+        return service_name, uuid.UUID(app_id_str), None
+    service_name, app_id_str, realm_slug = parts
+    return service_name, uuid.UUID(app_id_str), (realm_slug or None)
 
 
 def _generate_key() -> tuple[str, str, str]:
@@ -54,29 +69,28 @@ async def create_service_app(
     return app, plaintext
 
 
-async def validate_key(raw_key: str, db: AsyncSession) -> tuple[str, uuid.UUID] | None:
-    """Validate a raw API key. Returns (service_name, app_id) or None."""
+async def validate_key(
+    raw_key: str, db: AsyncSession
+) -> tuple[str, uuid.UUID, str | None] | None:
+    """Validate a raw API key. Returns (service_name, app_id, realm_slug) or None."""
     sha = hashlib.sha256(raw_key.encode()).hexdigest()
 
-    # Try cache first
     r = await get_redis()
     cached = await r.hget(_CACHE_KEY, sha)
     if cached:
-        svc, app_id_str = cached.split(":", 1)
-        if not await _touch_last_used(db, uuid.UUID(app_id_str)):
+        svc, app_id, realm_slug = _decode_cache(cached)
+        if not await _touch_last_used(db, app_id):
             return None
-        return svc, uuid.UUID(app_id_str)
+        return svc, app_id, realm_slug
 
-    # Cache miss — rebuild cache from DB
     await _rebuild_cache(db)
 
-    # Retry from cache
     cached = await r.hget(_CACHE_KEY, sha)
     if cached:
-        svc, app_id_str = cached.split(":", 1)
-        if not await _touch_last_used(db, uuid.UUID(app_id_str)):
+        svc, app_id, realm_slug = _decode_cache(cached)
+        if not await _touch_last_used(db, app_id):
             return None
-        return svc, uuid.UUID(app_id_str)
+        return svc, app_id, realm_slug
 
     return None
 
@@ -176,16 +190,22 @@ async def validate_origin(
 
 
 async def _rebuild_cache(db: AsyncSession) -> None:
-    """Load all active apps into the Redis hash cache."""
+    """Load all active apps (+ their realm slug) into the Redis hash cache."""
     r = await get_redis()
     result = await db.execute(
-        select(ServiceApp).where(ServiceApp.is_active == True)  # noqa: E712
+        select(ServiceApp, Realm.slug)
+        .outerjoin(Realm, ServiceApp.realm_id == Realm.id)
+        .where(ServiceApp.is_active == True)  # noqa: E712
     )
-    apps = result.scalars().all()
+    rows = result.all()
     pipe = r.pipeline()
     pipe.delete(_CACHE_KEY)
-    for app in apps:
-        pipe.hset(_CACHE_KEY, app.key_hash, f"{app.service_name}:{app.id}")
+    for app, realm_slug in rows:
+        pipe.hset(
+            _CACHE_KEY,
+            app.key_hash,
+            _encode_cache(app.service_name, app.id, realm_slug),
+        )
     pipe.expire(_CACHE_KEY, _CACHE_TTL)
     await pipe.execute()
 
