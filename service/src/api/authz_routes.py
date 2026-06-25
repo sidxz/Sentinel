@@ -368,7 +368,7 @@ async def resolve(
 
     # 5. Get RBAC actions for this service
     actions = await get_user_actions(
-        db, user.id, service_ctx.service_name, body.workspace_id
+        db, user.id, service_ctx.effective_scope, body.workspace_id
     )
 
     # 6. Sign authz JWT
@@ -394,7 +394,7 @@ async def resolve(
         workspace_slug=workspace.slug,
         workspace_role=membership.role,
         actions=actions,
-        service_name=service_ctx.service_name,
+        service_name=service_ctx.effective_scope,
         # org is guaranteed non-None here (the 403 gate above rejects an
         # unresolved org), so this always carries real org claims.
         **organization_service.org_claims(org),
