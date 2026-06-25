@@ -28,7 +28,9 @@ class Realm(Base):
     m2m_ttl_s: Mapped[int] = mapped_column(
         Integer, default=300, server_default="300", nullable=False
     )
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
