@@ -14,11 +14,13 @@ from src.middleware.cors import DynamicCORSMiddleware
 
 
 def _paths(app) -> set[str]:
-    # FastAPI 0.138+ stores include_router results as _IncludedRouter (lazy),
-    # so we walk into original_router.routes to collect real APIRoute paths.
+    # FastAPI 0.138+ stores include_router results as a lazy wrapper (_IncludedRouter)
+    # that exposes the real APIRoutes via .original_router. Gate on the attribute we
+    # read (hasattr), not the private class name — a rename would otherwise silently
+    # drop every included path and make the positive assertions vacuously pass.
     result: set[str] = set()
     for r in app.routes:
-        if type(r).__name__ == "_IncludedRouter":
+        if hasattr(r, "original_router"):
             for sub in r.original_router.routes:
                 result.add(getattr(sub, "path", ""))
         else:
@@ -106,3 +108,10 @@ def test_resolve_tier_rejects_unknown(monkeypatch):
     monkeypatch.setenv("TIER", "bogus")
     with pytest.raises(RuntimeError):
         _resolve_tier()
+
+
+def test_paths_helper_actually_enumerates_included_routes():
+    # Guard against a silent regression: if route introspection breaks, _paths()
+    # would return an almost-empty set and the tier assertions above would go
+    # vacuous. A healthy 'all' app exposes well over a dozen paths.
+    assert len(_paths(create_app("all"))) > 10
