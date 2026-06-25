@@ -91,7 +91,8 @@ services:
 
   sentinel:
     image: ghcr.io/sidxz/sentinel:latest
-    environment:
+    environment: &sentinel_env
+      TIER: public
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?ssl=require
       REDIS_URL: rediss://:${REDIS_PASSWORD}@redis:6379/0
       REDIS_TLS_CA_CERT: /run/secrets/tls_ca
@@ -142,6 +143,43 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9003/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+  # Internal listener — the service-key-only surface (realm, permissions, authz,
+  # roles). NOT published: reachable only on the `sentinel` overlay as
+  # http://sentinel-internal:9010. Apps that hold a Sentinel service key point their
+  # SDK base URL here. depends_on sentinel (public) so the schema is migrated first.
+  sentinel-internal:
+    image: ghcr.io/sidxz/sentinel:latest
+    command: [".venv/bin/uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "9010", "--no-server-header"]
+    environment:
+      <<: *sentinel_env
+      TIER: internal
+    secrets:
+      - jwt_private_key
+      - jwt_public_key
+      - tls_ca
+    # NO `ports:` — unpublished by design; the public internet has no socket here.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      sentinel:
+        condition: service_healthy
+    networks:
+      - sentinel
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9010/health"]
       interval: 15s
       timeout: 5s
       retries: 3
