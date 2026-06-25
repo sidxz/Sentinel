@@ -78,12 +78,67 @@ def test_route_keying_is_wired():
     # module-singleton limiter's route registry.
     import src.main  # noqa: F401
 
-    all_limits = [lim for lims in rl.limiter._route_limits.values() for lim in lims]
-    # /authz/resolve must be service-keyed.
-    assert any(lim.key_func is rl.service_or_ip_key for lim in all_limits)
-    # The authenticated read/write/sensitive routes must be user-keyed (>=10 of them).
-    user_keyed = [lim for lim in all_limits if lim.key_func is rl.user_or_ip_key]
-    assert len(user_keyed) >= 10
+    # route name -> set of key_funcs on its limits.
+    by_route = {
+        name: {lim.key_func for lim in lims}
+        for name, lims in rl.limiter._route_limits.items()
+    }
+
+    # Service-key-authed routes bind caller_service (never actor), so they MUST
+    # key per calling service — user_or_ip_key would silently degrade to per-IP.
+    for name in (
+        "src.api.authz_routes.resolve",
+        "src.api.permission_routes.get_enriched_resource_acl",
+    ):
+        assert rl.service_or_ip_key in by_route[name], name
+        assert rl.user_or_ip_key not in by_route[name], name
+
+    # User-JWT / admin-cookie routes bind actor, so they MUST key per user.
+    for name in (
+        "src.api.workspace_routes.list_members",
+        "src.api.group_routes.list_group_members",
+        "src.api.client_log_routes.ingest_client_logs",
+        "src.api.admin_routes.bulk_user_status",
+        "src.api.admin_routes.rotate_service_app_key",
+        "src.api.org_admin_routes.create_organization",
+    ):
+        assert rl.user_or_ip_key in by_route[name], name
+
+
+def test_fail_open_when_storage_unreachable():
+    # swallow_errors alone is not enough: slowapi leaves request.state.view_rate_limit
+    # unset on a swallowed storage error, and header injection then AttributeErrors
+    # -> HTTP 500. _FailOpenLimiter pre-seeds the attribute so a Redis outage passes
+    # traffic through (with the real response) on BOTH the undecorated (middleware)
+    # and decorated (endpoint-wrapper) paths.
+    from slowapi.middleware import SlowAPIASGIMiddleware
+
+    dead_redis = "redis://127.0.0.1:6390/0"  # nothing listening -> connection refused
+    lim = rl._FailOpenLimiter(
+        key_func=rl.get_client_ip,
+        default_limits=["120/minute"],
+        application_limits=["300/minute"],
+        storage_uri=dead_redis,
+        swallow_errors=True,
+        enabled=True,
+    )
+    app = FastAPI()
+    app.state.limiter = lim
+    app.add_exception_handler(RateLimitExceeded, rl.rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIASGIMiddleware)
+
+    @app.get("/u")
+    async def u(request: Request):
+        return {"ok": True}
+
+    @app.get("/d")
+    @lim.limit("10/minute")
+    async def d(request: Request):
+        return {"ok": True}
+
+    c = TestClient(app, raise_server_exceptions=False)
+    assert c.get("/u").status_code == 200  # undecorated path fails open, not 500
+    assert c.get("/d").status_code == 200  # decorated path fails open, not 500
 
 
 def test_rate_limit_report_reflects_live_settings(monkeypatch):

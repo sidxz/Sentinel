@@ -201,6 +201,12 @@ app.add_middleware(MaxBodySizeMiddleware, max_bytes=10_485_760)
 # handler; the BaseHTTPMiddleware variant would silently fall back to slowapi's
 # default handler (no security log). Decorated routes are exempt here and enforce
 # their own per-route tier in the endpoint wrapper. See middleware/rate_limit.py.
+#
+# Deliberately positioned INSIDE RequestContext/AccessLog/CORS (added after this):
+# a 429 from the aggregate/default check must still carry the request-id, be
+# access-logged, and receive CORS headers. The app-layer aggregate is best-effort;
+# volumetric/pre-auth defense is delegated to edge rate limiting (see docs/security.md),
+# so paying the outer-middleware cost on a rejected request is an accepted tradeoff.
 app.add_middleware(SlowAPIASGIMiddleware)
 
 # Security headers on every response
@@ -240,6 +246,7 @@ app.include_router(client_log_router)
 
 
 @app.get("/health")
+@limiter.exempt  # health probes must never be throttled (default/aggregate would 429 them)
 async def health():
     return {"status": "ok"}
 

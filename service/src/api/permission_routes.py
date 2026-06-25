@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
 from src.logging_events import log_audit
-from src.middleware.rate_limit import limiter, user_or_ip_key
+from src.middleware.rate_limit import limiter, service_or_ip_key
 
 from src.api.dependencies import (
     CurrentUser,
@@ -273,7 +273,9 @@ async def get_resource_acl(
     "/resource/{service_name}/{resource_type}/{resource_id}/enriched",
     response_model=EnrichedResourcePermissionResponse,
 )
-@limiter.limit(settings.rate_limit_read, key_func=user_or_ip_key)
+# Service-key-authed (require_service_key binds caller_service, never actor), so
+# key per calling service — user_or_ip_key would always fall back to IP here.
+@limiter.limit(settings.rate_limit_read, key_func=service_or_ip_key)
 async def get_enriched_resource_acl(
     request: Request,
     service_name: str,

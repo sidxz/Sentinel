@@ -1,6 +1,7 @@
 from pathlib import Path
 from urllib.parse import urlparse
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -72,9 +73,13 @@ class Settings(BaseSettings):
         # client-controlled (leftmost) values cannot spoof the rate-limit bucket.
     )
 
-    # Rate-limit tiers — limits-library strings ("10/minute"); "" disables a tier.
-    # Read at import time (restart to change). See middleware/rate_limit.py for the
-    # slowapi coverage model and docs/security.md for the edge-rate-limiting caveat.
+    # Rate-limit tiers — limits-library strings ("10/minute"). Only the two
+    # middleware-level tiers below (default, aggregate) accept "" to disable them.
+    # The per-route (decorated) tiers must be non-empty: "" there means
+    # @limiter.limit("") = NO throttle AND exemption from the aggregate, so it is
+    # rejected at startup (see _validate_decorated_tier). Read at import time
+    # (restart to change). See middleware/rate_limit.py for the slowapi coverage
+    # model and docs/security.md for the edge-rate-limiting caveat.
     rate_limit_default: str = "120/minute"  # per IP, per undecorated route (long tail)
     rate_limit_aggregate: str = (
         "300/minute"  # per IP across all undecorated routes (volumetric ceiling)
@@ -89,6 +94,32 @@ class Settings(BaseSettings):
     rate_limit_read: str = "60/minute"  # authenticated reads (per user)
     rate_limit_admin_write: str = "10/minute"  # admin mutations (per user)
     rate_limit_sensitive: str = "5/minute"  # destructive/expensive admin ops (per user)
+
+    @field_validator(
+        "rate_limit_auth",
+        "rate_limit_auth_admin",
+        "rate_limit_authz_resolve",
+        "rate_limit_read",
+        "rate_limit_admin_write",
+        "rate_limit_sensitive",
+    )
+    @classmethod
+    def _validate_decorated_tier(cls, v: str, info) -> str:
+        """Per-route tiers must be valid, non-empty limit strings.
+
+        Unlike default/aggregate, an empty per-route tier is a silent security
+        footgun (@limiter.limit("") = unlimited + exempt from the aggregate), so
+        fail fast at startup rather than ship an unthrottled auth/admin route.
+        """
+        from limits import parse
+
+        if not v:
+            raise ValueError(
+                f"{info.field_name} must be a non-empty limit string "
+                f'(e.g. "10/minute"); "" is not allowed for a per-route tier'
+            )
+        parse(v)  # raises ValueError on a malformed limit string
+        return v
 
     # Admin
     admin_emails: str = ""

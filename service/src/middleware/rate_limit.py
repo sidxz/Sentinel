@@ -17,6 +17,14 @@ docs/security.md.
 
 Fail-open: ``swallow_errors=True`` — a storage (Redis) error lets the request
 through rather than 500ing or throttling. Real limit breaches still 429.
+
+NOTE on fail-open correctness: ``swallow_errors`` alone is NOT sufficient. When
+slowapi swallows a storage error it never sets ``request.state.view_rate_limit``,
+and its header-injection path (both the ASGI middleware and the decorated-route
+wrapper) then dereferences that attribute unconditionally — raising
+``AttributeError`` → HTTP 500 on every request during a Redis outage. We close
+that hole with ``_FailOpenLimiter`` below, which guarantees the attribute is
+always defined so the (no-op, headers-disabled) injection can't crash.
 """
 
 from slowapi import Limiter
@@ -118,7 +126,26 @@ def rate_limit_report() -> list[dict[str, str]]:
     ]
 
 
-limiter = Limiter(
+class _FailOpenLimiter(Limiter):
+    """Limiter that truly fails open when the storage (Redis) is unreachable.
+
+    slowapi's ``swallow_errors`` swallows the storage exception during the limit
+    check but leaves ``request.state.view_rate_limit`` unset; the subsequent
+    header-injection step then dereferences it and raises ``AttributeError`` →
+    HTTP 500. We pre-seed the attribute so that, on a swallowed storage error,
+    injection sees ``None`` (a no-op given ``headers_enabled=False``) and the
+    request passes through with its real response instead of 500ing.
+    """
+
+    def _check_request_limit(self, request, endpoint_func, in_middleware=True):
+        try:
+            request.state.view_rate_limit
+        except AttributeError:
+            request.state.view_rate_limit = None
+        return super()._check_request_limit(request, endpoint_func, in_middleware)
+
+
+limiter = _FailOpenLimiter(
     key_func=get_client_ip,
     default_limits=[settings.rate_limit_default] if settings.rate_limit_default else [],
     application_limits=(
@@ -134,10 +161,17 @@ limiter = Limiter(
 async def rate_limit_exceeded_handler(
     request: Request, exc: RateLimitExceeded
 ) -> JSONResponse:
+    # Distinguish the per-IP volumetric aggregate (application_limits, "global"
+    # scope) from per-route limits so log-based alerting can separate volumetric
+    # abuse from a single actor hitting a strict route tier.
+    reason = (
+        "aggregate" if getattr(exc.limit, "scope", "") == "global" else "route_limit"
+    )
     log_security(
         "ratelimit.exceeded",
         outcome="denied",
-        reason="route_limit",
+        reason=reason,
+        limit=str(exc.limit.limit),
         source_ip=get_client_ip(request),
         **{"http.route": request.url.path},
     )
