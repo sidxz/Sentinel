@@ -75,6 +75,19 @@ def test_whoami_standalone_has_null_realm():
     assert body["realm"] is None
 
 
+def test_whoami_orphan_realm_returns_slug_scope_and_null_realm(monkeypatch):
+    async def _none(_db, _slug):
+        return None
+
+    monkeypatch.setattr(realm_routes.realm_service, "get_realm_by_slug", _none)
+    monkeypatch.setattr(realm_routes.logger, "warning", lambda *a, **k: None)
+    resp = TestClient(_build_app(realm_slug="acme-suite")).get("/realm/whoami")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["effective_scope"] == "acme-suite"  # still operating under the slug
+    assert body["realm"] is None  # graceful, not a crash
+
+
 def test_m2m_mint_stamps_caller_and_realm_svc(monkeypatch):
     async def _get(_db, slug):
         return _Realm(slug=slug, m2m_ttl_s=300, is_active=True)

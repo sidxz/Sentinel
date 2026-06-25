@@ -46,6 +46,15 @@ async def whoami(
         realm = await realm_service.get_realm_by_slug(db, svc.realm_slug)
         if realm is not None:
             realm_info = RealmInfo(slug=realm.slug, name=realm.name)
+        else:
+            # Key resolved a realm slug, but the realm row is gone (deleted, or a
+            # stale key cache). Surface the anomaly; still answer with the slug scope
+            # the key is operating under — 404-ing would break SDK scope discovery.
+            logger.warning(
+                "realm.whoami.orphan_realm",
+                caller_service=svc.service_name,
+                realm=svc.realm_slug,
+            )
     return WhoamiResponse(
         service_name=svc.service_name,
         effective_scope=svc.effective_scope,
