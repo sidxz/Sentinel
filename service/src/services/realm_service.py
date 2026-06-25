@@ -34,6 +34,13 @@ async def get_realm(db: AsyncSession, realm_id: uuid.UUID) -> Realm | None:
     return await db.get(Realm, realm_id)
 
 
+async def get_realm_by_slug(db: AsyncSession, slug: str) -> Realm | None:
+    """Resolve a realm by its shared-scope slug. Used by /realm/whoami (for the
+    display name) and /realm/m2m-token (for is_active + m2m_ttl_s)."""
+    result = await db.execute(select(Realm).where(Realm.slug == slug))
+    return result.scalar_one_or_none()
+
+
 async def list_realms(db: AsyncSession) -> list[Realm]:
     result = await db.execute(select(Realm).order_by(Realm.created_at.desc()))
     return list(result.scalars().all())
