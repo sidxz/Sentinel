@@ -55,3 +55,7 @@ export function withAuth<T>(
     return handler(req, user)
   }
 }
+
+// Realm no-user (m2m) — server only. Mint for outbound system calls, verify inbound.
+export { verifyM2mToken, fetchWhoami, M2mTokenClient } from '@sentinel-auth/js/server'
+export type { SystemAuth, WhoamiResponse, M2mVerifyOptions } from '@sentinel-auth/js/server'
