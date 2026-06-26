@@ -141,6 +141,8 @@ app.get('/api/documents/:id', authenticate, async (req, res) => {
 
 For [realm](../guide/realms.md) members, `@sentinel-auth/js/server` adds the no-user m2m primitives for [Flow B](../guide/realms.md#flow-b-no-user). These are **server-entry only** — they hold the service key and must never reach a browser. (`@sentinel-auth/react` deliberately has no m2m surface.)
 
+The examples below point at `http://sentinel-internal:9010` — the unpublished [internal listener](../deployment/index.md#network-split-public--internal-listeners), not the public `:9003` URL browser flows use.
+
 ```typescript
 import { fetchWhoami, verifyM2mToken, M2mTokenClient } from '@sentinel-auth/js/server'
 ```
@@ -178,6 +180,7 @@ const sys = await verifyM2mToken(token, {
 })
 sys.caller            // minting member (server-stamped)
 sys.svc               // realm slug
+sys.actions           // string[] — granted actions (["*"] = full realm trust)
 sys.can('search:reindex')   // true if actions includes "*" or the action
 ```
 
