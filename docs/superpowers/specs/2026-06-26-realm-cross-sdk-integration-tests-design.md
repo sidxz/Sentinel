@@ -78,7 +78,11 @@ A **separate** test file that does **not** `vi.mock('jose')` — real `jose`. It
 
 ## Env wiring
 
-The Python integration test imports both `src.*` (service) and `sentinel_auth` (SDK) in one process. Add `sentinel-auth-sdk` as a **workspace dev-dependency of the `service` package** (`service/pyproject.toml`; it is already a uv workspace member → local, no PyPI, dev-only). The SDK never depends on the service. The JS test runs in the existing `sdks/js` vitest harness; it only reads the committed JSON (no new dependency).
+The Python integration test imports both `src.*` (service) and `sentinel_auth` (SDK) in one process. **Update (verified at plan time): no dependency change is needed** — the root `daikon-sentinel` workspace already depends on both `sentinel-auth` and `sentinel-auth-sdk` (`[tool.uv.sources] … { workspace = true }`), so the shared workspace venv already exposes `sentinel_auth` in the service test run (`cd service && uv run python -c "import sentinel_auth, src.auth.jwt"` succeeds). The earlier "add a dev-dep" plan is a no-op and is dropped. The JS test runs in the existing `sdks/js` vitest harness; it only reads the committed JSON (no new dependency).
+
+## Keypair handling — no committed private key
+
+**Update (verified at plan time):** `gen_fixtures.py` generates an **ephemeral in-memory RSA keypair** each run, writes it to throwaway temp files, points `JWT_*_KEY_PATH` at them, mints, then discards them. Only `fixtures.json` (JWKS + public PEM + tokens) is committed — **no private key is ever committed** (avoids the trivy secret-scanner and the `keys/` dependency). The Python *live* tests use the ambient `key_provider` (dev `keys/`) and read the verifying key by `kid` from `key_provider.verification_keys()`; the freshness guard uses `fixtures.json`'s own `public_pem`. (Supersedes the `test_key.pem`/`test_key.pub.pem` entries in the file layout below.)
 
 ## File layout
 
