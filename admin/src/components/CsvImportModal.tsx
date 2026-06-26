@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Modal } from "./Modal";
+import { Button } from "@/components/ui/button";
 import { csvPreview, csvExecute } from "../api/client";
 import type { CsvImportPreview, CsvImportResult } from "../types/api";
 
@@ -63,7 +64,7 @@ export function CsvImportModal({ open, onClose, onComplete }: Props) {
         {!result ? (
           <>
             <div>
-              <label className="text-xs text-zinc-500">
+              <label className="text-xs text-muted-foreground">
                 CSV with columns: email, name, workspace_slug, role
               </label>
               <input
@@ -73,12 +74,12 @@ export function CsvImportModal({ open, onClose, onComplete }: Props) {
                   setFile(e.target.files?.[0] ?? null);
                   setPreview(null);
                 }}
-                className="mt-1 block w-full text-sm text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-zinc-800 file:text-zinc-300 hover:file:bg-zinc-700"
+                className="mt-1 block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-muted file:text-foreground hover:file:bg-muted/70"
               />
             </div>
 
             {error && (
-              <div className="text-xs text-red-400 bg-red-500/5 border border-red-500/20 rounded px-3 py-2">
+              <div className="text-xs text-red-700 dark:text-red-400 bg-red-500/5 border border-red-500/20 rounded px-3 py-2">
                 {error}
               </div>
             )}
@@ -86,34 +87,34 @@ export function CsvImportModal({ open, onClose, onComplete }: Props) {
             {preview && (
               <div className="space-y-2">
                 <div className="flex gap-3 text-xs">
-                  <span className="text-emerald-400">{preview.valid_count} valid</span>
+                  <span className="text-emerald-700 dark:text-emerald-400">{preview.valid_count} valid</span>
                   {preview.error_count > 0 && (
-                    <span className="text-red-400">{preview.error_count} errors</span>
+                    <span className="text-red-700 dark:text-red-400">{preview.error_count} errors</span>
                   )}
                 </div>
-                <div className="max-h-48 overflow-auto rounded border border-zinc-800">
+                <div className="max-h-48 overflow-auto rounded border border-border">
                   <table className="w-full text-xs">
-                    <thead className="bg-zinc-800/50">
+                    <thead className="bg-muted/50">
                       <tr>
-                        <th className="px-2 py-1 text-left text-zinc-500">Email</th>
-                        <th className="px-2 py-1 text-left text-zinc-500">Name</th>
-                        <th className="px-2 py-1 text-left text-zinc-500">Workspace</th>
-                        <th className="px-2 py-1 text-left text-zinc-500">Role</th>
-                        <th className="px-2 py-1 text-left text-zinc-500">Status</th>
+                        <th className="px-2 py-1 text-left text-muted-foreground">Email</th>
+                        <th className="px-2 py-1 text-left text-muted-foreground">Name</th>
+                        <th className="px-2 py-1 text-left text-muted-foreground">Workspace</th>
+                        <th className="px-2 py-1 text-left text-muted-foreground">Role</th>
+                        <th className="px-2 py-1 text-left text-muted-foreground">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-800/50">
+                    <tbody className="divide-y divide-border">
                       {preview.rows.map((row, i) => (
                         <tr key={i} className={row.error ? "bg-red-500/5" : ""}>
-                          <td className="px-2 py-1 text-zinc-300">{row.email}</td>
-                          <td className="px-2 py-1 text-zinc-400">{row.name}</td>
-                          <td className="px-2 py-1 text-zinc-400">{row.workspace_slug}</td>
-                          <td className="px-2 py-1 text-zinc-400">{row.role}</td>
+                          <td className="px-2 py-1 text-foreground font-mono">{row.email}</td>
+                          <td className="px-2 py-1 text-muted-foreground">{row.name}</td>
+                          <td className="px-2 py-1 text-muted-foreground font-mono">{row.workspace_slug}</td>
+                          <td className="px-2 py-1 text-muted-foreground">{row.role}</td>
                           <td className="px-2 py-1">
                             {row.error ? (
-                              <span className="text-red-400">{row.error}</span>
+                              <span className="text-red-700 dark:text-red-400">{row.error}</span>
                             ) : (
-                              <span className="text-emerald-400">OK</span>
+                              <span className="text-emerald-700 dark:text-emerald-400">OK</span>
                             )}
                           </td>
                         </tr>
@@ -125,49 +126,40 @@ export function CsvImportModal({ open, onClose, onComplete }: Props) {
             )}
 
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={handleClose} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">
+              <Button variant="ghost" size="sm" onClick={handleClose}>
                 Cancel
-              </button>
+              </Button>
               {!preview ? (
-                <button
-                  onClick={handlePreview}
-                  disabled={!file || loading}
-                  className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
-                >
-                  {loading ? "Parsing..." : "Preview"}
-                </button>
+                <Button size="sm" onClick={handlePreview} disabled={!file || loading}>
+                  {loading ? "Parsing…" : "Preview"}
+                </Button>
               ) : (
-                <button
-                  onClick={handleExecute}
-                  disabled={loading || preview.valid_count === 0}
-                  className="px-3 py-1.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 ring-1 ring-emerald-500/20 disabled:opacity-50"
-                >
-                  {loading ? "Importing..." : `Import ${preview.valid_count} rows`}
-                </button>
+                <Button size="sm" onClick={handleExecute} disabled={loading || preview.valid_count === 0}>
+                  {loading ? "Importing…" : `Import ${preview.valid_count} rows`}
+                </Button>
               )}
             </div>
           </>
         ) : (
           <div className="space-y-3">
-            <div className="text-sm text-zinc-300">Import complete</div>
+            <div className="text-sm text-foreground">Import complete</div>
             <div className="flex gap-4 text-xs">
-              <span className="text-emerald-400">{result.users_created} users created</span>
-              <span className="text-blue-400">{result.memberships_added} memberships added</span>
+              <span className="text-emerald-700 dark:text-emerald-400">{result.users_created} users created</span>
+              <span className="text-blue-700 dark:text-blue-400">{result.memberships_added} memberships added</span>
             </div>
             {result.errors.length > 0 && (
               <div className="space-y-1">
                 {result.errors.map((e, i) => (
-                  <div key={i} className="text-xs text-red-400">{e}</div>
+                  <div key={i} className="text-xs text-red-700 dark:text-red-400">
+                    {e}
+                  </div>
                 ))}
               </div>
             )}
             <div className="flex justify-end pt-2">
-              <button
-                onClick={handleClose}
-                className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white"
-              >
+              <Button size="sm" onClick={handleClose}>
                 Done
-              </button>
+              </Button>
             </div>
           </div>
         )}
