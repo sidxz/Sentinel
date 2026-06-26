@@ -6,10 +6,12 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI
+import jwt
+from fastapi import FastAPI, HTTPException, Request
 from jwt.algorithms import RSAAlgorithm
 
 from sentinel_auth._utils import warn_if_insecure
+from sentinel_auth.auth import SystemAuth
 from sentinel_auth.authz import AuthzClient
 from sentinel_auth.authz_middleware import AuthzMiddleware
 from sentinel_auth.dependencies import get_current_user, get_request_auth_factory
@@ -17,6 +19,9 @@ from sentinel_auth.dependencies import require_action as _require_action
 from sentinel_auth.middleware import JWTAuthMiddleware
 from sentinel_auth.permissions import PermissionClient
 from sentinel_auth.roles import RoleClient
+from sentinel_auth.types import SentinelError
+
+_AUD_M2M = "sentinel:m2m"
 
 
 class Sentinel:
@@ -283,3 +288,70 @@ class Sentinel:
     def require_action(self, action: str) -> Callable:
         """Dependency factory that enforces an RBAC action."""
         return _require_action(self.roles, action)
+
+    # -- No-user (m2m) tokens -------------------------------------------------
+
+    def verify_m2m_token(self, token: str) -> SystemAuth:
+        """Verify an inbound no-user realm token and return its ``SystemAuth``.
+
+        Receiver side of Flow B: App B calls this on a token App A minted via
+        ``mint_m2m_token``. Trust is rooted entirely in Sentinel's RS256 signature
+        (only Sentinel holds the private key) plus aud/type/svc binding — never
+        app↔app trust. The token's ``svc`` must equal this service's
+        ``effective_scope``, so a token minted for another realm cannot be replayed.
+
+        Mount the protected route OUTSIDE ``AuthzMiddleware`` (add it to
+        ``exclude_paths``): an m2m call carries no IdP token, so the dual-token
+        middleware would 401 it. Gate it with ``require_system`` instead.
+
+        Raises ``SentinelError`` (``status_code`` 401 for bad/expired/wrong-type,
+        403 for wrong realm / wrong target).
+        """
+        key = self._sentinel_public_key
+        if not key:
+            raise SentinelError(
+                "Sentinel public key not available; run the app under sentinel.lifespan so it is fetched at startup.",
+                503,
+            )
+        try:
+            # ponytail: verifies against the single PEM fetched once at lifespan —
+            # not kid-rotation-aware mid-process like AuthzMiddleware's PyJWKClient.
+            # m2m TTL is short (default 300s) and a restart refetches; upgrade to a
+            # PyJWKClient against {base_url}/.well-known/jwks.json if mid-process key
+            # rotation must not interrupt m2m acceptance.
+            payload = jwt.decode(token, key, algorithms=["RS256"], audience=_AUD_M2M)
+        except jwt.ExpiredSignatureError as exc:
+            raise SentinelError("m2m token expired", 401) from exc
+        except jwt.InvalidTokenError as exc:
+            raise SentinelError("Invalid m2m token", 401) from exc
+        if payload.get("type") != "m2m":
+            raise SentinelError("Not an m2m token", 401)
+        if payload.get("svc") != self.effective_scope:
+            raise SentinelError("m2m token was issued for a different realm", 403)
+        aud_target = payload.get("aud_target")
+        if aud_target is not None and aud_target != self.service_name:
+            raise SentinelError("m2m token targets a different service", 403)
+        return SystemAuth(
+            caller=payload.get("caller", ""),
+            actions=list(payload.get("actions") or []),
+            svc=payload["svc"],
+        )
+
+    @property
+    def require_system(self) -> Callable:
+        """FastAPI dependency returning a ``SystemAuth`` for a no-user m2m call.
+
+        Reads the m2m token from ``Authorization: Bearer`` (its only credential —
+        there is no user). Raise this route's path in the middleware ``exclude_paths``.
+        """
+
+        def dependency(request: Request) -> SystemAuth:
+            auth = request.headers.get("Authorization", "")
+            if not auth.startswith("Bearer "):
+                raise HTTPException(status_code=401, detail="Missing m2m token")
+            try:
+                return self.verify_m2m_token(auth.removeprefix("Bearer "))
+            except SentinelError as exc:
+                raise HTTPException(status_code=exc.status_code or 401, detail=str(exc))
+
+        return dependency
