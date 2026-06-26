@@ -1,11 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { createServiceApp, getServiceApps } from "../api/client";
 import { DataTable } from "../components/DataTable";
 import { Modal } from "../components/Modal";
 import { StatusBadge } from "../components/Badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import type { ServiceApp, ServiceAppCreateResponse } from "../types/api";
 
 function KeyRevealModal({
@@ -17,38 +22,30 @@ function KeyRevealModal({
   onClose: () => void;
   apiKey: string;
 }) {
-  const [copied, setCopied] = useState(false);
-
   const copy = () => {
     navigator.clipboard.writeText(apiKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    toast.success("Copied");
   };
 
   return (
     <Modal open={open} onClose={onClose} title="API Key Created">
       <div className="space-y-4">
-        <div className="text-xs text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded px-3 py-2">
+        <div className="text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-3 py-2">
           Copy this key now. It will not be shown again.
         </div>
         <div className="flex items-center gap-2">
-          <code className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 font-mono break-all select-all">
+          <code className="flex-1 px-3 py-2 bg-muted border border-border rounded-md text-sm text-foreground font-mono break-all select-all">
             {apiKey}
           </code>
-          <button
-            onClick={copy}
-            className="shrink-0 px-3 py-2 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
+          <Button variant="outline" size="sm" onClick={copy} className="shrink-0">
+            <Copy className="size-4" />
+            Copy
+          </Button>
         </div>
         <div className="flex justify-end pt-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
-          >
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Done
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>
@@ -96,7 +93,7 @@ export function ServiceApps() {
       key: "service_name",
       header: "Service Name",
       render: (a: ServiceApp) => (
-        <code className="text-xs text-zinc-400 font-mono">{a.service_name}</code>
+        <code className="text-xs text-muted-foreground font-mono">{a.service_name}</code>
       ),
     },
     {
@@ -109,7 +106,7 @@ export function ServiceApps() {
       key: "last_used",
       header: "Last Used",
       render: (a: ServiceApp) => (
-        <span className="text-zinc-500 text-xs">
+        <span className="text-muted-foreground text-xs">
           {a.last_used_at ? new Date(a.last_used_at).toLocaleDateString() : "Never"}
         </span>
       ),
@@ -119,7 +116,7 @@ export function ServiceApps() {
       key: "created",
       header: "Created",
       render: (a: ServiceApp) => (
-        <span className="text-zinc-500 text-xs">{new Date(a.created_at).toLocaleDateString()}</span>
+        <span className="text-muted-foreground text-xs">{new Date(a.created_at).toLocaleDateString()}</span>
       ),
       className: "w-28",
     },
@@ -129,16 +126,13 @@ export function ServiceApps() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Services</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"
-        >
+        <Button size="sm" onClick={() => setShowCreate(true)}>
           + Register Service
-        </button>
+        </Button>
       </div>
 
       {isLoading ? (
-        <div className="h-64 bg-zinc-800/30 rounded-lg animate-pulse" />
+        <div className="h-64 bg-muted/50 rounded-lg animate-pulse" />
       ) : (
         <DataTable
           columns={columns}
@@ -150,48 +144,51 @@ export function ServiceApps() {
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Register Service">
         <div className="space-y-3">
-          <div>
-            <label className="text-xs text-zinc-500">Display Name</label>
-            <input
+          <div className="space-y-1">
+            <Label htmlFor="svc-name">Display Name</Label>
+            <Input
+              id="svc-name"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="My Backend"
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
             />
           </div>
-          <div>
-            <label className="text-xs text-zinc-500">Service Name</label>
-            <input
+          <div className="space-y-1">
+            <Label htmlFor="svc-service-name">Service Name</Label>
+            <Input
+              id="svc-service-name"
               value={form.service_name}
               onChange={(e) => setForm((f) => ({ ...f, service_name: e.target.value }))}
               placeholder="my-backend"
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 font-mono placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+              className="font-mono"
             />
-            <p className="mt-1 text-xs text-zinc-600">Lowercase, hyphens only (e.g. my-backend)</p>
+            <p className="text-xs text-muted-foreground">Lowercase, hyphens only (e.g. my-backend)</p>
           </div>
-          <div>
-            <label className="text-xs text-zinc-500">Allowed Origins</label>
-            <textarea
+          <div className="space-y-1">
+            <Label htmlFor="svc-origins">Allowed Origins</Label>
+            <Textarea
+              id="svc-origins"
               value={form.allowed_origins}
               onChange={(e) => setForm((f) => ({ ...f, allowed_origins: e.target.value }))}
               placeholder={"https://app.example.com\nhttps://staging.example.com"}
               rows={3}
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 font-mono placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+              className="font-mono"
             />
-            <p className="mt-1 text-xs text-zinc-600">One origin per line. Required for browser-direct authz mode.</p>
+            <p className="text-xs text-muted-foreground">One origin per line. Required for browser-direct authz mode.</p>
           </div>
           {create.isError && (
-            <div className="text-xs text-red-400">{(create.error as Error).message}</div>
+            <div className="text-xs text-red-700 dark:text-red-400">{(create.error as Error).message}</div>
           )}
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowCreate(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
-            <button
+            <Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>
+              Cancel
+            </Button>
+            <Button
               onClick={() => create.mutate()}
               disabled={!form.name || !form.service_name || create.isPending}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
             >
               {create.isPending ? "Creating..." : "Create"}
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>

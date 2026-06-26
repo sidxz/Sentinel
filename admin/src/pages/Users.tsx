@@ -7,6 +7,7 @@ import { ConfirmModal } from "../components/ConfirmModal";
 import { CsvImportModal } from "../components/CsvImportModal";
 import { DataTable } from "../components/DataTable";
 import { SearchInput } from "../components/SearchInput";
+import { Button } from "@/components/ui/button";
 import type { User } from "../types/api";
 
 export function Users() {
@@ -58,7 +59,7 @@ export function Users() {
           type="checkbox"
           checked={!!data && data.items.length > 0 && selectedIds.size === data.items.length}
           onChange={toggleAll}
-          className="rounded border-zinc-600 bg-zinc-800"
+          className="rounded border-border bg-background"
           onClick={(e) => e.stopPropagation()}
         />
       ) as unknown as string,
@@ -68,7 +69,7 @@ export function Users() {
           checked={selectedIds.has(u.id)}
           onChange={() => toggleSelect(u.id)}
           onClick={(e) => e.stopPropagation()}
-          className="rounded border-zinc-600 bg-zinc-800"
+          className="rounded border-border bg-background"
         />
       ),
       className: "w-10",
@@ -78,12 +79,12 @@ export function Users() {
       header: "User",
       render: (u: User) => (
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-medium text-zinc-300 shrink-0">
+          <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground shrink-0">
             {u.name.charAt(0).toUpperCase()}
           </div>
           <div>
-            <div className="font-medium text-sm">{u.name}</div>
-            <div className="text-xs text-zinc-500">{u.email}</div>
+            <div className="font-medium text-sm text-foreground">{u.name}</div>
+            <div className="text-xs text-muted-foreground font-mono">{u.email}</div>
           </div>
         </div>
       ),
@@ -97,14 +98,14 @@ export function Users() {
     {
       key: "workspaces",
       header: "Workspaces",
-      render: (u: User) => <span className="text-zinc-400 tabular-nums">{u.workspace_count}</span>,
+      render: (u: User) => <span className="text-muted-foreground tabular-nums">{u.workspace_count}</span>,
       className: "w-28",
     },
     {
       key: "created",
       header: "Joined",
       render: (u: User) => (
-        <span className="text-zinc-500 text-xs">{new Date(u.created_at).toLocaleDateString()}</span>
+        <span className="text-muted-foreground text-xs">{new Date(u.created_at).toLocaleDateString()}</span>
       ),
       className: "w-28",
     },
@@ -116,23 +117,17 @@ export function Users() {
         <h1 className="text-xl font-semibold">Users</h1>
         <div className="flex items-center gap-3">
           <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search users..." />
-          <button
-            onClick={() => exportUsers()}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
-          >
+          <Button variant="outline" size="sm" onClick={() => exportUsers()}>
             Export CSV
-          </button>
-          <button
-            onClick={() => setShowImport(true)}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
-          >
+          </Button>
+          <Button size="sm" onClick={() => setShowImport(true)}>
             + Import CSV
-          </button>
+          </Button>
         </div>
       </div>
 
       {isLoading ? (
-        <div className="h-64 bg-zinc-800/30 rounded-lg animate-pulse" />
+        <div className="h-64 bg-muted/50 rounded-lg animate-pulse" />
       ) : (
         <>
           <DataTable
@@ -149,26 +144,20 @@ export function Users() {
 
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 flex items-center gap-3 shadow-xl z-50">
-          <span className="text-sm text-zinc-300">{selectedIds.size} selected</span>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-card border border-border rounded-lg px-4 py-2.5 flex items-center gap-3 shadow-xl z-50">
+          <span className="text-sm text-foreground">{selectedIds.size} selected</span>
           <button
             onClick={() => setBulkAction("activate")}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+            className="px-3 py-1.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-500/20 hover:bg-emerald-500/20"
           >
             Activate
           </button>
-          <button
-            onClick={() => setBulkAction("deactivate")}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20"
-          >
+          <Button variant="destructive" size="sm" onClick={() => setBulkAction("deactivate")}>
             Deactivate
-          </button>
-          <button
-            onClick={() => setSelectedIds(new Set())}
-            className="text-xs text-zinc-500 hover:text-zinc-300"
-          >
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
             Clear
-          </button>
+          </Button>
         </div>
       )}
 
@@ -200,12 +189,12 @@ export function Users() {
 function Pagination({ page, total, pageSize, onChange }: { page: number; total: number; pageSize: number; onChange: (p: number) => void }) {
   const totalPages = Math.ceil(total / pageSize);
   return (
-    <div className="flex items-center justify-between text-xs text-zinc-500">
+    <div className="flex items-center justify-between text-xs text-muted-foreground">
       <span>{total} total</span>
-      <div className="flex gap-1">
-        <button disabled={page <= 1} onClick={() => onChange(page - 1)} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed">Prev</button>
+      <div className="flex items-center gap-1">
+        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>Prev</Button>
         <span className="px-2 py-1">{page} / {totalPages}</span>
-        <button disabled={page >= totalPages} onClick={() => onChange(page + 1)} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed">Next</button>
+        <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onChange(page + 1)}>Next</Button>
       </div>
     </div>
   );

@@ -11,6 +11,9 @@ import {
 import { VisibilityBadge } from "../components/Badge";
 import { Modal } from "../components/Modal";
 import { SearchInput } from "../components/SearchInput";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { AdminResourcePermission } from "../types/api";
 
 export function Permissions() {
@@ -61,7 +64,7 @@ export function Permissions() {
         <select
           value={workspaceFilter}
           onChange={(e) => { setWorkspaceFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-300"
+          className="px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground"
         >
           <option value="">All workspaces</option>
           {workspaces.map((ws) => (
@@ -76,13 +79,13 @@ export function Permissions() {
       </div>
 
       {isLoading ? (
-        <div className="h-64 bg-zinc-800/30 rounded-lg animate-pulse" />
+        <div className="h-64 bg-muted/50 rounded-lg animate-pulse" />
       ) : (
         <>
           {/* Table */}
-          <div className="rounded-lg border border-zinc-800 overflow-hidden">
+          <div className="rounded-lg border border-border overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-zinc-800/50 text-zinc-500 text-xs">
+              <thead className="bg-muted/50 text-muted-foreground text-xs">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">Service</th>
                   <th className="text-left px-4 py-2 font-medium">Type</th>
@@ -90,14 +93,14 @@ export function Permissions() {
                   <th className="text-left px-4 py-2 font-medium">Owner</th>
                   <th className="text-left px-4 py-2 font-medium">Visibility</th>
                   <th
-                    className="text-left px-4 py-2 font-medium w-20 cursor-pointer select-none hover:text-zinc-300 transition-colors"
+                    className="text-left px-4 py-2 font-medium w-20 cursor-pointer select-none hover:text-foreground transition-colors"
                     onClick={() => toggleSort("shares")}
                   >
                     Shares{sortBy === "shares" ? (sortOrder === "asc" ? " \u2191" : " \u2193") : ""}
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800/50">
+              <tbody className="divide-y divide-border">
                 {(data?.items ?? []).map((p) => (
                   <PermissionRow
                     key={p.id}
@@ -109,18 +112,18 @@ export function Permissions() {
               </tbody>
             </table>
             {(data?.items ?? []).length === 0 && (
-              <div className="px-4 py-12 text-center text-sm text-zinc-500">No resources found</div>
+              <div className="px-4 py-12 text-center text-sm text-muted-foreground">No resources found</div>
             )}
           </div>
 
           {/* Pagination */}
           {data && data.total > data.page_size && (
-            <div className="flex items-center justify-between text-xs text-zinc-500">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{data.total} total</span>
               <div className="flex gap-1">
-                <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30">Prev</button>
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Prev</Button>
                 <span className="px-2 py-1">{data.page} / {Math.ceil(data.total / data.page_size)}</span>
-                <button disabled={page >= Math.ceil(data.total / data.page_size)} onClick={() => setPage(page + 1)} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30">Next</button>
+                <Button variant="outline" size="sm" disabled={page >= Math.ceil(data.total / data.page_size)} onClick={() => setPage(page + 1)}>Next</Button>
               </div>
             </div>
           )}
@@ -182,86 +185,90 @@ function PermissionRow({
     <>
       <tr
         onClick={onToggle}
-        className="hover:bg-zinc-800/40 cursor-pointer transition-colors"
+        className="hover:bg-muted/50 cursor-pointer transition-colors"
       >
-        <td className="px-4 py-2.5 font-mono text-zinc-300">{perm.service_name}</td>
-        <td className="px-4 py-2.5 font-mono text-zinc-400">{perm.resource_type}</td>
-        <td className="px-4 py-2.5 font-mono text-xs text-zinc-500">{String(perm.resource_id).slice(0, 8)}...</td>
-        <td className="px-4 py-2.5 text-zinc-400 text-xs">{perm.owner_email ?? "—"}</td>
+        <td className="px-4 py-2.5 font-mono text-foreground">{perm.service_name}</td>
+        <td className="px-4 py-2.5 font-mono text-muted-foreground">{perm.resource_type}</td>
+        <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{String(perm.resource_id).slice(0, 8)}...</td>
+        <td className="px-4 py-2.5 text-muted-foreground text-xs">{perm.owner_email ?? "—"}</td>
         <td className="px-4 py-2.5"><VisibilityBadge visibility={perm.visibility} /></td>
-        <td className="px-4 py-2.5 text-zinc-400 tabular-nums">{perm.share_count}</td>
+        <td className="px-4 py-2.5 text-muted-foreground tabular-nums">{perm.share_count}</td>
       </tr>
 
       {expanded && detail && (
         <tr>
-          <td colSpan={6} className="px-4 py-4 bg-zinc-800/20 border-t border-zinc-800/50">
+          <td colSpan={6} className="px-4 py-4 bg-muted/50 border-t border-border">
             <div className="space-y-4">
               {/* Details */}
               <dl className="grid grid-cols-3 gap-x-6 gap-y-2 text-xs">
                 <div>
-                  <dt className="text-zinc-500">Resource ID</dt>
-                  <dd className="font-mono text-zinc-300">{String(detail.resource_id)}</dd>
+                  <dt className="text-muted-foreground">Resource ID</dt>
+                  <dd className="font-mono text-foreground">{String(detail.resource_id)}</dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">Owner</dt>
-                  <dd className="text-zinc-300">{detail.owner_email ?? String(detail.owner_id)}</dd>
+                  <dt className="text-muted-foreground">Owner</dt>
+                  <dd className="text-foreground">{detail.owner_email ?? String(detail.owner_id)}</dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">Created</dt>
-                  <dd className="text-zinc-300">{new Date(detail.created_at).toLocaleString()}</dd>
+                  <dt className="text-muted-foreground">Created</dt>
+                  <dd className="text-foreground">{new Date(detail.created_at).toLocaleString()}</dd>
                 </div>
               </dl>
 
               {/* Visibility toggle */}
               <div className="flex items-center gap-3">
-                <span className="text-xs text-zinc-500">Visibility:</span>
-                <button
+                <span className="text-xs text-muted-foreground">Visibility:</span>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={(e) => { e.stopPropagation(); toggleVisibility.mutate(); }}
                   disabled={toggleVisibility.isPending}
-                  className="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
                 >
                   Switch to {detail.visibility === "workspace" ? "private" : "workspace"}
-                </button>
+                </Button>
               </div>
 
               {/* Shares */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-zinc-500 font-medium">Shares ({detail.shares.length})</span>
-                  <button
+                  <span className="text-xs text-muted-foreground font-medium">Shares ({detail.shares.length})</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={(e) => { e.stopPropagation(); setShowShare(true); }}
-                    className="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
                   >
                     + Add Share
-                  </button>
+                  </Button>
                 </div>
                 {detail.shares.length > 0 ? (
-                  <div className="rounded border border-zinc-800 divide-y divide-zinc-800/50">
+                  <div className="rounded border border-border divide-y divide-border">
                     {detail.shares.map((s) => (
                       <div key={s.id} className="flex items-center justify-between px-3 py-2 text-xs">
                         <div>
-                          <span className="capitalize text-zinc-400">{s.grantee_type}</span>{" "}
-                          <span className="font-mono text-zinc-500">{s.grantee_id}</span>
+                          <span className="capitalize text-muted-foreground">{s.grantee_type}</span>{" "}
+                          <span className="font-mono text-muted-foreground">{s.grantee_id}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className={`font-medium ${s.permission === "edit" ? "text-blue-400" : "text-zinc-400"}`}>
+                          <span className={`font-medium ${s.permission === "edit" ? "text-blue-700 dark:text-blue-400" : "text-muted-foreground"}`}>
                             {s.permission}
                           </span>
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={(e) => {
                               e.stopPropagation();
                               revoke.mutate({ granteeType: s.grantee_type, granteeId: s.grantee_id });
                             }}
-                            className="text-red-400 hover:text-red-300"
+                            className="text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
                           >
                             Revoke
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-xs text-zinc-600">No shares</div>
+                  <div className="text-xs text-muted-foreground">No shares</div>
                 )}
               </div>
             </div>
@@ -269,49 +276,52 @@ function PermissionRow({
             {/* Add share modal */}
             <Modal open={showShare} onClose={() => setShowShare(false)} title="Add Share">
               <div className="space-y-3">
-                <div>
-                  <label className="text-xs text-zinc-500">Grantee Type</label>
+                <div className="space-y-1">
+                  <Label htmlFor="share-grantee-type">Grantee Type</Label>
                   <select
+                    id="share-grantee-type"
                     value={shareForm.grantee_type}
                     onChange={(e) => setShareForm((f) => ({ ...f, grantee_type: e.target.value }))}
-                    className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-300"
+                    className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground"
                   >
                     <option value="user">User</option>
                     <option value="group">Group</option>
                   </select>
                 </div>
-                <div>
-                  <label className="text-xs text-zinc-500">Grantee ID (UUID)</label>
-                  <input
+                <div className="space-y-1">
+                  <Label htmlFor="share-grantee-id">Grantee ID (UUID)</Label>
+                  <Input
+                    id="share-grantee-id"
                     value={shareForm.grantee_id}
                     onChange={(e) => setShareForm((f) => ({ ...f, grantee_id: e.target.value }))}
                     placeholder="UUID"
-                    className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 font-mono placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                    className="font-mono"
                   />
                 </div>
-                <div>
-                  <label className="text-xs text-zinc-500">Permission</label>
+                <div className="space-y-1">
+                  <Label htmlFor="share-permission">Permission</Label>
                   <select
+                    id="share-permission"
                     value={shareForm.permission}
                     onChange={(e) => setShareForm((f) => ({ ...f, permission: e.target.value }))}
-                    className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-300"
+                    className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground"
                   >
                     <option value="view">View</option>
                     <option value="edit">Edit</option>
                   </select>
                 </div>
                 {share.isError && (
-                  <div className="text-xs text-red-400">{(share.error as Error).message}</div>
+                  <div className="text-xs text-red-700 dark:text-red-400">{(share.error as Error).message}</div>
                 )}
                 <div className="flex justify-end gap-2 pt-2">
-                  <button onClick={() => setShowShare(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
-                  <button
+                  <Button variant="ghost" size="sm" onClick={() => setShowShare(false)}>Cancel</Button>
+                  <Button
+                    size="sm"
                     onClick={() => share.mutate()}
                     disabled={!shareForm.grantee_id || share.isPending}
-                    className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
                   >
                     Share
-                  </button>
+                  </Button>
                 </div>
               </div>
             </Modal>

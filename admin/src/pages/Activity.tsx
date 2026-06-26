@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { getActivity, getAllWorkspaces } from "../api/client";
 import type { ActivityLog } from "../types/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export function Activity() {
   const [page, setPage] = useState(1);
@@ -65,11 +67,11 @@ export function Activity() {
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="text-xs text-zinc-500 block mb-1">Action</label>
+          <label className="text-xs text-muted-foreground block mb-1">Action</label>
           <select
             value={action}
             onChange={(e) => { setAction(e.target.value); setPage(1); }}
-            className="px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-zinc-300"
+            className="px-2 py-1.5 border border-border bg-background rounded text-xs text-foreground"
           >
             <option value="">All actions</option>
             {actions.map((a) => (
@@ -78,11 +80,11 @@ export function Activity() {
           </select>
         </div>
         <div>
-          <label className="text-xs text-zinc-500 block mb-1">Target Type</label>
+          <label className="text-xs text-muted-foreground block mb-1">Target Type</label>
           <select
             value={targetType}
             onChange={(e) => { setTargetType(e.target.value); setPage(1); }}
-            className="px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-zinc-300"
+            className="px-2 py-1.5 border border-border bg-background rounded text-xs text-foreground"
           >
             <option value="">All types</option>
             {targetTypes.map((t) => (
@@ -91,11 +93,11 @@ export function Activity() {
           </select>
         </div>
         <div>
-          <label className="text-xs text-zinc-500 block mb-1">Workspace</label>
+          <label className="text-xs text-muted-foreground block mb-1">Workspace</label>
           <select
             value={workspaceId}
             onChange={(e) => { setWorkspaceId(e.target.value); setPage(1); }}
-            className="px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-zinc-300"
+            className="px-2 py-1.5 border border-border bg-background rounded text-xs text-foreground"
           >
             <option value="">All workspaces</option>
             {workspaces.map((ws) => (
@@ -104,40 +106,37 @@ export function Activity() {
           </select>
         </div>
         <div>
-          <label className="text-xs text-zinc-500 block mb-1">From</label>
-          <input
+          <label className="text-xs text-muted-foreground block mb-1">From</label>
+          <Input
             type="date"
             value={fromDate}
             onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
-            className="px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-zinc-300"
+            className="w-auto text-xs"
           />
         </div>
         <div>
-          <label className="text-xs text-zinc-500 block mb-1">To</label>
-          <input
+          <label className="text-xs text-muted-foreground block mb-1">To</label>
+          <Input
             type="date"
             value={toDate}
             onChange={(e) => { setToDate(e.target.value); setPage(1); }}
-            className="px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-zinc-300"
+            className="w-auto text-xs"
           />
         </div>
         {(action || targetType || workspaceId || fromDate || toDate) && (
-          <button
-            onClick={resetFilters}
-            className="px-2 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
-          >
+          <Button variant="ghost" size="sm" onClick={resetFilters}>
             Clear filters
-          </button>
+          </Button>
         )}
       </div>
 
       {/* Table */}
       {isLoading ? (
-        <div className="h-64 bg-zinc-800/30 rounded-lg animate-pulse" />
+        <div className="h-64 bg-muted/50 rounded-lg animate-pulse" />
       ) : (
         <>
-          <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800/50">
-            <div className="grid grid-cols-[1fr_120px_100px_100px_140px] px-4 py-2 text-xs text-zinc-500 font-medium">
+          <div className="rounded-lg border border-border divide-y divide-border">
+            <div className="grid grid-cols-[1fr_120px_100px_100px_140px] px-4 py-2 text-xs text-muted-foreground font-medium">
               <span>Action</span>
               <span>Actor</span>
               <span>Target</span>
@@ -148,29 +147,31 @@ export function Activity() {
               <ActivityRow key={entry.id} entry={entry} />
             ))}
             {data?.items.length === 0 && (
-              <div className="px-4 py-8 text-center text-sm text-zinc-500">No activity found</div>
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">No activity found</div>
             )}
           </div>
 
           {data && data.total > data.page_size && (
-            <div className="flex items-center justify-between text-xs text-zinc-500">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{data.total} total</span>
-              <div className="flex gap-1">
-                <button
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={page <= 1}
                   onClick={() => setPage(page - 1)}
-                  className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   Prev
-                </button>
+                </Button>
                 <span className="px-2 py-1">{page} / {totalPages}</span>
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={page >= totalPages}
                   onClick={() => setPage(page + 1)}
-                  className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   Next
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -187,19 +188,19 @@ function ActivityRow({ entry }: { entry: ActivityLog }) {
   return (
     <div className="grid grid-cols-[1fr_120px_100px_100px_140px] px-4 py-2.5 text-sm items-center">
       <div className="flex items-center gap-2">
-        <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 shrink-0" />
-        <span className="text-zinc-300">{action}</span>
+        <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
+        <span className="text-foreground">{action}</span>
         {entry.detail &&
           Object.entries(entry.detail).map(([k, v]) => (
-            <span key={k} className="text-zinc-600 text-xs">
-              {k}: <span className="text-zinc-400">{String(v)}</span>
+            <span key={k} className="text-muted-foreground text-xs">
+              {k}: <span className="font-mono text-muted-foreground">{String(v)}</span>
             </span>
           ))}
       </div>
-      <span className="text-zinc-400 text-xs truncate">{entry.actor_name ?? entry.actor_email ?? "System"}</span>
-      <span className="text-zinc-500 text-xs">{entry.target_type}</span>
-      <span className="text-zinc-600 text-xs truncate">{entry.workspace_id?.slice(0, 8) ?? "--"}</span>
-      <span className="text-zinc-600 text-xs">{time}</span>
+      <span className="text-muted-foreground text-xs truncate">{entry.actor_name ?? entry.actor_email ?? "System"}</span>
+      <span className="text-muted-foreground text-xs">{entry.target_type}</span>
+      <span className="font-mono text-muted-foreground text-xs truncate">{entry.workspace_id?.slice(0, 8) ?? "--"}</span>
+      <span className="text-muted-foreground text-xs">{time}</span>
     </div>
   );
 }

@@ -5,6 +5,9 @@ import { getWorkspaces, createWorkspace, exportWorkspaces } from "../api/client"
 import { DataTable } from "../components/DataTable";
 import { Modal } from "../components/Modal";
 import { SearchInput } from "../components/SearchInput";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { Workspace } from "../types/api";
 
 export function Workspaces() {
@@ -48,21 +51,21 @@ export function Workspaces() {
       render: (w: Workspace) => (
         <div>
           <div className="font-medium text-sm">{w.name}</div>
-          <div className="text-xs text-zinc-500">{w.slug}</div>
+          <div className="text-xs text-muted-foreground font-mono">{w.slug}</div>
         </div>
       ),
     },
     {
       key: "members",
       header: "Members",
-      render: (w: Workspace) => <span className="text-zinc-400 tabular-nums">{w.member_count}</span>,
+      render: (w: Workspace) => <span className="text-muted-foreground tabular-nums">{w.member_count}</span>,
       className: "w-28",
     },
     {
       key: "description",
       header: "Description",
       render: (w: Workspace) => (
-        <span className="text-zinc-500 text-sm truncate block max-w-xs">
+        <span className="text-muted-foreground text-sm truncate block max-w-xs">
           {w.description || "--"}
         </span>
       ),
@@ -71,7 +74,7 @@ export function Workspaces() {
       key: "created",
       header: "Created",
       render: (w: Workspace) => (
-        <span className="text-zinc-500 text-xs">{new Date(w.created_at).toLocaleDateString()}</span>
+        <span className="text-muted-foreground text-xs">{new Date(w.created_at).toLocaleDateString()}</span>
       ),
       className: "w-28",
     },
@@ -83,23 +86,17 @@ export function Workspaces() {
         <h1 className="text-xl font-semibold">Workspaces</h1>
         <div className="flex items-center gap-3">
           <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search workspaces..." />
-          <button
-            onClick={() => exportWorkspaces()}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
-          >
+          <Button variant="outline" size="sm" onClick={() => exportWorkspaces()}>
             Export CSV
-          </button>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"
-          >
+          </Button>
+          <Button size="sm" onClick={() => setShowCreate(true)}>
             + Create Workspace
-          </button>
+          </Button>
         </div>
       </div>
 
       {isLoading ? (
-        <div className="h-64 bg-zinc-800/30 rounded-lg animate-pulse" />
+        <div className="h-64 bg-muted/50 rounded-lg animate-pulse" />
       ) : (
         <>
           <DataTable
@@ -109,12 +106,12 @@ export function Workspaces() {
             emptyMessage="No workspaces found"
           />
           {data && data.total > data.page_size && (
-            <div className="flex items-center justify-between text-xs text-zinc-500">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{data.total} total</span>
               <div className="flex gap-1">
-                <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30">Prev</button>
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Prev</Button>
                 <span className="px-2 py-1">{data.page} / {Math.ceil(data.total / data.page_size)}</span>
-                <button disabled={page >= Math.ceil(data.total / data.page_size)} onClick={() => setPage(page + 1)} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30">Next</button>
+                <Button variant="outline" size="sm" disabled={page >= Math.ceil(data.total / data.page_size)} onClick={() => setPage(page + 1)}>Next</Button>
               </div>
             </div>
           )}
@@ -123,9 +120,10 @@ export function Workspaces() {
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Workspace">
         <div className="space-y-3">
-          <div>
-            <label className="text-xs text-zinc-500">Name</label>
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="ws-name">Name</Label>
+            <Input
+              id="ws-name"
               value={form.name}
               onChange={(e) => {
                 const name = e.target.value;
@@ -136,38 +134,38 @@ export function Workspaces() {
                 }));
               }}
               placeholder="My Workspace"
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
             />
           </div>
-          <div>
-            <label className="text-xs text-zinc-500">Slug</label>
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="ws-slug">Slug</Label>
+            <Input
+              id="ws-slug"
               value={form.slug}
               onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
               placeholder="my-workspace"
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 font-mono placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+              className="font-mono"
             />
           </div>
-          <div>
-            <label className="text-xs text-zinc-500">Description (optional)</label>
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="ws-description">Description (optional)</Label>
+            <Input
+              id="ws-description"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
             />
           </div>
           {create.isError && (
-            <div className="text-xs text-red-400">{(create.error as Error).message}</div>
+            <div className="text-xs text-destructive">{(create.error as Error).message}</div>
           )}
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowCreate(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
-            <button
+            <Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button
+              size="sm"
               onClick={() => create.mutate()}
               disabled={!form.name || !form.slug || create.isPending}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
             >
               {create.isPending ? "Creating..." : "Create"}
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>
