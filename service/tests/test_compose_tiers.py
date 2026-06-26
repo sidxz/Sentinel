@@ -35,3 +35,10 @@ def test_internal_listener_waits_for_public_to_migrate():
     # public + all are the only migrator tiers; internal must start after public is
     # healthy so the schema exists before it serves authz/permissions.
     assert "sentinel" in internal.get("depends_on", {})
+
+
+def test_internal_listener_does_not_carry_session_secret():
+    internal = _services()["sentinel-internal"]
+    # Least-privilege: the session signing secret must not reach the internal
+    # container (it drops Session middleware). Nulled via an explicit override.
+    assert internal["environment"].get("SESSION_SECRET_KEY") == ""

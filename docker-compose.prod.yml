@@ -163,6 +163,8 @@ services:
     environment:
       <<: *sentinel_env
       TIER: internal
+      SESSION_SECRET_KEY: ""   # internal drops Session middleware — keep the signing secret off this container
+      CORS_ORIGINS: ""         # internal drops CORS middleware
     secrets:
       - jwt_private_key
       - jwt_public_key
