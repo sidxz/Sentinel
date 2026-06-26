@@ -177,3 +177,20 @@ def test_remove_member_204_and_audits(monkeypatch):
     )
     assert resp.status_code == 204
     assert logged["action"] == "realm_member_removed"
+
+
+def test_realm_endpoints_require_admin_auth():
+    # Router-level dependencies=[Depends(require_admin)] gates every /admin/* route,
+    # including GET reads with no per-function dependency. Build the app withOUT
+    # overriding require_admin: a request with no admin cookie must be rejected.
+    app = FastAPI()
+    app.include_router(admin_router)
+
+    async def _db():
+        yield _FakeDB()
+
+    app.dependency_overrides[get_db] = (
+        _db  # require_admin 401s on the missing cookie before db is used
+    )
+    resp = TestClient(app).get(f"/admin/realms/{uuid.uuid4()}/members")
+    assert resp.status_code == 401
