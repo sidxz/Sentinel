@@ -88,6 +88,7 @@ nav:
     - Roles (RBAC): guide/roles.md
     - Permissions (ACLs): guide/permissions.md
     - Service Apps: guide/service-apps.md
+    - Realms: guide/realms.md
     - Admin Panel: guide/admin-panel.md
   - Tutorials:
     - React + FastAPI: tutorial/react.md

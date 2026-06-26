@@ -2,6 +2,8 @@
 
 A **service app** is a registered backend service that calls Sentinel APIs. Each service app has an API key for server-to-server authentication and an optional list of allowed origins for browser frontends.
 
+A service app can optionally belong to a [realm](realms.md) — a group of apps that share sign-in and permissions under one scope. By default an app is standalone and isolated by its `service_name`.
+
 ## Creating a Service App
 
 1. Open the admin panel at `http://localhost:9004`.

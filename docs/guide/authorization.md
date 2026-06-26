@@ -79,9 +79,14 @@ flowchart LR
 
 [Groups](groups.md) are named collections of users within a workspace. They participate in Tier 3 (entity ACLs) -- sharing a resource with a group grants access to all members. Group IDs are embedded in the JWT for fast permission resolution.
 
+## Realms
+
+A [realm](realms.md) groups service apps into one shared trust boundary: members share sign-in and all three authorization tiers under one **shared scope** (the realm slug substitutes for each member's `service_name`), and can make trusted app-to-app calls with or without a user. Standalone services are unaffected.
+
 ## Related
 
 - [Workspaces](workspaces.md) -- workspace roles and member management
 - [Custom Roles](roles.md) -- RBAC actions, roles, and assignments
 - [Entity Permissions](permissions.md) -- per-resource ACLs and resolution algorithm
 - [Groups](groups.md) -- batch permission grants
+- [Realms](realms.md) -- shared-scope app groups and app-to-app (m2m) calls
