@@ -100,6 +100,8 @@ class Sentinel:
         self._roles: RoleClient | None = None
         self._authz: AuthzClient | None = None
         self._sentinel_public_key: str | None = None
+        self._effective_scope: str | None = None
+        self._realm: dict | None = None
 
     def __repr__(self) -> str:
         return f"Sentinel(base_url={self.base_url!r}, service_name={self.service_name!r})"
@@ -109,6 +111,17 @@ class Sentinel:
         """Sentinel's public key, fetched during lifespan startup."""
         return self._sentinel_public_key
 
+    @property
+    def effective_scope(self) -> str:
+        """Shared scope this service reads/writes under: the realm slug when a
+        member (discovered via ``fetch_whoami``), else the service's own name."""
+        return self._effective_scope or self.service_name
+
+    @property
+    def realm(self) -> dict | None:
+        """The realm this service belongs to (``{slug, name}``), or ``None`` if standalone."""
+        return self._realm
+
     # -- Lazy clients --------------------------------------------------------
 
     @property
@@ -117,7 +130,7 @@ class Sentinel:
         if self._permissions is None:
             self._permissions = PermissionClient(
                 base_url=self.base_url,
-                service_name=self.service_name,
+                service_name=self.effective_scope,
                 service_key=self.service_key,
                 cache_ttl=self.cache_ttl,
             )
@@ -129,7 +142,7 @@ class Sentinel:
         if self._roles is None:
             self._roles = RoleClient(
                 base_url=self.base_url,
-                service_name=self.service_name,
+                service_name=self.effective_scope,
                 service_key=self.service_key,
             )
         return self._roles
@@ -192,6 +205,37 @@ class Sentinel:
         self._sentinel_public_key = pub_key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
         return self._sentinel_public_key
 
+    async def fetch_whoami(self) -> dict | None:
+        """Self-discover the shared realm scope from Sentinel — no app-side config.
+
+        Sets ``effective_scope`` to the realm slug when this service is a realm
+        member, else leaves it as ``service_name``. Tolerant of a pre-realm Sentinel
+        (``/realm`` absent → 404) or an unreachable internal listener: returns
+        ``None`` and stays standalone, so older/partial deployments keep working.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"{self.base_url}/realm/whoami",
+                    headers={"X-Service-Key": self.service_key},
+                )
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+        except httpx.HTTPError:
+            return None
+        self._effective_scope = data.get("effective_scope")
+        self._realm = data.get("realm")
+        # Realm member: re-point any already-created permission/role clients at the
+        # shared scope. The get_auth dependency factory captures these instances by
+        # reference, so mutating .service_name in place updates that path too.
+        if self._effective_scope:
+            if self._permissions is not None:
+                self._permissions.service_name = self._effective_scope
+            if self._roles is not None:
+                self._roles.service_name = self._effective_scope
+        return data
+
     # -- Lifespan ------------------------------------------------------------
 
     @property
@@ -208,6 +252,7 @@ class Sentinel:
         async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             if self.mode == "authz":
                 await self.fetch_sentinel_public_key()
+            await self.fetch_whoami()
             if self.actions:
                 await self.roles.register_actions(self.actions)
             yield

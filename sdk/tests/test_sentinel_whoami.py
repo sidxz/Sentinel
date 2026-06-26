@@ -1,0 +1,68 @@
+"""Sentinel.whoami: self-discovers effective_scope and routes clients under it."""
+
+import httpx
+import respx
+
+from sentinel_auth import Sentinel
+
+
+def _sentinel() -> Sentinel:
+    return Sentinel(
+        base_url="https://sentinel.test",
+        service_name="docs",
+        service_key="svc-key",
+        idp_public_key="-----BEGIN PUBLIC KEY-----\nx\n-----END PUBLIC KEY-----",
+        idp_audience="my-client-id",
+    )
+
+
+@respx.mock
+async def test_member_resolves_realm_scope_and_rewires_clients():
+    respx.get("https://sentinel.test/realm/whoami").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "service_name": "docs",
+                "effective_scope": "acme-suite",
+                "realm": {"slug": "acme-suite", "name": "Acme Suite"},
+            },
+        )
+    )
+    s = _sentinel()
+    # Touch the clients BEFORE whoami so they are created with the bare name —
+    # whoami must then mutate them in place (the get_auth factory captures them).
+    assert s.permissions.service_name == "docs"
+    assert s.roles.service_name == "docs"
+
+    data = await s.fetch_whoami()
+
+    assert data["effective_scope"] == "acme-suite"
+    assert s.effective_scope == "acme-suite"
+    assert s.realm == {"slug": "acme-suite", "name": "Acme Suite"}
+    assert s.permissions.service_name == "acme-suite"
+    assert s.roles.service_name == "acme-suite"
+
+
+@respx.mock
+async def test_standalone_stays_on_service_name():
+    respx.get("https://sentinel.test/realm/whoami").mock(
+        return_value=httpx.Response(
+            200,
+            json={"service_name": "docs", "effective_scope": "docs", "realm": None},
+        )
+    )
+    s = _sentinel()
+    await s.fetch_whoami()
+    assert s.effective_scope == "docs"
+    assert s.realm is None
+    assert s.permissions.service_name == "docs"
+
+
+@respx.mock
+async def test_pre_realm_sentinel_404_degrades_to_standalone():
+    respx.get("https://sentinel.test/realm/whoami").mock(return_value=httpx.Response(404, json={"detail": "Not Found"}))
+    s = _sentinel()
+    data = await s.fetch_whoami()
+    assert data is None
+    assert s.effective_scope == "docs"  # falls back to service_name, no crash
+    assert s.realm is None
