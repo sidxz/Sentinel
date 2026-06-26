@@ -19,6 +19,7 @@ import { Workspaces } from "./pages/Workspaces";
 import { Organizations } from "./pages/Organizations";
 import { OrganizationDetail } from "./pages/OrganizationDetail";
 import { Realms } from "./pages/Realms";
+import { RealmDetail } from "./pages/RealmDetail";
 
 export default function App() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/organizations" element={<Organizations />} />
           <Route path="/organizations/:id" element={<OrganizationDetail />} />
           <Route path="/realms" element={<Realms />} />
+          <Route path="/realms/:id" element={<RealmDetail />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/system" element={<SystemHealth />} />
           <Route path="/settings" element={<Settings />} />
