@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Copy } from "lucide-react";
 
 import {
   addRealmMember,
@@ -16,6 +17,9 @@ import type { RealmMember } from "../types/api";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
 import { StatusBadge } from "../components/Badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export function RealmDetail() {
   const { id } = useParams<{ id: string }>();
@@ -119,17 +123,20 @@ export function RealmDetail() {
   };
 
   if (isLoading) {
-    return <div className="h-64 bg-zinc-800/30 rounded-lg animate-pulse" />;
+    return <div className="h-64 bg-muted/50 rounded-lg animate-pulse" />;
   }
 
   if (isError || !realm) {
     return (
       <div className="space-y-3 max-w-3xl">
-        <Link to="/realms" className="text-sm text-zinc-500 hover:text-zinc-300">
+        <Link
+          to="/realms"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
           ← Realms
         </Link>
-        <div className="border border-zinc-800 rounded-lg p-6 text-center">
-          <p className="text-sm text-zinc-300">
+        <div className="border border-border rounded-lg p-6 text-center">
+          <p className="text-sm text-foreground">
             {(error as Error)?.message ?? "Realm not found."}
           </p>
         </div>
@@ -144,39 +151,50 @@ export function RealmDetail() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <div className="flex items-center gap-2 text-sm text-zinc-500">
-        <Link to="/realms" className="hover:text-zinc-300">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link to="/realms" className="hover:text-foreground">
           Realms
         </Link>
         <span>/</span>
-        <span className="text-zinc-200">{realm.name}</span>
+        <span className="text-foreground">{realm.name}</span>
       </div>
 
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{realm.name}</h1>
-          <code className="text-xs text-zinc-500 font-mono">{realm.slug}</code>
-          <p className="mt-1 text-xs text-zinc-500">
-            m2m token TTL: {realm.m2m_ttl_s}s
+          <h1 className="text-lg font-semibold text-foreground">{realm.name}</h1>
+          <div className="flex items-center gap-1.5">
+            <code className="text-xs text-muted-foreground font-mono">
+              {realm.slug}
+            </code>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(realm.slug);
+                toast.success("Copied");
+              }}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Copy slug"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            m2m token TTL: <span className="font-mono">{realm.m2m_ttl_s}s</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge active={realm.is_active} />
-          <button
-            onClick={openEdit}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"
-          >
+          <Button size="sm" onClick={openEdit}>
             Edit
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Members */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-zinc-300">Member services</h2>
+        <h2 className="text-sm font-semibold text-foreground">Member services</h2>
         {members.length === 0 ? (
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-muted-foreground">
             No services yet — add a standalone service below. Members share this
             realm's permission scope.
           </p>
@@ -185,28 +203,30 @@ export function RealmDetail() {
             {members.map((m: RealmMember) => (
               <li
                 key={m.id}
-                className="flex items-center justify-between border border-zinc-800 rounded-md px-3 py-2"
+                className="flex items-center justify-between border border-border rounded-md px-3 py-2"
               >
                 <span className="text-sm">
-                  <span className="text-zinc-200">{m.name}</span>
-                  <code className="ml-2 text-xs text-zinc-500 font-mono">
+                  <span className="text-foreground">{m.name}</span>
+                  <code className="ml-2 text-xs text-muted-foreground font-mono">
                     {m.service_name}
                   </code>
                   {m.has_grants && (
                     <span
-                      className="ml-2 text-xs text-amber-400"
+                      className="ml-2 text-xs text-amber-700 dark:text-amber-400"
                       title="This service has its own permission grants, which are NOT visible under the realm scope."
                     >
                       ⚠ has own grants
                     </span>
                   )}
                 </span>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => removeMember.mutate(m.id)}
-                  className="text-xs text-red-400 hover:text-red-300"
+                  className="text-destructive hover:text-destructive"
                 >
                   Remove
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -214,11 +234,14 @@ export function RealmDetail() {
 
         <div className="flex items-end gap-2">
           <div className="flex-1">
-            <label className="text-xs text-zinc-500">Add a standalone service</label>
+            <Label htmlFor="realm_add_service" className="text-muted-foreground">
+              Add a standalone service
+            </Label>
             <select
+              id="realm_add_service"
               value={selectedApp}
               onChange={(e) => setSelectedApp(e.target.value)}
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+              className="mt-1 w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             >
               <option value="">Select a service…</option>
               {candidates.map((a) => (
@@ -228,53 +251,61 @@ export function RealmDetail() {
               ))}
             </select>
           </div>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => {
               if (selectedApp) addMember.mutate(selectedApp);
             }}
             disabled={!selectedApp || addMember.isPending}
-            className="px-3 py-2 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50 transition-colors"
           >
             Add
-          </button>
+          </Button>
         </div>
       </section>
 
       {/* Danger zone */}
-      <section className="space-y-2 border-t border-zinc-800 pt-4">
-        <h2 className="text-sm font-semibold text-red-400">Danger zone</h2>
-        <p className="text-sm text-zinc-500">
+      <section className="space-y-2 border border-destructive/30 bg-destructive/5 rounded-lg p-4">
+        <h2 className="text-sm font-semibold text-destructive">Danger zone</h2>
+        <p className="text-sm text-muted-foreground">
           Deleting a realm un-assigns its member services (their{" "}
           <code className="font-mono">realm_id</code> is cleared). Permissions
           written under the realm scope are NOT deleted.
         </p>
-        <button
+        <Button
+          variant="destructive"
+          size="sm"
           onClick={() => {
             setDeleteSlug("");
             setShowDelete(true);
           }}
-          className="px-3 py-1.5 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 ring-1 ring-red-500/20 transition-colors"
         >
           Delete realm
-        </button>
+        </Button>
       </section>
 
       {/* Edit modal */}
       <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Realm">
         <div className="space-y-3">
           <div>
-            <label className="text-xs text-zinc-500">Name</label>
-            <input
+            <Label htmlFor="realm_name" className="text-muted-foreground">
+              Name
+            </Label>
+            <Input
+              id="realm_name"
               value={editForm.name}
               onChange={(e) =>
                 setEditForm((f) => ({ ...f, name: e.target.value }))
               }
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+              className="mt-1"
             />
           </div>
           <div>
-            <label className="text-xs text-zinc-500">m2m token TTL (seconds)</label>
-            <input
+            <Label htmlFor="realm_ttl" className="text-muted-foreground">
+              m2m token TTL (seconds)
+            </Label>
+            <Input
+              id="realm_ttl"
               type="number"
               min={30}
               max={3600}
@@ -282,9 +313,11 @@ export function RealmDetail() {
               onChange={(e) =>
                 setEditForm((f) => ({ ...f, m2m_ttl_s: e.target.value }))
               }
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 font-mono focus:outline-none focus:ring-1 focus:ring-zinc-600"
+              className="mt-1 font-mono"
             />
-            <p className="mt-1 text-xs text-zinc-600">Between 30 and 3600.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Between 30 and 3600.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -294,34 +327,35 @@ export function RealmDetail() {
               onChange={(e) =>
                 setEditForm((f) => ({ ...f, is_active: e.target.checked }))
               }
-              className="rounded border-zinc-600 bg-zinc-800 text-zinc-300"
+              className="rounded border-border bg-background text-foreground"
             />
-            <label htmlFor="realm_is_active" className="text-xs text-zinc-400">
+            <Label htmlFor="realm_is_active" className="text-muted-foreground">
               Active
-            </label>
+            </Label>
           </div>
-          <p className="text-xs text-zinc-600">
+          <p className="text-xs text-muted-foreground">
             Slug is immutable and cannot be changed.
           </p>
           {update.isError && (
-            <div className="text-xs text-red-400">
+            <div className="text-xs text-destructive">
               {(update.error as Error).message}
             </div>
           )}
           <div className="flex justify-end gap-2 pt-2">
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setShowEdit(false)}
-              className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
+              size="sm"
               onClick={() => update.mutate()}
               disabled={update.isPending}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
             >
               Save
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>

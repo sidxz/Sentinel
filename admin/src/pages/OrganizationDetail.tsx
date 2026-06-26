@@ -7,6 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Copy } from "lucide-react";
 
 import {
   addOrgDomain,
@@ -19,6 +20,9 @@ import {
 import type { OrgDomain } from "../types/api";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { StatusBadge } from "../components/Badge";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 
 // Named export (codebase convention). Only the OrgDomain type is imported; the
 // org object is inferred from getOrganization's return, so the page's
@@ -117,7 +121,7 @@ export function OrganizationDetail() {
   });
 
   if (isLoading) {
-    return <div className="h-64 bg-zinc-800/30 rounded-lg animate-pulse" />;
+    return <div className="h-64 bg-muted/50 rounded-lg animate-pulse" />;
   }
 
   if (isError || !org) {
@@ -125,12 +129,12 @@ export function OrganizationDetail() {
       <div className="space-y-3 max-w-3xl">
         <Link
           to="/organizations"
-          className="text-sm text-zinc-500 hover:text-zinc-300"
+          className="text-sm text-muted-foreground hover:text-foreground"
         >
           ← Organizations
         </Link>
-        <div className="border border-zinc-800 rounded-lg p-6 text-center">
-          <p className="text-sm text-zinc-300">
+        <div className="border border-border rounded-lg p-6 text-center">
+          <p className="text-sm text-foreground">
             {(error as Error)?.message ?? "Organization not found."}
           </p>
         </div>
@@ -140,29 +144,44 @@ export function OrganizationDetail() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <div className="flex items-center gap-2 text-sm text-zinc-500">
-        <Link to="/organizations" className="hover:text-zinc-300">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link to="/organizations" className="hover:text-foreground">
           Organizations
         </Link>
         <span>/</span>
-        <span className="text-zinc-200">{org.name}</span>
+        <span className="text-foreground">{org.name}</span>
       </div>
 
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-lg font-semibold">
+          <h1 className="text-lg font-semibold text-foreground">
             {org.is_public && <span className="mr-1">🌐</span>}
             {org.name}
           </h1>
-          <code className="text-xs text-zinc-500 font-mono">{org.slug}</code>
+          <div className="flex items-center gap-1.5">
+            <code className="text-xs text-muted-foreground font-mono">
+              {org.slug}
+            </code>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => {
+                navigator.clipboard.writeText(org.id);
+                toast.success("Copied");
+              }}
+              aria-label="Copy organization ID"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </Button>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge active={org.enabled} />
-          <button
+          <Button
+            size="sm"
             onClick={() => toggleEnabled.mutate()}
             disabled={toggleEnabled.isPending}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50 transition-colors"
           >
             {org.enabled
               ? org.is_public
@@ -171,12 +190,12 @@ export function OrganizationDetail() {
               : org.is_public
                 ? "Enable public sign-in"
                 : "Enable"}
-          </button>
+          </Button>
         </div>
       </div>
 
       {org.is_public && (
-        <p className="text-sm text-zinc-500 border border-zinc-800 rounded-md p-3">
+        <p className="text-sm text-muted-foreground border border-border rounded-md p-3">
           This is the public catch-all organization for users whose email domain
           is not claimed by any other org. Its <b>Enabled</b> state is the global
           public-sign-in switch. It has no domains and cannot be deleted.
@@ -186,9 +205,9 @@ export function OrganizationDetail() {
       {/* Domains (real orgs only) */}
       {!org.is_public && (
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-zinc-300">Email domains</h2>
+          <h2 className="text-sm font-semibold text-foreground">Email domains</h2>
           {org.domains.length === 0 ? (
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted-foreground">
               No domains yet — users from this org can't be resolved until you add
               one.
             </p>
@@ -197,22 +216,24 @@ export function OrganizationDetail() {
               {org.domains.map((d: OrgDomain) => (
                 <li
                   key={d.id}
-                  className="flex items-center justify-between border border-zinc-800 rounded-md px-3 py-2"
+                  className="flex items-center justify-between border border-border rounded-md px-3 py-2"
                 >
                   <span className="text-sm">
-                    <code className="font-mono text-zinc-200">{d.domain}</code>
+                    <code className="font-mono text-foreground">{d.domain}</code>
                     {d.include_subdomains && (
-                      <span className="ml-2 text-xs text-emerald-400">
+                      <span className="ml-2 text-xs text-emerald-700 dark:text-emerald-400">
                         +subdomains
                       </span>
                     )}
                   </span>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => removeDomain.mutate(d.id)}
-                    className="text-xs text-red-400 hover:text-red-300"
+                    className="text-destructive hover:text-destructive"
                   >
                     Remove
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -220,8 +241,11 @@ export function OrganizationDetail() {
 
           <div className="flex items-end gap-2">
             <div className="flex-1">
-              <label className="text-xs text-zinc-500">Add domain</label>
-              <input
+              <Label htmlFor="add-domain" className="text-xs text-muted-foreground">
+                Add domain
+              </Label>
+              <Input
+                id="add-domain"
                 value={newDomain}
                 onChange={(e) => setNewDomain(e.target.value)}
                 onKeyDown={(e) => {
@@ -229,10 +253,10 @@ export function OrganizationDetail() {
                     addDomain.mutate();
                 }}
                 placeholder="tamu.edu"
-                className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                className="mt-1"
               />
             </div>
-            <label className="flex items-center gap-1.5 text-xs text-zinc-400 pb-2">
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground pb-2">
               <input
                 type="checkbox"
                 checked={includeSub}
@@ -240,58 +264,63 @@ export function OrganizationDetail() {
               />
               include subdomains
             </label>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => addDomain.mutate()}
               disabled={!newDomain.trim() || addDomain.isPending}
-              className="px-3 py-2 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50 transition-colors"
             >
               Add
-            </button>
+            </Button>
           </div>
         </section>
       )}
 
       {/* Users in org */}
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-zinc-300">
+        <h2 className="text-sm font-semibold text-foreground">
           Users in this organization ({org.user_count})
         </h2>
         {users.length === 0 ? (
-          <p className="text-sm text-zinc-500">No users.</p>
+          <p className="text-sm text-muted-foreground">No users.</p>
         ) : (
           <>
-            <ul className="divide-y divide-zinc-800/50 border border-zinc-800 rounded-md">
+            <ul className="divide-y divide-border border border-border rounded-md">
               {users.map((u) => (
                 <li
                   key={u.id}
                   className="px-3 py-2 flex items-center justify-between"
                 >
-                  <span className="text-sm text-zinc-200">{u.email}</span>
-                  <span className="text-xs text-zinc-500">{u.name}</span>
+                  <span className="text-sm font-mono text-foreground">
+                    {u.email}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{u.name}</span>
                 </li>
               ))}
             </ul>
             {usersData && usersData.total > usersData.page_size && (
-              <div className="flex items-center justify-between text-xs text-zinc-500 pt-1">
+              <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
                 <span>{usersData.total} total</span>
                 <div className="flex items-center gap-1">
-                  <button
+                  <Button
+                    variant="outline"
+                    size="xs"
                     disabled={usersPageClamped <= 1}
                     onClick={() => setUsersPage(usersPageClamped - 1)}
-                    className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     Prev
-                  </button>
+                  </Button>
                   <span className="px-2 py-1">
                     {usersPageClamped} / {usersLastPage}
                   </span>
-                  <button
+                  <Button
+                    variant="outline"
+                    size="xs"
                     disabled={usersPageClamped >= usersLastPage}
                     onClick={() => setUsersPage(usersPageClamped + 1)}
-                    className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     Next
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -301,23 +330,24 @@ export function OrganizationDetail() {
 
       {/* Danger zone (real orgs only) */}
       {!org.is_public && (
-        <section className="space-y-2 border-t border-zinc-800 pt-4">
-          <h2 className="text-sm font-semibold text-red-400">Danger zone</h2>
-          <p className="text-sm text-zinc-500">
+        <section className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+          <h2 className="text-sm font-semibold text-destructive">Danger zone</h2>
+          <p className="text-sm text-muted-foreground">
             Deleting an org un-assigns its users (they fall back to the public org
             on next sign-in). Deletion is blocked while the org is in <b>any</b>{" "}
             workspace's allowed-organizations list — remove it from those
             workspaces' access settings first.
           </p>
-          <button
+          <Button
+            variant="destructive"
+            size="sm"
             onClick={() => {
               setDeleteSlug("");
               setShowDelete(true);
             }}
-            className="px-3 py-1.5 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 ring-1 ring-red-500/20 transition-colors"
           >
             Delete organization
-          </button>
+          </Button>
         </section>
       )}
 

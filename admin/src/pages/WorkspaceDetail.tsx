@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { Copy } from "lucide-react";
 import {
   addGroupMember,
   addRoleActions,
@@ -34,9 +35,15 @@ import {
 } from "../api/client";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 const TABS = ["Members", "Groups", "Roles", "Access"] as const;
 type Tab = (typeof TABS)[number];
+
+const selectClass =
+  "rounded border border-border bg-background px-2 py-1 text-xs text-foreground";
 
 export function WorkspaceDetail() {
   const { id } = useParams<{ id: string }>();
@@ -81,57 +88,68 @@ export function WorkspaceDetail() {
     setShowEdit(true);
   };
 
-  if (!workspace) return <div className="animate-pulse h-64 bg-zinc-800/30 rounded-lg" />;
+  if (!workspace) return <div className="animate-pulse h-64 bg-muted/50 rounded-lg" />;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2 text-sm text-zinc-500">
-        <Link to="/workspaces" className="hover:text-zinc-300">Workspaces</Link>
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link to="/workspaces" className="hover:text-foreground">Workspaces</Link>
         <span>/</span>
-        <span className="text-zinc-200">{workspace.name}</span>
+        <span className="text-foreground">{workspace.name}</span>
       </div>
 
       {/* Header */}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
+      <div className="rounded-lg border border-border bg-card p-5">
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-lg font-semibold">{workspace.name}</h2>
-            <div className="text-sm text-zinc-400 mt-0.5">{workspace.slug}</div>
+            <div className="text-sm text-muted-foreground mt-0.5 flex items-center gap-1.5">
+              <span className="font-mono">{workspace.slug}</span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => {
+                  navigator.clipboard.writeText(workspace.slug);
+                  toast.success("Copied");
+                }}
+                aria-label="Copy slug"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </Button>
+            </div>
             {workspace.description && (
-              <div className="text-sm text-zinc-500 mt-2">{workspace.description}</div>
+              <div className="text-sm text-muted-foreground mt-2">{workspace.description}</div>
             )}
-            <div className="text-xs text-zinc-500 mt-2">
+            <div className="text-xs text-muted-foreground mt-2">
               Created {new Date(workspace.created_at).toLocaleDateString()}
               {" · "}{workspace.member_count} members · {workspace.group_count} groups
             </div>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={openEdit}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
-            >
+            <Button variant="outline" size="sm" onClick={openEdit}>
               Edit
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={() => { setShowDelete(true); setDeleteSlug(""); }}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 ring-1 ring-red-500/20 transition-colors"
             >
               Delete
-            </button>
+            </Button>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-zinc-800">
+      <div className="flex gap-1 border-b border-border">
         {TABS.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
               tab === t
-                ? "border-zinc-300 text-zinc-100"
-                : "border-transparent text-zinc-500 hover:text-zinc-300"
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             {t}
@@ -147,31 +165,31 @@ export function WorkspaceDetail() {
       {/* Edit modal */}
       <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Workspace">
         <div className="space-y-3">
-          <div>
-            <label className="text-xs text-zinc-500">Name</label>
-            <input
+          <div className="space-y-1">
+            <Label htmlFor="ws-edit-name">Name</Label>
+            <Input
+              id="ws-edit-name"
               value={editForm.name}
               onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
             />
           </div>
-          <div>
-            <label className="text-xs text-zinc-500">Description</label>
-            <input
+          <div className="space-y-1">
+            <Label htmlFor="ws-edit-description">Description</Label>
+            <Input
+              id="ws-edit-description"
               value={editForm.description}
               onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
-              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowEdit(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
-            <button
+            <Button variant="ghost" size="sm" onClick={() => setShowEdit(false)}>Cancel</Button>
+            <Button
+              size="sm"
               onClick={() => update.mutate()}
               disabled={update.isPending}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
             >
               Save
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>
@@ -225,81 +243,79 @@ function MembersTab({ workspaceId }: { workspaceId: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceId] }),
   });
 
-  if (isLoading) return <div className="h-32 bg-zinc-800/30 rounded-lg animate-pulse" />;
+  if (isLoading) return <div className="h-32 bg-muted/50 rounded-lg animate-pulse" />;
 
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <button
-          onClick={() => setShowInvite(true)}
-          className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
-        >
+        <Button variant="outline" size="sm" onClick={() => setShowInvite(true)}>
           + Invite Member
-        </button>
+        </Button>
       </div>
 
-      <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800/50">
+      <div className="rounded-lg border border-border divide-y divide-border">
         {members.map((m) => (
           <div key={m.user_id} className="flex items-center gap-3 px-4 py-3">
-            <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-medium text-zinc-300 shrink-0">
+            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground shrink-0">
               {m.name.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
               <Link to={`/users/${m.user_id}`} className="text-sm font-medium hover:underline">{m.name}</Link>
-              <div className="text-xs text-zinc-500">{m.email}</div>
+              <div className="text-xs text-muted-foreground">{m.email}</div>
             </div>
             <select
               value={m.role}
               onChange={(e) => changeRole.mutate({ userId: m.user_id, role: e.target.value })}
-              className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300"
+              className={selectClass}
             >
               {["owner", "admin", "editor", "viewer"].map((r) => (
                 <option key={r} value={r}>{r}</option>
               ))}
             </select>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => remove.mutate(m.user_id)}
-              className="text-xs text-red-400 hover:text-red-300"
+              className="text-destructive hover:text-destructive"
             >
               Remove
-            </button>
+            </Button>
           </div>
         ))}
         {members.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-500">No members</div>
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">No members</div>
         )}
       </div>
 
       <Modal open={showInvite} onClose={() => setShowInvite(false)} title="Invite Member">
         <div className="space-y-3">
-          <input
+          <Input
             type="email"
             value={inviteEmail}
             onChange={(e) => setInviteEmail(e.target.value)}
             placeholder="user@example.com"
-            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
           />
           <select
             value={inviteRole}
             onChange={(e) => setInviteRole(e.target.value)}
-            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-300"
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
           >
             {["viewer", "editor", "admin", "owner"].map((r) => (
               <option key={r} value={r}>{r}</option>
             ))}
           </select>
           {invite.isError && (
-            <div className="text-xs text-red-400">{(invite.error as Error).message}</div>
+            <div className="text-xs text-destructive">{(invite.error as Error).message}</div>
           )}
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowInvite(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
-            <button
+            <Button variant="ghost" size="sm" onClick={() => setShowInvite(false)}>Cancel</Button>
+            <Button
+              size="sm"
               onClick={() => invite.mutate()}
               disabled={!inviteEmail || invite.isPending}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
             >
               Invite
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>
@@ -370,61 +386,65 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["group-members", expandedGroup] }),
   });
 
-  if (isLoading) return <div className="h-32 bg-zinc-800/30 rounded-lg animate-pulse" />;
+  if (isLoading) return <div className="h-32 bg-muted/50 rounded-lg animate-pulse" />;
 
   const selectedMember = members.find((m) => m.email === addMemberEmail);
 
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => { setShowCreate(true); setForm({ name: "", description: "" }); }}
-          className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
         >
           + Create Group
-        </button>
+        </Button>
       </div>
 
-      <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800/50">
+      <div className="rounded-lg border border-border divide-y divide-border">
         {groups.map((g) => (
           <div key={g.id}>
             <div
-              className="flex items-center justify-between px-4 py-3 hover:bg-zinc-800/40 cursor-pointer transition-colors"
+              className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors"
               onClick={() => setExpandedGroup(expandedGroup === g.id ? null : g.id)}
             >
               <div>
                 <div className="text-sm font-medium">{g.name}</div>
-                {g.description && <div className="text-xs text-zinc-500 mt-0.5">{g.description}</div>}
+                {g.description && <div className="text-xs text-muted-foreground mt-0.5">{g.description}</div>}
               </div>
               <div className="flex items-center gap-2">
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={(e) => {
                     e.stopPropagation();
                     setEditingGroup(g.id);
                     setForm({ name: g.name, description: g.description ?? "" });
                   }}
-                  className="text-xs text-zinc-500 hover:text-zinc-300"
                 >
                   Edit
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={(e) => { e.stopPropagation(); del.mutate(g.id); }}
-                  className="text-xs text-red-400 hover:text-red-300"
+                  className="text-destructive hover:text-destructive"
                 >
                   Delete
-                </button>
-                <span className="text-xs text-zinc-600">{expandedGroup === g.id ? "▲" : "▼"}</span>
+                </Button>
+                <span className="text-xs text-muted-foreground">{expandedGroup === g.id ? "▲" : "▼"}</span>
               </div>
             </div>
 
             {/* Expanded group members */}
             {expandedGroup === g.id && (
-              <div className="px-4 pb-3 space-y-2 bg-zinc-800/20">
+              <div className="px-4 pb-3 space-y-2 bg-muted/50">
                 <div className="flex items-center gap-2 pt-2">
                   <select
                     value={addMemberEmail}
                     onChange={(e) => setAddMemberEmail(e.target.value)}
-                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-300"
+                    className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground"
                   >
                     <option value="">Select member to add...</option>
                     {members
@@ -435,33 +455,35 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
                         </option>
                       ))}
                   </select>
-                  <button
+                  <Button
+                    size="sm"
                     onClick={() => {
                       if (selectedMember) addMember.mutate(selectedMember.user_id);
                     }}
                     disabled={!selectedMember || addMember.isPending}
-                    className="px-2 py-1.5 rounded text-xs font-medium bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50"
                   >
                     Add
-                  </button>
+                  </Button>
                 </div>
-                <div className="divide-y divide-zinc-800/50">
+                <div className="divide-y divide-border">
                   {groupMembers.map((gm) => (
                     <div key={gm.user_id} className="flex items-center justify-between py-2">
                       <div className="text-sm">
-                        <span className="text-zinc-300">{gm.name}</span>
-                        <span className="text-zinc-500 ml-2 text-xs">{gm.email}</span>
+                        <span className="text-foreground">{gm.name}</span>
+                        <span className="text-muted-foreground ml-2 text-xs">{gm.email}</span>
                       </div>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => removeMemberMut.mutate(gm.user_id)}
-                        className="text-xs text-red-400 hover:text-red-300"
+                        className="text-destructive hover:text-destructive"
                       >
                         Remove
-                      </button>
+                      </Button>
                     </div>
                   ))}
                   {groupMembers.length === 0 && (
-                    <div className="py-2 text-xs text-zinc-500">No members in this group</div>
+                    <div className="py-2 text-xs text-muted-foreground">No members in this group</div>
                   )}
                 </div>
               </div>
@@ -469,37 +491,35 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
           </div>
         ))}
         {groups.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-500">No groups</div>
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">No groups</div>
         )}
       </div>
 
       {/* Create group modal */}
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Group">
         <div className="space-y-3">
-          <input
+          <Input
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             placeholder="Group name"
-            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
           />
-          <input
+          <Input
             value={form.description}
             onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             placeholder="Description (optional)"
-            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
           />
           {create.isError && (
-            <div className="text-xs text-red-400">{(create.error as Error).message}</div>
+            <div className="text-xs text-destructive">{(create.error as Error).message}</div>
           )}
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowCreate(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
-            <button
+            <Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button
+              size="sm"
               onClick={() => create.mutate()}
               disabled={!form.name || create.isPending}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
             >
               Create
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>
@@ -507,26 +527,24 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
       {/* Edit group modal */}
       <Modal open={!!editingGroup} onClose={() => setEditingGroup(null)} title="Edit Group">
         <div className="space-y-3">
-          <input
+          <Input
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
           />
-          <input
+          <Input
             value={form.description}
             onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             placeholder="Description"
-            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
           />
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setEditingGroup(null)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
-            <button
+            <Button variant="ghost" size="sm" onClick={() => setEditingGroup(null)}>Cancel</Button>
+            <Button
+              size="sm"
               onClick={() => edit.mutate()}
               disabled={edit.isPending}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
             >
               Save
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>
@@ -630,7 +648,7 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
     },
   });
 
-  if (isLoading) return <div className="h-32 bg-zinc-800/30 rounded-lg animate-pulse" />;
+  if (isLoading) return <div className="h-32 bg-muted/50 rounded-lg animate-pulse" />;
 
   const availableActions = allActions.filter(
     (a) => !roleActions.some((ra) => ra.id === a.id),
@@ -640,60 +658,64 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => { setShowCreate(true); setForm({ name: "", description: "" }); }}
-          className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
         >
           + Create Role
-        </button>
+        </Button>
       </div>
 
-      <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800/50">
+      <div className="rounded-lg border border-border divide-y divide-border">
         {roles.map((r) => (
           <div key={r.id}>
             <div
-              className="flex items-center justify-between px-4 py-3 hover:bg-zinc-800/40 cursor-pointer transition-colors"
+              className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors"
               onClick={() => setExpandedRole(expandedRole === r.id ? null : r.id)}
             >
               <div>
-                <div className="text-sm font-medium">{r.name}</div>
-                {r.description && <div className="text-xs text-zinc-500 mt-0.5">{r.description}</div>}
-                <div className="text-xs text-zinc-600 mt-0.5">
+                <div className="text-sm font-medium font-mono">{r.name}</div>
+                {r.description && <div className="text-xs text-muted-foreground mt-0.5">{r.description}</div>}
+                <div className="text-xs text-muted-foreground mt-0.5">
                   {r.action_count} actions · {r.member_count} members
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={(e) => {
                     e.stopPropagation();
                     setEditingRole(r.id);
                     setForm({ name: r.name, description: r.description ?? "" });
                   }}
-                  className="text-xs text-zinc-500 hover:text-zinc-300"
                 >
                   Edit
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={(e) => { e.stopPropagation(); del.mutate(r.id); }}
-                  className="text-xs text-red-400 hover:text-red-300"
+                  className="text-destructive hover:text-destructive"
                 >
                   Delete
-                </button>
-                <span className="text-xs text-zinc-600">{expandedRole === r.id ? "▲" : "▼"}</span>
+                </Button>
+                <span className="text-xs text-muted-foreground">{expandedRole === r.id ? "▲" : "▼"}</span>
               </div>
             </div>
 
             {/* Expanded role detail */}
             {expandedRole === r.id && (
-              <div className="px-4 pb-3 space-y-4 bg-zinc-800/20">
+              <div className="px-4 pb-3 space-y-4 bg-muted/50">
                 {/* Actions section */}
                 <div>
-                  <div className="text-xs font-medium text-zinc-400 pt-2 pb-1">Actions</div>
+                  <div className="text-xs font-medium text-muted-foreground pt-2 pb-1">Actions</div>
                   <div className="flex items-center gap-2">
                     <select
                       value={selectedActionId}
                       onChange={(e) => setSelectedActionId(e.target.value)}
-                      className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-300"
+                      className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground"
                     >
                       <option value="">Select action to add...</option>
                       {availableActions.map((a) => (
@@ -702,43 +724,45 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
                         </option>
                       ))}
                     </select>
-                    <button
+                    <Button
+                      size="sm"
                       onClick={() => { if (selectedActionId) addAction.mutate(selectedActionId); }}
                       disabled={!selectedActionId || addAction.isPending}
-                      className="px-2 py-1.5 rounded text-xs font-medium bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50"
                     >
                       Add
-                    </button>
+                    </Button>
                   </div>
-                  <div className="divide-y divide-zinc-800/50 mt-1">
+                  <div className="divide-y divide-border mt-1">
                     {roleActions.map((a) => (
                       <div key={a.id} className="flex items-center justify-between py-2">
                         <div className="text-sm">
-                          <span className="text-zinc-300">{a.service_name}:{a.action}</span>
-                          {a.description && <span className="text-zinc-500 ml-2 text-xs">{a.description}</span>}
+                          <span className="text-foreground font-mono">{a.service_name}:{a.action}</span>
+                          {a.description && <span className="text-muted-foreground ml-2 text-xs">{a.description}</span>}
                         </div>
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => removeAction.mutate(a.id)}
-                          className="text-xs text-red-400 hover:text-red-300"
+                          className="text-destructive hover:text-destructive"
                         >
                           Remove
-                        </button>
+                        </Button>
                       </div>
                     ))}
                     {roleActions.length === 0 && (
-                      <div className="py-2 text-xs text-zinc-500">No actions assigned</div>
+                      <div className="py-2 text-xs text-muted-foreground">No actions assigned</div>
                     )}
                   </div>
                 </div>
 
                 {/* Members section */}
                 <div>
-                  <div className="text-xs font-medium text-zinc-400 pb-1">Members</div>
+                  <div className="text-xs font-medium text-muted-foreground pb-1">Members</div>
                   <div className="flex items-center gap-2">
                     <select
                       value={addMemberEmail}
                       onChange={(e) => setAddMemberEmail(e.target.value)}
-                      className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-300"
+                      className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground"
                     >
                       <option value="">Select member to add...</option>
                       {members
@@ -749,31 +773,33 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
                           </option>
                         ))}
                     </select>
-                    <button
+                    <Button
+                      size="sm"
                       onClick={() => { if (selectedMember) addMember.mutate(selectedMember.user_id); }}
                       disabled={!selectedMember || addMember.isPending}
-                      className="px-2 py-1.5 rounded text-xs font-medium bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50"
                     >
                       Add
-                    </button>
+                    </Button>
                   </div>
-                  <div className="divide-y divide-zinc-800/50 mt-1">
+                  <div className="divide-y divide-border mt-1">
                     {roleMembers.map((rm) => (
                       <div key={rm.user_id} className="flex items-center justify-between py-2">
                         <div className="text-sm">
-                          <span className="text-zinc-300">{rm.name}</span>
-                          <span className="text-zinc-500 ml-2 text-xs">{rm.email}</span>
+                          <span className="text-foreground">{rm.name}</span>
+                          <span className="text-muted-foreground ml-2 text-xs">{rm.email}</span>
                         </div>
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => removeMemberMut.mutate(rm.user_id)}
-                          className="text-xs text-red-400 hover:text-red-300"
+                          className="text-destructive hover:text-destructive"
                         >
                           Remove
-                        </button>
+                        </Button>
                       </div>
                     ))}
                     {roleMembers.length === 0 && (
-                      <div className="py-2 text-xs text-zinc-500">No members in this role</div>
+                      <div className="py-2 text-xs text-muted-foreground">No members in this role</div>
                     )}
                   </div>
                 </div>
@@ -782,37 +808,35 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
           </div>
         ))}
         {roles.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-500">No roles</div>
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">No roles</div>
         )}
       </div>
 
       {/* Create role modal */}
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Role">
         <div className="space-y-3">
-          <input
+          <Input
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             placeholder="Role name"
-            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
           />
-          <input
+          <Input
             value={form.description}
             onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             placeholder="Description (optional)"
-            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
           />
           {create.isError && (
-            <div className="text-xs text-red-400">{(create.error as Error).message}</div>
+            <div className="text-xs text-destructive">{(create.error as Error).message}</div>
           )}
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowCreate(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
-            <button
+            <Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button
+              size="sm"
               onClick={() => create.mutate()}
               disabled={!form.name || create.isPending}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
             >
               Create
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>
@@ -820,26 +844,24 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
       {/* Edit role modal */}
       <Modal open={!!editingRole} onClose={() => setEditingRole(null)} title="Edit Role">
         <div className="space-y-3">
-          <input
+          <Input
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
           />
-          <input
+          <Input
             value={form.description}
             onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             placeholder="Description"
-            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
           />
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setEditingRole(null)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
-            <button
+            <Button variant="ghost" size="sm" onClick={() => setEditingRole(null)}>Cancel</Button>
+            <Button
+              size="sm"
               onClick={() => edit.mutate()}
               disabled={edit.isPending}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
             >
               Save
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>
@@ -856,7 +878,7 @@ function AccessTab({ workspaceId }: { workspaceId: string }) {
     queryFn: () => getWorkspaceAllowedOrgs(workspaceId),
   });
   if (isLoading || !allowed) {
-    return <div className="h-32 bg-zinc-800/30 rounded-lg animate-pulse" />;
+    return <div className="h-32 bg-muted/50 rounded-lg animate-pulse" />;
   }
   // Seed the editor once from the fetched allow-list, keyed on workspaceId (not the
   // data). Keying on the data would remount the inner component on any background
@@ -916,10 +938,10 @@ function AccessTabInner({
   return (
     <div className="space-y-4 max-w-xl">
       <div>
-        <h3 className="text-sm font-semibold text-zinc-300">
+        <h3 className="text-sm font-semibold text-foreground">
           Organization access
         </h3>
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-muted-foreground">
           Restrict which organizations' users may be invited to this workspace.
         </p>
       </div>
@@ -933,14 +955,14 @@ function AccessTabInner({
         <span className="font-medium">Restrict to specific organizations</span>
       </label>
       {!restrict && (
-        <p className="text-xs text-zinc-500 -mt-2">
+        <p className="text-xs text-muted-foreground -mt-2">
           Open — members from any organization may be invited.
         </p>
       )}
 
       {restrict && (
         <>
-          <ul className="space-y-1 border border-zinc-800 rounded-md p-2">
+          <ul className="space-y-1 border border-border rounded-md p-2">
             {orgs.map((o) => (
               <li key={o.id}>
                 <label className="flex items-center gap-2 text-sm px-2 py-1">
@@ -956,7 +978,7 @@ function AccessTabInner({
             ))}
           </ul>
           {selected.size === 0 && (
-            <p className="text-xs text-amber-400 -mt-2">
+            <p className="text-xs text-amber-700 dark:text-amber-400 -mt-2">
               Select at least one organization, or turn off the restriction —
               saving with none selected leaves the workspace open to all.
             </p>
@@ -964,13 +986,13 @@ function AccessTabInner({
         </>
       )}
 
-      <button
+      <Button
+        size="sm"
         onClick={() => save.mutate()}
         disabled={save.isPending || (restrict && selected.size === 0)}
-        className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50 transition-colors"
       >
         {save.isPending ? "Saving..." : "Save"}
-      </button>
+      </Button>
     </div>
   );
 }
