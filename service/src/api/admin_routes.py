@@ -67,12 +67,18 @@ from src.schemas.role import (
     RoleUpdateRequest,
     ServiceActionResponse,
 )
+from src.schemas.realm import (
+    RealmCreateRequest,
+    RealmResponse,
+    RealmUpdateRequest,
+)
 from src.services import (
     admin_service,
     activity_service,
     workspace_service,
     group_service,
     permission_service,
+    realm_service,
     role_service,
     service_app_service,
 )
@@ -1606,3 +1612,88 @@ async def export_workspaces(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=workspaces.csv"},
     )
+
+
+# ── Realms ────────────────────────────────────────────────────────────
+
+
+@router.get("/realms", response_model=list[RealmResponse])
+async def list_realms(db: AsyncSession = Depends(get_db)):
+    return await realm_service.list_realms(db)
+
+
+@router.post("/realms", response_model=RealmResponse, status_code=201)
+async def create_realm(
+    body: RealmCreateRequest,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    actor_id = uuid.UUID(admin["sub"])
+    realm = await realm_service.create_realm(
+        db,
+        name=body.name,
+        slug=body.slug,
+        m2m_ttl_s=body.m2m_ttl_s,
+        created_by=actor_id,
+    )
+    await activity_service.log_activity(
+        db,
+        action="realm_created",
+        target_type="realm",
+        target_id=realm.id,
+        actor_id=actor_id,
+        detail={"name": realm.name, "slug": realm.slug},
+    )
+    await db.commit()
+    return realm
+
+
+@router.get("/realms/{realm_id}", response_model=RealmResponse)
+async def get_realm_detail(realm_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    realm = await realm_service.get_realm(db, realm_id)
+    if realm is None:
+        raise HTTPException(status_code=404, detail="Realm not found")
+    return realm
+
+
+@router.patch("/realms/{realm_id}", response_model=RealmResponse)
+async def update_realm(
+    realm_id: uuid.UUID,
+    body: RealmUpdateRequest,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    realm = await realm_service.update_realm(
+        db, realm_id, name=body.name, m2m_ttl_s=body.m2m_ttl_s, is_active=body.is_active
+    )
+    if realm is None:
+        raise HTTPException(status_code=404, detail="Realm not found")
+    await activity_service.log_activity(
+        db,
+        action="realm_updated",
+        target_type="realm",
+        target_id=realm_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={"name": realm.name},
+    )
+    await db.commit()
+    return realm
+
+
+@router.delete("/realms/{realm_id}", status_code=204)
+async def delete_realm(
+    realm_id: uuid.UUID,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    deleted = await realm_service.delete_realm(db, realm_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Realm not found")
+    await activity_service.log_activity(
+        db,
+        action="realm_deleted",
+        target_type="realm",
+        target_id=realm_id,
+        actor_id=uuid.UUID(admin["sub"]),
+    )
+    await db.commit()
