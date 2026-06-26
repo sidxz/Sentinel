@@ -217,3 +217,9 @@ def test_committed_m2m_claims_match_current_minter():
     assert sorted(committed.keys()) == sorted(fresh.keys())
     assert committed["aud"] == fresh["aud"] == "sentinel:m2m"
     assert committed["type"] == fresh["type"] == "m2m"
+    # Value-shape too, not just claim names: a drift that retypes a claim the JS
+    # vector relies on (e.g. actions list -> CSV string) without renaming it would
+    # otherwise leave the committed fixtures silently stale.
+    assert fresh["actions"] == ["*"] and isinstance(fresh["actions"], list)
+    assert fresh["aud_target"] is None
+    assert isinstance(fresh["caller"], str) and isinstance(fresh["svc"], str)
