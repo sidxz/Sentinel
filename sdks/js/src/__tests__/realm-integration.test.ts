@@ -5,7 +5,6 @@
 // createRemoteJWKSet with one that returns createLocalJWKSet over the fixture JWKS.
 // jwtVerify and all RS256 crypto are fully real and un-mocked.
 import { describe, it, expect, vi } from 'vitest'
-import { createLocalJWKSet } from 'jose'
 import fixturesRaw from '../../../../service/tests/integration/fixtures/fixtures.json'
 
 // ponytail: partial mock — only createRemoteJWKSet is stubbed; jwtVerify stays real
@@ -60,7 +59,7 @@ describe('cross-SDK m2m (real jose)', () => {
         jwksUrl: JWKS_URL,
         effectiveScope: 'acme-suite',
       }),
-    ).rejects.toThrow()
+    ).rejects.toThrow(/exp/i)
   })
 
   it('rejects a real authz token (wrong audience) through the m2m verifier', async () => {
@@ -69,7 +68,7 @@ describe('cross-SDK m2m (real jose)', () => {
         jwksUrl: JWKS_URL,
         effectiveScope: 'acme-suite',
       }),
-    ).rejects.toThrow()
+    ).rejects.toThrow(/aud/i)
   })
 
   it('rejects a token targeted at a different service', async () => {
