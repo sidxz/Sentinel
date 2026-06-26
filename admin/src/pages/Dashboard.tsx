@@ -34,12 +34,12 @@ export function Dashboard() {
           <Link
             key={c.label}
             to={c.href}
-            className="rounded-lg border border-zinc-800 bg-zinc-900 p-5 hover:border-zinc-700 transition-colors"
+            className="rounded-lg border border-border bg-card p-5 transition-colors hover:bg-muted/50"
           >
-            <div className={`text-2xl font-bold tabular-nums ${c.dim ? "text-zinc-500" : ""}`}>
+            <div className={`text-2xl font-bold tabular-nums ${c.dim ? "text-muted-foreground" : ""}`}>
               {c.value}
             </div>
-            <div className="text-xs text-zinc-500 mt-1">{c.label}</div>
+            <div className="text-xs text-muted-foreground mt-1">{c.label}</div>
           </Link>
         ))}
       </div>
@@ -48,29 +48,29 @@ export function Dashboard() {
         {/* Top workspaces */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium text-zinc-400">Top Workspaces</h2>
-            <Link to="/workspaces" className="text-xs text-zinc-500 hover:text-zinc-300">
+            <h2 className="text-sm font-medium text-muted-foreground">Top Workspaces</h2>
+            <Link to="/workspaces" className="text-xs text-muted-foreground hover:text-foreground">
               View all &rarr;
             </Link>
           </div>
-          <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800/50">
+          <div className="rounded-lg border border-border divide-y divide-border">
             {data.top_workspaces.map((w) => (
               <Link
                 key={w.id}
                 to={`/workspaces/${w.id}`}
-                className="flex items-center justify-between px-4 py-3 hover:bg-zinc-800/40 transition-colors"
+                className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
               >
                 <div>
                   <div className="text-sm font-medium">{w.name}</div>
-                  <div className="text-xs text-zinc-500">{w.slug}</div>
+                  <div className="text-xs text-muted-foreground font-mono">{w.slug}</div>
                 </div>
-                <div className="text-xs text-zinc-500 tabular-nums">
+                <div className="text-xs text-muted-foreground tabular-nums">
                   {w.member_count} member{w.member_count !== 1 ? "s" : ""}
                 </div>
               </Link>
             ))}
             {data.top_workspaces.length === 0 && (
-              <div className="px-4 py-8 text-center text-sm text-zinc-500">No workspaces yet</div>
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">No workspaces yet</div>
             )}
           </div>
         </div>
@@ -78,30 +78,30 @@ export function Dashboard() {
         {/* Recent users */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium text-zinc-400">Recent Users</h2>
-            <Link to="/users" className="text-xs text-zinc-500 hover:text-zinc-300">
+            <h2 className="text-sm font-medium text-muted-foreground">Recent Users</h2>
+            <Link to="/users" className="text-xs text-muted-foreground hover:text-foreground">
               View all &rarr;
             </Link>
           </div>
-          <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800/50">
+          <div className="rounded-lg border border-border divide-y divide-border">
             {data.recent_users.map((u) => (
               <Link
                 key={u.id}
                 to={`/users/${u.id}`}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-800/40 transition-colors"
+                className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
               >
-                <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-medium text-zinc-300 shrink-0">
+                <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground shrink-0">
                   {u.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{u.name}</div>
-                  <div className="text-xs text-zinc-500 truncate">{u.email}</div>
+                  <div className="text-xs text-muted-foreground truncate">{u.email}</div>
                 </div>
                 <StatusBadge active={u.is_active} />
               </Link>
             ))}
             {data.recent_users.length === 0 && (
-              <div className="px-4 py-8 text-center text-sm text-zinc-500">No users yet</div>
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">No users yet</div>
             )}
           </div>
         </div>
@@ -111,12 +111,12 @@ export function Dashboard() {
       {activity && activity.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium text-zinc-400">Recent Activity</h2>
-            <Link to="/activity" className="text-xs text-zinc-500 hover:text-zinc-300">
+            <h2 className="text-sm font-medium text-muted-foreground">Recent Activity</h2>
+            <Link to="/activity" className="text-xs text-muted-foreground hover:text-foreground">
               View all &rarr;
             </Link>
           </div>
-          <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800/50">
+          <div className="rounded-lg border border-border divide-y divide-border">
             {activity.map((a) => (
               <ActivityEntry key={a.id} entry={a} />
             ))}
@@ -133,18 +133,18 @@ function ActivityEntry({ entry }: { entry: ActivityLog }) {
 
   return (
     <div className="flex items-center gap-3 px-4 py-2.5">
-      <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 shrink-0" />
+      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
       <div className="flex-1 min-w-0 text-sm">
-        <span className="text-zinc-400">{entry.actor_name ?? entry.actor_email ?? "System"}</span>{" "}
-        <span className="text-zinc-500">{action}</span>
+        <span className="text-foreground">{entry.actor_name ?? entry.actor_email ?? "System"}</span>{" "}
+        <span className="text-muted-foreground">{action}</span>
         {entry.detail &&
           Object.entries(entry.detail).map(([k, v]) => (
-            <span key={k} className="text-zinc-600 ml-1">
-              {k}: <span className="text-zinc-400">{String(v)}</span>
+            <span key={k} className="text-muted-foreground ml-1">
+              {k}: <span className="text-foreground">{String(v)}</span>
             </span>
           ))}
       </div>
-      <span className="text-xs text-zinc-600 shrink-0">{ago}</span>
+      <span className="text-xs text-muted-foreground shrink-0">{ago}</span>
     </div>
   );
 }
@@ -163,13 +163,13 @@ function timeAgo(dateStr: string): string {
 function Skeleton() {
   return (
     <div className="space-y-8 animate-pulse">
-      <div className="h-6 w-32 bg-zinc-800 rounded" />
+      <div className="h-6 w-32 bg-muted rounded" />
       <div className="grid grid-cols-5 gap-4">
         {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="h-20 bg-zinc-800 rounded-lg" />
+          <div key={i} className="h-20 bg-muted rounded-lg" />
         ))}
       </div>
-      <div className="h-48 bg-zinc-800 rounded-lg" />
+      <div className="h-48 bg-muted rounded-lg" />
     </div>
   );
 }
@@ -177,7 +177,7 @@ function Skeleton() {
 function ErrorState({ message }: { message: string }) {
   return (
     <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
-      <div className="text-sm text-red-400">Failed to load dashboard</div>
+      <div className="text-sm text-red-600 dark:text-red-400">Failed to load dashboard</div>
       <div className="text-xs text-red-500/70 mt-1">{message}</div>
     </div>
   );
