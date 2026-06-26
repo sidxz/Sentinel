@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   deleteServiceApp,
+  getRealms,
   getServiceApp,
   purgeServicePermissions,
   rotateServiceAppKey,
@@ -79,6 +80,14 @@ export function ServiceAppDetail() {
     queryFn: () => getServiceApp(id!),
     enabled: !!id,
   });
+
+  const { data: realms = [] } = useQuery({
+    queryKey: ["realms"],
+    queryFn: getRealms,
+  });
+  const realmName = app?.realm_id
+    ? (realms.find((r) => r.id === app.realm_id)?.name ?? app.realm_id)
+    : null;
 
   const update = useMutation({
     mutationFn: () =>
@@ -168,6 +177,17 @@ export function ServiceAppDetail() {
               <div className="text-xs text-zinc-500">
                 Key: <code className="text-zinc-400 font-mono">{app.key_prefix}</code>
               </div>
+              {realmName && (
+                <div className="text-xs text-zinc-500">
+                  Realm:{" "}
+                  <Link
+                    to={`/realms/${app.realm_id}`}
+                    className="text-zinc-400 hover:text-zinc-200 font-mono"
+                  >
+                    {realmName}
+                  </Link>
+                </div>
+              )}
               <div className="text-xs text-zinc-500">
                 Last used: {app.last_used_at ? new Date(app.last_used_at).toLocaleString() : "Never"}
               </div>
