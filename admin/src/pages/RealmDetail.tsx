@@ -99,8 +99,7 @@ export function RealmDetail() {
     mutationFn: () => deleteRealm(id!),
     onSuccess: () => {
       setShowDelete(false);
-      queryClient.invalidateQueries({ queryKey: ["realms"] });
-      queryClient.invalidateQueries({ queryKey: ["service-apps"] });
+      invalidate();
       toast.success("Realm deleted");
       navigate("/realms");
     },
