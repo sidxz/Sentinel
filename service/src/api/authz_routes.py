@@ -35,6 +35,12 @@ logger = structlog.get_logger()
 
 router = APIRouter(prefix="/authz", tags=["authz"])
 
+# Browser-facing GitHub proxy-login (server-side OAuth code exchange) uses
+# request.session for OAuth-state CSRF, so it must live on the PUBLIC listener (which
+# mounts SessionMiddleware). The service-key /resolve endpoint stays internal. Both
+# keep the /authz prefix.
+idp_router = APIRouter(prefix="/authz", tags=["authz-idp"])
+
 
 async def _validate_authz_redirect_uri(db: AsyncSession, redirect_uri: str) -> None:
     """Assert ``redirect_uri``'s origin is registered on an active ServiceApp.
@@ -64,7 +70,7 @@ async def _validate_authz_redirect_uri(db: AsyncSession, redirect_uri: str) -> N
         )
 
 
-@router.get("/idp/{provider}/login")
+@idp_router.get("/idp/{provider}/login")
 @limiter.limit(settings.rate_limit_auth)
 async def idp_login(
     request: Request,
@@ -115,7 +121,7 @@ async def idp_login(
     )
 
 
-@router.get("/idp/{provider}/callback")
+@idp_router.get("/idp/{provider}/callback")
 @limiter.limit(settings.rate_limit_auth)
 async def idp_callback(
     request: Request,

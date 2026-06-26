@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 
-from src.api.authz_routes import router as authz_router
+from src.api.authz_routes import idp_router as authz_idp_router
 from src.database import get_db
 import pytest
 
@@ -45,7 +45,7 @@ def _make_app() -> FastAPI:
     app.add_middleware(SessionMiddleware, secret_key="test-secret-key-for-tests")
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
-    app.include_router(authz_router)
+    app.include_router(authz_idp_router)
 
     async def _db():
         # _validate_authz_redirect_uri runs an origin allowlist query — we

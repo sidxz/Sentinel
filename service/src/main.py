@@ -11,6 +11,7 @@ from src.api.admin_routes import router as admin_router
 from src.api.client_log_routes import router as client_log_router
 from src.api.org_admin_routes import router as org_admin_router
 from src.api.auth_routes import router as auth_router
+from src.api.authz_routes import idp_router as authz_idp_router
 from src.api.authz_routes import router as authz_router
 from src.api.realm_routes import router as realm_router
 from src.api.group_routes import router as group_router
@@ -196,6 +197,7 @@ PUBLIC_ROUTERS = [
     admin_router,
     org_admin_router,
     auth_router,
+    authz_idp_router,
     user_router,
     workspace_router,
     group_router,

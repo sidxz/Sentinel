@@ -38,20 +38,25 @@ def test_public_tier_has_browser_routes_not_service_key_surface():
     assert _has_prefix(app, "/admin")  # admin — public
     assert _has_prefix(app, "/users")  # public
     # Service-key surface must be ABSENT from the public listener:
-    assert not _has_prefix(app, "/authz")
+    assert "/authz/resolve" not in _paths(app)  # authz SERVICE surface — internal only
     assert not _has_prefix(app, "/permissions")
     assert not _has_prefix(app, "/realm")
     assert not _has_prefix(app, "/roles")
+    # ...but the browser-facing GitHub proxy-login IS public (it needs Session):
+    assert any(p.startswith("/authz/idp") for p in _paths(app))
 
 
 def test_internal_tier_has_service_key_surface_not_browser_routes():
     app = create_app("internal")
-    assert _has_prefix(app, "/authz")
+    assert "/authz/resolve" in _paths(app)  # authz SERVICE surface — internal
     assert _has_prefix(app, "/permissions")
     assert _has_prefix(app, "/realm")  # Plan 2 router, mounted here
     assert _has_prefix(app, "/roles")
     # Browser surface must be ABSENT from the internal listener:
-    assert not _has_prefix(app, "/auth")  # note: /authz is present, /auth is not
+    assert not _has_prefix(app, "/auth")  # /auth proxy — public
+    assert not any(
+        p.startswith("/authz/idp") for p in _paths(app)
+    )  # idp proxy — public
     assert not _has_prefix(app, "/admin")
     assert not _has_prefix(app, "/users")
     assert not _has_prefix(app, "/workspaces")
@@ -70,6 +75,8 @@ def test_all_tier_is_todays_app_superset():
         "/roles",
     ):
         assert _has_prefix(app, prefix), prefix
+    assert "/authz/resolve" in _paths(app)
+    assert any(p.startswith("/authz/idp") for p in _paths(app))
 
 
 def test_health_on_every_tier():
@@ -108,6 +115,19 @@ def test_resolve_tier_rejects_unknown(monkeypatch):
     monkeypatch.setenv("TIER", "bogus")
     with pytest.raises(RuntimeError):
         _resolve_tier()
+
+
+def test_authz_idp_router_is_public_resolve_is_internal():
+    """The browser GitHub-proxy router (/authz/idp/*) is public (needs Session); the
+    service-key /authz/resolve stays internal — so the network split doesn't strand
+    session-using browser routes on the no-Session internal listener."""
+    from src.api.authz_routes import idp_router as authz_idp_router
+    from src.api.authz_routes import router as authz_router
+
+    assert authz_idp_router in PUBLIC_ROUTERS
+    assert authz_idp_router not in INTERNAL_ROUTERS
+    assert authz_router in INTERNAL_ROUTERS
+    assert authz_router not in PUBLIC_ROUTERS
 
 
 def test_paths_helper_actually_enumerates_included_routes():
