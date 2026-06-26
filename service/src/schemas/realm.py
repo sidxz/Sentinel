@@ -57,7 +57,7 @@ class RealmResponse(BaseModel):
     name: str
     m2m_ttl_s: int
     is_active: bool
-    created_at: datetime | None = None
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 

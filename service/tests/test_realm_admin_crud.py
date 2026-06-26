@@ -4,6 +4,7 @@ realm_service + activity log mocked (house behavioral style)."""
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -38,7 +39,14 @@ def _build_app(monkeypatch):
 
 
 def _realm(slug="acme-suite", name="Acme Suite"):
-    return Realm(id=uuid.uuid4(), slug=slug, name=name, m2m_ttl_s=300, is_active=True)
+    return Realm(
+        id=uuid.uuid4(),
+        slug=slug,
+        name=name,
+        m2m_ttl_s=300,
+        is_active=True,
+        created_at=datetime.now(UTC),
+    )
 
 
 def test_create_realm_returns_201_and_audits(monkeypatch):
