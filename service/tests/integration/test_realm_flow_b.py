@@ -153,8 +153,11 @@ def test_flow_b_authz_token_rejected_as_m2m():
         org_is_public=False,
     )
     sdk = _sdk(effective_scope="acme-suite", public_pem=_pubpem_for(token))
-    with pytest.raises(SentinelError):
+    with pytest.raises(SentinelError) as exc:
         sdk.verify_m2m_token(token)
+    assert (
+        exc.value.status_code == 401
+    )  # wrong audience → bad token, not a scope (403) error
 
 
 def test_flow_b_aud_target_mismatch_rejected():
@@ -182,9 +185,16 @@ def test_committed_fixtures_accepted_and_negatives_rejected():
     ok = sdk.verify_m2m_token(_FIX["tokens"]["m2m_valid"])
     assert ok.svc == "acme-suite"
     assert ok.caller == "app-a"
-    for label in ("m2m_expired", "m2m_wrong_realm", "authz_valid", "m2m_aud_target"):
-        with pytest.raises(SentinelError):
+    expected = {
+        "m2m_expired": 401,  # expired signature → bad token
+        "m2m_wrong_realm": 403,  # svc != effective_scope → scope mismatch
+        "authz_valid": 401,  # wrong audience (sentinel:authz) → bad token
+        "m2m_aud_target": 403,  # aud_target targets a different service
+    }
+    for label, code in expected.items():
+        with pytest.raises(SentinelError) as exc:
             sdk.verify_m2m_token(_FIX["tokens"][label])
+        assert exc.value.status_code == code
 
 
 def test_committed_m2m_claims_match_current_minter():
