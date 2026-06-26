@@ -75,8 +75,9 @@ def test_rejects_wrong_audience(rsa_keypair):
     private_pem, public_pem = rsa_keypair
     s = _sentinel(public_pem)
     # A user authz token (aud=sentinel:authz) must never validate as m2m.
-    with pytest.raises(SentinelError):
+    with pytest.raises(SentinelError) as exc:
         s.verify_m2m_token(_m2m(private_pem, aud="sentinel:authz", typ="authz"))
+    assert exc.value.status_code == 401
 
 
 def test_rejects_expired(rsa_keypair):
@@ -103,5 +104,6 @@ def test_raises_when_public_key_missing(rsa_keypair):
     s = Sentinel(
         base_url="https://sentinel.test", service_name="reports", service_key="k", idp_public_key="x", idp_audience="a"
     )
-    with pytest.raises(SentinelError):
+    with pytest.raises(SentinelError) as exc:
         s.verify_m2m_token(_m2m(private_pem))
+    assert exc.value.status_code == 503

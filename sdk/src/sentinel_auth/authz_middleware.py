@@ -139,8 +139,8 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         fall back to ``service_name`` — today's behavior, unchanged.
         """
         if self._sentinel_instance is not None:
-            # ponytail: getattr fallback covers Sentinel instances that predate
-            # effective_scope (e.g. old SDK versions); remove when all callers are ≥A2.
+            # ponytail: getattr because _FakeSentinel in test_authz_middleware.py predates this
+            # attribute and cannot be edited (frozen test). Real Sentinel always has it post-A2.
             return getattr(self._sentinel_instance, "effective_scope", self.service_name)
         return self.service_name
 
