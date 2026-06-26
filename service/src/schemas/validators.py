@@ -50,6 +50,9 @@ NonEmptySafeStrOptional = Annotated[
 # Single source of truth for slugs (org + workspace): lowercase letters, digits,
 # and hyphens, no leading/trailing hyphen, minimum two characters.
 SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+# Realm slugs are letter-start (they stand in for ``service_name``, which is
+# letter-start), unlike the org/workspace SLUG_PATTERN above which allows a digit start.
+REALM_SLUG_PATTERN = r"^[a-z][a-z0-9-]*[a-z0-9]$"
 
 
 def sanitize_url(value: str | None) -> str | None:

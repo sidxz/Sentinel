@@ -73,3 +73,71 @@ async def remove_member(db: AsyncSession, service_app_id: uuid.UUID) -> ServiceA
     await db.flush()
     await service_app_service._invalidate_cache()
     return app
+
+
+async def update_realm(
+    db: AsyncSession,
+    realm_id: uuid.UUID,
+    *,
+    name: str | None = None,
+    m2m_ttl_s: int | None = None,
+    is_active: bool | None = None,
+) -> Realm | None:
+    """Patch a realm's mutable fields. Slug is intentionally NOT updatable (it keys
+    effective_scope). Returns None if the realm doesn't exist."""
+    realm = await db.get(Realm, realm_id)
+    if realm is None:
+        return None
+    if name is not None:
+        realm.name = name
+    if m2m_ttl_s is not None:
+        realm.m2m_ttl_s = m2m_ttl_s
+    if is_active is not None:
+        realm.is_active = is_active
+    await db.flush()
+    return realm
+
+
+async def delete_realm(db: AsyncSession, realm_id: uuid.UUID) -> bool:
+    """Delete a realm. The service_apps.realm_id FK is ON DELETE SET NULL, so members
+    revert to standalone — invalidate the service-key cache (it stores realm slugs)."""
+    from src.services import service_app_service
+
+    realm = await db.get(Realm, realm_id)
+    if realm is None:
+        return False
+    await db.delete(realm)
+    await db.flush()
+    await service_app_service._invalidate_cache()
+    return True
+
+
+async def list_members(db: AsyncSession, realm_id: uuid.UUID) -> list[ServiceApp]:
+    result = await db.execute(
+        select(ServiceApp)
+        .where(ServiceApp.realm_id == realm_id)
+        .order_by(ServiceApp.name)
+    )
+    return list(result.scalars().all())
+
+
+async def service_app_has_grants(db: AsyncSession, service_name: str) -> bool:
+    """True if the service already has RBAC actions or resource permissions under its
+    own ``service_name``. Joining a realm won't surface those under the new shared
+    scope (v1 has no auto-migrate), so the admin UI warns before adding."""
+    from src.models.permission import ResourcePermission
+    from src.models.role import ServiceAction
+
+    actions = await db.execute(
+        select(ServiceAction.id)
+        .where(ServiceAction.service_name == service_name)
+        .limit(1)
+    )
+    if actions.first() is not None:
+        return True
+    perms = await db.execute(
+        select(ResourcePermission.id)
+        .where(ResourcePermission.service_name == service_name)
+        .limit(1)
+    )
+    return perms.first() is not None
