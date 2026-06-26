@@ -101,6 +101,7 @@ nav:
     - Dependencies: sdk/dependencies.md
     - Permissions: sdk/permissions.md
     - Roles: sdk/roles.md
+    - Realms & M2M: sdk/realms.md
     - DDD / Clean Architecture: sdk/ddd.md
   - JS/TS SDK:
     - js-sdk/index.md
