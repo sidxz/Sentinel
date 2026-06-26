@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
@@ -107,6 +108,8 @@ class Sentinel:
         self._sentinel_public_key: str | None = None
         self._effective_scope: str | None = None
         self._realm: dict | None = None
+        self._m2m_token: str | None = None
+        self._m2m_refresh_at: float = 0.0
 
     def __repr__(self) -> str:
         return f"Sentinel(base_url={self.base_url!r}, service_name={self.service_name!r})"
@@ -336,6 +339,30 @@ class Sentinel:
             actions=list(payload.get("actions") or []),
             svc=payload["svc"],
         )
+
+    async def mint_m2m_token(self) -> str:
+        """Mint (or return a cached) no-user realm m2m token for an outbound call.
+
+        Sender side of Flow B: App A calls this, then forwards the token in
+        ``Authorization: Bearer`` on its call to App B. The token is cached and only
+        re-minted once it passes ~80% of its TTL, so a tight background loop doesn't
+        hammer Sentinel. Requires this service to be an active member of an active
+        realm (Sentinel rejects a standalone caller with 403).
+        """
+        if self._m2m_token is not None and time.monotonic() < self._m2m_refresh_at:
+            return self._m2m_token
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{self.base_url}/realm/m2m-token",
+                json={},
+                headers={"X-Service-Key": self.service_key},
+            )
+        if resp.status_code != 200:
+            raise SentinelError(f"m2m mint failed: {resp.status_code}", resp.status_code)
+        data = resp.json()
+        self._m2m_token = data["token"]
+        self._m2m_refresh_at = time.monotonic() + data["expires_in"] * 0.8
+        return self._m2m_token
 
     @property
     def require_system(self) -> Callable:
