@@ -59,6 +59,7 @@ export function RealmDetail() {
     queryClient.invalidateQueries({ queryKey: ["realm-members", id] });
     queryClient.invalidateQueries({ queryKey: ["realms"] });
     queryClient.invalidateQueries({ queryKey: ["service-apps"] });
+    queryClient.invalidateQueries({ queryKey: ["service-app"] });
   };
 
   const update = useMutation({
