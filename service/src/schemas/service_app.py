@@ -57,6 +57,7 @@ class ServiceAppResponse(BaseModel):
     id: uuid.UUID
     name: str
     service_name: str
+    realm_id: uuid.UUID | None = None
     key_prefix: str
     is_active: bool
     allowed_origins: list[str]
