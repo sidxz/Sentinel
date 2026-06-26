@@ -115,6 +115,7 @@ nav:
     - Resources: api/resources.md
     - Permissions: api/permissions.md
     - Roles: api/roles.md
+    - Realms: api/realms.md
     - Schemas: api/schemas.md
   - Security: security.md
   - Observability:
