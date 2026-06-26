@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthGuard } from "./components/AuthGuard";
 import { Layout } from "./components/Layout";
+import { useTheme } from "./lib/theme";
 import { Activity } from "./pages/Activity";
 import { ClientAppDetail } from "./pages/ClientAppDetail";
 import { ClientApps } from "./pages/ClientApps";
@@ -22,9 +23,10 @@ import { Realms } from "./pages/Realms";
 import { RealmDetail } from "./pages/RealmDetail";
 
 export default function App() {
+  const { theme } = useTheme();
   return (
     <AuthGuard>
-      <Toaster theme="dark" position="bottom-right" richColors />
+      <Toaster theme={theme} position="bottom-right" richColors />
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
