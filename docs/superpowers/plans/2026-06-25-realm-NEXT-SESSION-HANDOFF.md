@@ -1,14 +1,15 @@
-# Realms — Next-Session Handoff (Plan 4 frontend → Plans 5–6)
+# Realms — Next-Session Handoff (Plan 4 DONE → Plans 5–6)
 
-**Read this first in a fresh session, then resume. Do NOT re-brainstorm — the design is approved. Do NOT re-do Plans 1–3 or the Plan-4 backend — they are DONE and committed.**
+**Read this first in a fresh session, then resume. Do NOT re-brainstorm — the design is approved. Do NOT re-do Plans 1–4 (backend + frontend) — they are DONE and committed.**
 
 ## Resume in one line
-`git checkout realm-trusted-app-group` (you're likely already on it) → read the spec + the prior plan docs (below) → the next deliverable is the **React Realms UI** (the frontend half of Plan 4). For **each** remaining plan: `superpowers:writing-plans` to author it, then `superpowers:subagent-driven-development` to execute it. One plan per cycle; review between; **stop and report after each plan** (the user resumes in fresh sessions).
+`git checkout realm-trusted-app-group` (you're likely already on it) → read the spec + the prior plan docs (below) → the next deliverable is **Plan 5 (SDK m2m)**, then **Plan 6 (docs)**. For **each** remaining plan: `superpowers:writing-plans` to author it, then `superpowers:subagent-driven-development` to execute it. One plan per cycle; review between; **stop and report after each plan** (the user resumes in fresh sessions).
 
-## State (as of 2026-06-25, HEAD = `4608c54`)
+## State (as of 2026-06-26, HEAD = `7dcaca8`)
 - Branch `realm-trusted-app-group`. Merge-base with `main` = `e272eb8`. The branch is **stacked on the unmerged `ratelimit-consolidation`** (branched off `551c0ce`, not `main`) — a merge/PR to `main` would also carry rate-limit. **Kept as-is, not merged.**
-- **DONE (committed):** Plan 1 (scope core), Plan 2 (token flows), Plan 3 (network split), **Plan 4 backend (realm admin API)**. Full suite **330 green**; every plan had a clean Opus final review (no Critical/Important).
-- **Plan 4 was SPLIT** into backend (done) + **React UI (NEXT)**.
+- **DONE (committed):** Plan 1 (scope core), Plan 2 (token flows), Plan 3 (network split), **Plan 4 backend (realm admin API)**, **Plan 4 frontend (React Realms UI)**. Backend suite **330 green**; every backend plan had a clean Opus final review. Frontend (no test harness — gated by `npm run build` + eslint) shipped in 6 commits `605d00b..7dcaca8`; final Opus review = Ready-to-merge, no Critical/Important.
+- **Plan 4 was SPLIT** into backend (done) + **React UI (DONE)**. Plan + SDD ledger: `docs/superpowers/plans/2026-06-25-realm-admin-ui.md`, `.superpowers/sdd/progress.md`.
+- **Plan-4 frontend gotchas (carry forward):** admin SPA's project-wide `eslint .` is PRE-broken by 2 errors + 1 warning in `AuthGuard.tsx`/`Login.tsx`/`SearchInput.tsx` (unrelated to realms) — gate new admin work on `npx eslint <changed files>` + full `npm run build`. `admin/node_modules` must be `npm install`-ed first (it wasn't present). `admin/src/types/api.ts` `ServiceApp` now has `realm_id`. **Deferred:** candidate-app `has_grants` pre-warning in the realm members dropdown — needs `ServiceAppResponse.has_grants` (backend); member-row `⚠` badge covers it post-add (`// ponytail:` comment in `RealmDetail.tsx`).
 - ⚠️ The working tree holds the **user's separate uncommitted work**: `service/src/services/role_service.py` (an atomic `INSERT…ON CONFLICT` upsert refactor of `register_actions`) + untracked `service/tests/test_register_actions.py`. **NEVER commit, format, stage, or discard these.** (The user's earlier rate-limit WIP was already committed at `7114d9b` per their instruction — that one is done.)
 
 ## Authority documents (read these, don't re-derive)
@@ -18,7 +19,7 @@
 - **SDD ledgers:** `.superpowers/sdd/progress-plan{1,2,3}-archive.md` + the current `progress.md` (= Plan-4 backend, all complete). **Archive `progress.md` before the next plan's SDD run** (e.g. → `progress-plan4backend-archive.md`).
 
 ## Remaining plans (scope only — author details in writing-plans)
-**A. React Realms UI (Plan 4 frontend) — DO THIS NEXT.** The admin SPA is at `admin/` (Vite 7 + React 19 + Tailwind 4 + React Query 5 + React Router 7; Sonner toasts). **No frontend test harness exists** → gate via `npm run build` (`tsc -b && vite build`, type-checks too) + `npm run lint` (eslint). Already-scouted patterns to copy (don't re-scout):
+**A. React Realms UI (Plan 4 frontend) — ✅ DONE (commits `605d00b..7dcaca8`).** Shipped `admin/src/pages/Realms.tsx` + `RealmDetail.tsx`, realm fns/types in `api/client.ts`+`types/api.ts`, nav+routes, and the realm line on `ServiceAppDetail.tsx`. Reference for the patterns used (kept for Plans 5–6 context; the admin SPA is at `admin/`, Vite 7 + React 19 + Tailwind 4 + React Query 5 + React Router 7, Sonner toasts):
 - **API client:** `admin/src/api/client.ts` — single `request<T>` helper; `X-Requested-With: XMLHttpRequest` is baked in (CSRF). Add realm fns here. **Types:** `admin/src/types/api.ts` (add `Realm`, `RealmMember`).
 - **Realms list + create:** model on `admin/src/pages/Organizations.tsx`. New `admin/src/pages/Realms.tsx`.
 - **Realm detail (edit / delete-with-type-confirm / members tab):** model on `admin/src/pages/ServiceAppDetail.tsx` + `ConfirmModal` (`confirmInput` prop = type-to-confirm). New `admin/src/pages/RealmDetail.tsx`.
