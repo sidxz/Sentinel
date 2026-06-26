@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: help setup start admin seed create-admin status clean nuke docs docs-serve lint fmt release docker pentest pentest-setup pentest-kali
+.PHONY: help setup start admin seed create-admin status clean nuke docs docs-serve lint fmt release docker pentest pentest-setup pentest-kali realm-fixtures
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -99,6 +99,9 @@ lint: ## Run ruff linter and format check
 fmt: ## Auto-fix lint and formatting issues
 	uv run ruff check --fix service/src/ service/tests/ sdk/src/ sdk/tests/
 	uv run ruff format service/src/ service/tests/ sdk/src/ sdk/tests/
+
+realm-fixtures: ## Regenerate cross-SDK integration test fixtures
+	uv run python service/tests/integration/gen_fixtures.py
 
 docs: ## Build documentation site
 	uv run --extra docs mkdocs build
