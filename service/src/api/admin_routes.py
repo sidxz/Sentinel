@@ -69,6 +69,7 @@ from src.schemas.role import (
 )
 from src.schemas.realm import (
     RealmCreateRequest,
+    RealmMemberResponse,
     RealmResponse,
     RealmUpdateRequest,
 )
@@ -1695,5 +1696,84 @@ async def delete_realm(
         target_type="realm",
         target_id=realm_id,
         actor_id=uuid.UUID(admin["sub"]),
+    )
+    await db.commit()
+
+
+async def _member_response(db, app) -> RealmMemberResponse:
+    return RealmMemberResponse(
+        id=app.id,
+        name=app.name,
+        service_name=app.service_name,
+        has_grants=await realm_service.service_app_has_grants(db, app.service_name),
+    )
+
+
+@router.get("/realms/{realm_id}/members", response_model=list[RealmMemberResponse])
+async def list_realm_members(realm_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    members = await realm_service.list_members(db, realm_id)
+    return [await _member_response(db, app) for app in members]
+
+
+@router.post(
+    "/realms/{realm_id}/members/{service_app_id}",
+    response_model=RealmMemberResponse,
+    status_code=201,
+)
+async def add_realm_member(
+    realm_id: uuid.UUID,
+    service_app_id: uuid.UUID,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    realm = await realm_service.get_realm(db, realm_id)
+    if realm is None:
+        raise HTTPException(status_code=404, detail="Realm not found")
+    app = await service_app_service.get_service_app(db, service_app_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail="Service app not found")
+    # ponytail: one-realm-max — refuse to steal an app from another realm
+    if app.realm_id is not None and app.realm_id != realm_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Service app already belongs to another realm; remove it first",
+        )
+    await realm_service.add_member(db, realm_id, service_app_id)
+    await activity_service.log_activity(
+        db,
+        action="realm_member_added",
+        target_type="realm",
+        target_id=realm_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={
+            "service_app_id": str(service_app_id),
+            "service_name": app.service_name,
+        },
+    )
+    await db.commit()
+    return await _member_response(db, app)
+
+
+@router.delete("/realms/{realm_id}/members/{service_app_id}", status_code=204)
+async def remove_realm_member(
+    realm_id: uuid.UUID,
+    service_app_id: uuid.UUID,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    app = await service_app_service.get_service_app(db, service_app_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail="Service app not found")
+    await realm_service.remove_member(db, service_app_id)
+    await activity_service.log_activity(
+        db,
+        action="realm_member_removed",
+        target_type="realm",
+        target_id=realm_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={
+            "service_app_id": str(service_app_id),
+            "service_name": app.service_name,
+        },
     )
     await db.commit()
