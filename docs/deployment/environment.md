@@ -98,10 +98,13 @@ Configure at least one provider to enable user login. Leave variables empty to d
 |----------|---------|----------|
 | `SERVICE_HOST` | `0.0.0.0` | No |
 | `SERVICE_PORT` | `9003` | No |
+| `TIER` | `all` | No |
 | `BASE_URL` | `http://localhost:9003` | Yes |
 | `FRONTEND_URL` | `http://localhost:3000` | No |
 
 `BASE_URL` is used for OAuth callback URLs. Set to the public URL of your Sentinel instance.
+
+`TIER` selects which listener this process is: `all` (default — the full combined app), `public` (browser/human surface, `:9003`), or `internal` (the service-key surface — realm, permissions, authz, roles — on an unpublished `:9010`). See [Deployment → Network Split](index.md#network-split-public--internal-listeners). The internal listener also runs with `SESSION_SECRET_KEY=""` and `CORS_ORIGINS=""` since it drops the Session and CORS middleware.
 
 ---
 

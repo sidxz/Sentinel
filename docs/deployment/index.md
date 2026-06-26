@@ -80,6 +80,49 @@ Both PostgreSQL and Redis run with TLS enabled. The service connects via `?ssl=r
 
 ---
 
+## Network Split (Public / Internal Listeners) { #network-split-public--internal-listeners }
+
+The entire service-key surface — `/realm/*`, `/permissions/*`, `/authz/resolve`, and the service-facing `/roles/*` — can be moved onto an **unpublished internal listener** that the public internet has no socket to. This is a structural isolation: there is no proxy rule whose failure re-exposes those routes.
+
+One image, two processes selected by the `TIER` environment variable:
+
+| `TIER` | Port | Published? | Mounts |
+|--------|------|-----------|--------|
+| `public` | 9003 | yes | admin, org-admin, auth (OAuth proxy), client-log, user/workspace/group, JWKS |
+| `internal` | 9010 | **no** (overlay-only) | realm, permissions, authz, roles |
+| `all` *(default)* | 9003 | yes | everything — the single combined app |
+
+`TIER` is unset (`all`) for development, `make start`, tests, and small single-process deployments — **non-breaking**. Production opts into the split by running two services from the same image.
+
+The internal listener drops the Session and CORS middleware (it has no browser callers) and keeps SecurityHeaders, rate limiting, request-context, and access logging. JWKS stays on the public listener by default (public keys are meant to be published).
+
+### Swarm topology
+
+`docker-compose.prod.yml` defines both services on the `sentinel` overlay:
+
+- **`sentinel`** — `TIER=public`, published on `:9003`, serves humans and the admin panel.
+- **`sentinel-internal`** — `TIER=internal`, command runs uvicorn on `:9010`, **no `ports:` mapping** (unpublished by design), reachable only as `http://sentinel-internal:9010` on the overlay. It sets `SESSION_SECRET_KEY=""` and `CORS_ORIGINS=""` (the dropped middleware needs neither) and `depends_on` the public service so the schema is migrated first.
+
+```bash
+docker stack deploy -c docker-compose.prod.yml sentinel
+```
+
+### Pointing apps at the internal listener
+
+A backend that holds a Sentinel **service key** points its SDK `base_url` at the internal listener:
+
+```python
+sentinel = Sentinel(base_url="http://sentinel-internal:9010", service_name="reports", service_key=...)
+```
+
+```typescript
+const m2m = new M2mTokenClient('http://sentinel-internal:9010', process.env.SERVICE_KEY)
+```
+
+Browser-facing flows (login, the admin panel) continue to use the public `:9003` URL. See [Realms](../guide/realms.md) for what runs over this surface.
+
+---
+
 ## Production Checklist
 
 ### TLS
