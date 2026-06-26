@@ -130,6 +130,20 @@ class AuthzMiddleware(BaseHTTPMiddleware):
             )
         return key
 
+    @property
+    def effective_scope(self) -> str:
+        """The shared scope an incoming authz token's ``svc`` must match.
+
+        A realm member resolves this from its Sentinel instance (discovered via
+        ``whoami`` at startup); standalone services and static-key (air-gapped) mode
+        fall back to ``service_name`` — today's behavior, unchanged.
+        """
+        if self._sentinel_instance is not None:
+            # ponytail: getattr fallback covers Sentinel instances that predate
+            # effective_scope (e.g. old SDK versions); remove when all callers are ≥A2.
+            return getattr(self._sentinel_instance, "effective_scope", self.service_name)
+        return self.service_name
+
     def _decode_idp_token(self, token: str) -> dict:
         """Decode and validate an IdP token.
 
@@ -207,9 +221,10 @@ class AuthzMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Token binding mismatch: idp_sub does not match"},
             )
 
-        # 6. Enforce svc binding: the authz token was minted for this service.
+        # 6. Enforce svc binding: the authz token was minted for this service's
+        #    effective scope (the realm slug for a member, else the service name).
         token_svc = authz_payload.get("svc")
-        if not token_svc or token_svc != self.service_name:
+        if not token_svc or token_svc != self.effective_scope:
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Authz token was issued for a different service"},
