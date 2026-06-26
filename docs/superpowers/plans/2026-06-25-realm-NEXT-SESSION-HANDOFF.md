@@ -1,40 +1,48 @@
-# Realms — Next-Session Handoff (Plans 2–6)
+# Realms — Next-Session Handoff (Plan 4 frontend → Plans 5–6)
 
-**Read this first in a fresh session, then resume. Do NOT re-brainstorm — the design is approved.**
+**Read this first in a fresh session, then resume. Do NOT re-brainstorm — the design is approved. Do NOT re-do Plans 1–3 or the Plan-4 backend — they are DONE and committed.**
 
 ## Resume in one line
-`git checkout realm-trusted-app-group` → read the spec (below) → for **each** plan: `superpowers:writing-plans` to author it, then `superpowers:subagent-driven-development` to execute it. One plan per cycle; review between.
+`git checkout realm-trusted-app-group` (you're likely already on it) → read the spec + the prior plan docs (below) → the next deliverable is the **React Realms UI** (the frontend half of Plan 4). For **each** remaining plan: `superpowers:writing-plans` to author it, then `superpowers:subagent-driven-development` to execute it. One plan per cycle; review between; **stop and report after each plan** (the user resumes in fresh sessions).
 
-## Authority documents
+## State (as of 2026-06-25, HEAD = `4608c54`)
+- Branch `realm-trusted-app-group`. Merge-base with `main` = `e272eb8`. The branch is **stacked on the unmerged `ratelimit-consolidation`** (branched off `551c0ce`, not `main`) — a merge/PR to `main` would also carry rate-limit. **Kept as-is, not merged.**
+- **DONE (committed):** Plan 1 (scope core), Plan 2 (token flows), Plan 3 (network split), **Plan 4 backend (realm admin API)**. Full suite **330 green**; every plan had a clean Opus final review (no Critical/Important).
+- **Plan 4 was SPLIT** into backend (done) + **React UI (NEXT)**.
+- ⚠️ The working tree holds the **user's separate uncommitted work**: `service/src/services/role_service.py` (an atomic `INSERT…ON CONFLICT` upsert refactor of `register_actions`) + untracked `service/tests/test_register_actions.py`. **NEVER commit, format, stage, or discard these.** (The user's earlier rate-limit WIP was already committed at `7114d9b` per their instruction — that one is done.)
+
+## Authority documents (read these, don't re-derive)
 - **Spec (source of truth):** `docs/superpowers/specs/2026-06-25-realm-trusted-app-group-design.md`
-- **Plan 1 (done, reference style):** `docs/superpowers/plans/2026-06-25-realm-scope-core.md`
-- **Memory:** `realm-trusted-app-groups.md` (auto-loaded via MEMORY.md)
+- **Plan docs (done, reference style + decisions):** `2026-06-25-realm-scope-core.md` (P1), `2026-06-25-realm-token-flows.md` (P2), `2026-06-25-realm-network-split.md` (P3), `2026-06-25-realm-admin-api.md` (P4 backend) — all under `docs/superpowers/plans/`.
+- **Memory:** `realm-trusted-app-groups.md` (auto-loaded via MEMORY.md) — has the full per-plan decisions + gotchas.
+- **SDD ledgers:** `.superpowers/sdd/progress-plan{1,2,3}-archive.md` + the current `progress.md` (= Plan-4 backend, all complete). **Archive `progress.md` before the next plan's SDD run** (e.g. → `progress-plan4backend-archive.md`).
 
-## State
-- **Plan 1 of 6 = DONE** on branch `realm-trusted-app-group` (commits `041249c..90251e8`). Full suite **273 green**; Opus final review = ready-to-merge, no Critical/Important. Branch **kept as-is, not merged**.
-- ⚠️ Branch is **stacked on the unmerged `ratelimit-consolidation`** (created off `551c0ce`, not `main`) — merge/PR to main would carry rate-limit too. Realm-only range = `551c0ce..HEAD`.
-- The working tree holds the **user's unrelated uncommitted work** (`role_service.py`, `test_register_actions.py`, session-start rate-limit edits to `config.py`/`main.py`/`middleware/rate_limit.py`/`permission_routes.py`/`test_rate_limit_*`). **Never commit, format, or discard these.**
+## Remaining plans (scope only — author details in writing-plans)
+**A. React Realms UI (Plan 4 frontend) — DO THIS NEXT.** The admin SPA is at `admin/` (Vite 7 + React 19 + Tailwind 4 + React Query 5 + React Router 7; Sonner toasts). **No frontend test harness exists** → gate via `npm run build` (`tsc -b && vite build`, type-checks too) + `npm run lint` (eslint). Already-scouted patterns to copy (don't re-scout):
+- **API client:** `admin/src/api/client.ts` — single `request<T>` helper; `X-Requested-With: XMLHttpRequest` is baked in (CSRF). Add realm fns here. **Types:** `admin/src/types/api.ts` (add `Realm`, `RealmMember`).
+- **Realms list + create:** model on `admin/src/pages/Organizations.tsx`. New `admin/src/pages/Realms.tsx`.
+- **Realm detail (edit / delete-with-type-confirm / members tab):** model on `admin/src/pages/ServiceAppDetail.tsx` + `ConfirmModal` (`confirmInput` prop = type-to-confirm). New `admin/src/pages/RealmDetail.tsx`.
+- **Members add/remove UI:** model on `RolesTab`/`MembersTab` in `admin/src/pages/WorkspaceDetail.tsx` (select-from-dropdown + Add + per-row Remove). Filter candidates to standalone apps (`realm_id == null`) using `getServiceApps()`; warn when a candidate/member `has_grants`.
+- **ServiceAppDetail shows realm:** add a "Realm:" line in the info block (`admin/src/pages/ServiceAppDetail.tsx` ~lines 163–186); resolve `realm_id` → name from `getRealms()` client-side (the API intentionally has NO `realm_name`).
+- **Routes:** flat `<Route>` in `admin/src/App.tsx`. **Nav:** `NAV` array in `admin/src/components/Layout.tsx`.
+- **Query keys:** `["realms"]`, `["realm", id]`, `["realm-members", id]`. Invalidate list + detail on mutation.
+- **Backend API surface it consumes (all admin-cookie + `X-Requested-With`):** `GET/POST /admin/realms`, `GET/PATCH/DELETE /admin/realms/{id}`, `GET /admin/realms/{id}/members`, `POST/DELETE /admin/realms/{id}/members/{serviceAppId}`. `RealmResponse` = `{id, slug, name, m2m_ttl_s, is_active, created_at}`. `RealmMemberResponse` = `{id, name, service_name, has_grants}`. `RealmCreateRequest` = `{name, slug, m2m_ttl_s?}` (slug letter-start, immutable after create). `RealmUpdateRequest` = `{name?, m2m_ttl_s?, is_active?}` (no slug). `ServiceAppResponse` now has `realm_id`.
 
-## Plans 2–6 (scope only — author details in writing-plans)
-2. **Token flows** — `GET /realm/whoami` (SDK self-discovers `effective_scope`); `_AUD_M2M = "sentinel:m2m"` + `create_m2m_token()` in `jwt.py`; `POST /realm/m2m-token` (`require_service_key`, rate-limited via `service_or_ip_key`, server-stamps `caller`+`svc` from the key, `actions:["*"]`, optional `aud_target` reserved-off); SDK accept (`type=m2m` → `SystemAuth`) + cached mint helper. (Authz-token `svc=effective_scope` minting was ALREADY done in Plan 1.)
-3. **Network split** — `create_app(tier)` factory in `main.py`; `TIER` env → public listener (admin, proxy `/auth/*`, jwks) vs **unpublished** internal listener (`/realm/*`, `/permissions/*`, `/authz/*`, roles); router audit (user/workspace/group routers → audit, default public).
-4. **Admin** — `/admin/realms` CRUD + membership (`admin_routes.py`, admin cookie + `X-Requested-With`); audit events `realm_*`; React Realms page; Service App detail shows realm. **Must add** realm-`slug` schema validation `^[a-z][a-z0-9-]*[a-z0-9]$` (deferred from Plan 1).
-5. **SDKs** — Python `whoami`/`mint_m2m_token()`/`SystemAuth`; JS m2m mint+accept in the **server** entry only (`@sentinel-auth/js` server, nextjs server helpers) — never browser.
-6. **Docs** — guide/api/sdk for realms + m2m + the internal-listener deployment posture.
+**B. Plan 5 — SDKs (ALL the SDK m2m work; deferred from Plans 2 & 5).** Python `sentinel_auth`: `whoami` scope-discovery (cached) + broaden the authz `svc` check to `effective_scope`; `mint_m2m_token()` with ~80%-TTL auto-refresh; **accept `type=m2m` → a new `SystemAuth` context** (no user; `caller`, `actions`). JS (`@sentinel-auth/js`, `react`, `nextjs`): broaden user-context `svc` check to scope (via whoami); m2m **mint + accept** in the **server entry only** — never browser. This is the receiver-side acceptance that makes no-user Flow B end-to-end. SDK trees: `sdk/src/sentinel_auth/` (Python), `sdks/` (JS).
 
-## Interfaces Plan 1 already provides (build on these)
-- `ServiceKeyContext.realm_slug` + `.effective_scope` property (`service/src/api/dependencies.py`).
-- `validate_key(...) -> (service_name, app_id, realm_slug)` 3-tuple + `_encode_cache`/`_decode_cache` (`service/src/services/service_app_service.py`).
-- `realm_service`: `create_realm/get_realm/list_realms/add_member/remove_member` (`service/src/services/realm_service.py`).
-- `Realm` model + `service_apps.realm_id` FK (`service/src/models/realm.py`).
-- Audiences in `service/src/auth/jwt.py`: `_AUD_ACCESS/_AUD_ADMIN/_AUD_REFRESH/_AUD_AUTHZ` (add `_AUD_M2M`).
+**C. Plan 6 — Docs.** guide/api/sdk for realms + m2m + the **internal-listener deployment posture** (TIER=public/internal, unpublished :9010). MkDocs; `make docs-serve`; CI gate is `mkdocs --strict`.
 
 ## MANDATORY conventions for every subagent dispatch (these bit us / kept us safe)
-- **Format/stage ONLY changed files** (`uv run ruff format <files>` + `ruff check --fix <files>` from `service/`). NEVER `ruff format .` / whole-tree `--fix` / `make fmt`. NEVER `git add -A`/`.`.
+- **Backend:** format/stage ONLY changed files (`cd service && uv run ruff format <files>` + `ruff check --fix <files>`). **NEVER** `ruff format .` / whole-tree `--fix` / `make fmt` (they reformat the user's uncommitted `role_service.py`). NEVER `git add -A`/`.`.
+- **Frontend:** lint/build are `npm` scripts in `admin/`; no whole-repo formatter. Stage only the admin files you touch.
 - **Never touch** `service/src/services/role_service.py` or `service/tests/test_register_actions.py`.
-- **Tests** = pure-unit with fakes (no `conftest.py`); `@pytest.mark.asyncio` for async. For handler-level behavior, the **behavioral TestClient + dependency_overrides + monkeypatch** pattern (`test_authz_org_gate.py`, `test_realm_authz_minting.py`) is the house style. Gate on the **task's own test file**; broad-suite **IdP/JWKS connection failures are a known network-sandbox artifact**, not task failures.
-- **Regenerate `task-brief` per plan** from the correct plan file. The `.superpowers/sdd/task-*-brief.md` slots may hold STALE briefs (rate-limit + Plan-1) — overwrite or verify before dispatching. (In Plan 1, `task-5-brief.md` was a stale rate-limit brief; only the self-contained dispatch saved it.)
-- **SDD ledger**: `.superpowers/sdd/progress.md` (currently Plan 1; archive it before starting a new plan's SDD run). Rate-limit history archived at `progress-ratelimit-archive.md`.
+- **Tests (backend):** pure-unit with fakes OR the behavioral **TestClient + `dependency_overrides` + monkeypatch** house style (see `tests/test_realm_routes.py`, `test_realm_admin_crud.py`, `test_realm_admin_membership.py`). Gate on the **task's own test file**; broad-suite **IdP/JWKS connection failures are a known network-sandbox artifact**, not task failures.
+- **SDD:** archive the current `progress.md` before each new plan's run; **regenerate each `task-N-brief` from the correct plan file** (the brief slots are reused across plans and hold STALE content otherwise). One implementer at a time (no parallel implementers).
 
-## Known repo gotcha (from memory, relevant to Plan 3 network split)
-- `service/Dockerfile` does NOT `COPY uv.lock` before `uv sync` → container installs latest-within-pyproject, not the pinned lock. Keep in mind when wiring two listeners into the deploy.
+## Gotchas discovered (carry forward)
+- **Router-level admin auth (recurring FALSE POSITIVE):** `admin_router` has `dependencies=[Depends(require_admin)]` (`admin_routes.py:92`) gating EVERY `/admin/*` route, so admin READ endpoints correctly omit a per-function `require_admin` (mutations take `admin` only for `actor_id`). Security scans/reviewers keep flagging this as "missing authorization" — it is NOT. Proven by `test_realm_endpoints_require_admin_auth` (no-cookie GET → 401). Don't add redundant per-endpoint deps.
+- **Async-SQLAlchemy `created_at`:** an endpoint returning an ORM object right after `flush()` will lazy-refresh a `server_default`-only column on attribute access → `MissingGreenlet`. `Realm.created_at` uses `default=lambda: datetime.now(UTC)` (tz-aware; NOT deprecated naive `datetime.utcnow`). Keep that pattern; this codebase is tz-aware UTC everywhere.
+- **FastAPI 0.138 / Starlette 1.3:** `include_router()` results are lazy `_IncludedRouter` objects with no `.path`; enumerate routes via `r.original_router.routes` (gate on `hasattr(r, "original_router")`, not the private class name).
+- **Network split (P3):** the `/realm`, `/permissions`, `/authz/resolve`, roles surface is on the **internal** tier (TIER=internal, unpublished :9010); `/authz/idp/*` (browser GitHub-proxy, uses sessions) is **public**. `create_app("all")` (TIER unset, the default) = today's full app — non-breaking for dev/make-start/tests.
+- **Container gotcha (from memory, relevant to P6 deploy docs):** `service/Dockerfile` does NOT `COPY uv.lock` before `uv sync` → installs latest-within-pyproject, not the pinned lock. The Dockerfile's baked `HEALTHCHECK`/`EXPOSE 9003` is overridden per-container by compose (internal uses :9010) — document for non-compose internal runs.
+- **Open future-work nits (not blocking):** consider a dedicated rate-limit config knob for `/realm/m2m-token` (currently reuses `rate_limit_authz_resolve`); list-members returns `[]` (not 404) for a nonexistent realm (harmless).
