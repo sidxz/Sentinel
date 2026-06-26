@@ -32,6 +32,7 @@ export const config = { matcher: ['/((?!_next|favicon.ico).*)'] }
 | `idpAudience` | `string \| string[]` | **required** | Your app's OAuth client_id. Rejects tokens minted for any other client of the same IdP. |
 | `idpIssuer` | `string` | `undefined` | Expected IdP `iss` claim. Strongly recommended. |
 | `serviceName` | `string` | **required** | Your service's name (as registered in Sentinel). Authz token's `svc` claim must equal this — stops cross-service token replay. |
+| `effectiveScope` | `string` | `undefined` | Realm slug (this service's shared scope). When set, the authz token's `svc` may equal either `serviceName` or this — so a [realm](../guide/realms.md) member accepts a realm-shared user token (Flow A). Resolve it once at startup with `fetchWhoami` from `@sentinel-auth/js/server`. Omit for standalone apps. |
 | `publicPaths` | `string[]` | `[]` | Paths that skip auth |
 | `loginPath` | `string` | `"/login"` | Redirect for unauthenticated page requests |
 

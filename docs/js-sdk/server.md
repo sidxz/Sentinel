@@ -136,3 +136,56 @@ app.get('/api/documents/:id', authenticate, async (req, res) => {
   res.json(await getDocument(req.params.id))
 })
 ```
+
+## Realm m2m (server only)
+
+For [realm](../guide/realms.md) members, `@sentinel-auth/js/server` adds the no-user m2m primitives for [Flow B](../guide/realms.md#flow-b-no-user). These are **server-entry only** — they hold the service key and must never reach a browser. (`@sentinel-auth/react` deliberately has no m2m surface.)
+
+```typescript
+import { fetchWhoami, verifyM2mToken, M2mTokenClient } from '@sentinel-auth/js/server'
+```
+
+### fetchWhoami
+
+Self-discover this service's shared scope (standalone → `effective_scope === service_name`, `realm: null`).
+
+```typescript
+const who = await fetchWhoami({ sentinelUrl: 'http://sentinel-internal:9010', serviceKey: process.env.SERVICE_KEY })
+// { service_name, effective_scope, realm: { slug, name } | null }
+```
+
+### M2mTokenClient (mint — sender)
+
+Mints and caches m2m tokens for outbound system calls; re-mints only past ~80% of the TTL.
+
+```typescript
+const m2m = new M2mTokenClient('http://sentinel-internal:9010', process.env.SERVICE_KEY)
+const token = await m2m.getToken()
+await fetch('http://app-b.internal/internal/reindex', {
+  headers: { Authorization: `Bearer ${token}` },
+})
+```
+
+### verifyM2mToken (accept — receiver)
+
+Verifies an inbound m2m token and returns a `SystemAuth`. Throws on any failure (bad signature, wrong realm, wrong type, expired).
+
+```typescript
+const sys = await verifyM2mToken(token, {
+  jwksUrl: 'http://sentinel-internal:9010/.well-known/jwks.json',
+  effectiveScope: 'acme-suite',   // the token's svc must equal this
+  serviceName: 'reports',         // optional — checked against aud_target when set
+})
+sys.caller            // minting member (server-stamped)
+sys.svc               // realm slug
+sys.can('search:reindex')   // true if actions includes "*" or the action
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `jwksUrl` | `string` | JWKS endpoint of the Sentinel that signs m2m tokens |
+| `effectiveScope` | `string` | this service's realm slug; the token's `svc` must equal it |
+| `serviceName` | `string?` | checked against the token's `aud_target` when set |
+| `issuer` | `string?` | expected `iss` claim |
+
+Next.js apps get the same three helpers re-exported from `@sentinel-auth/nextjs/server`. See [Realms](../guide/realms.md) for the trust model and [API → Realms](../api/realms.md) for the wire format.
