@@ -17,23 +17,28 @@ const PROVIDER_META: Record<string, { label: string; icon: string }> = {
   },
 };
 
+const KNOWN_ERRORS: Record<string, string> = {
+  not_admin: "Your account does not have admin access.",
+  email_not_verified:
+    "Your identity provider did not confirm your email. Verify it and try again.",
+  email_conflict:
+    "An account with this email already exists under a different sign-in provider. Sign in with your original provider.",
+};
+
+function readLoginError(): string | null {
+  const code = new URLSearchParams(window.location.search).get("error");
+  return code ? (KNOWN_ERRORS[code] ?? null) : null;
+}
+
 export function Login() {
   const [providers, setProviders] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  // Derived once at mount from the URL — no setState-in-effect.
+  const [error] = useState(readLoginError);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const errorCode = params.get("error");
-    const errorMessages: Record<string, string> = {
-      not_admin: "Your account does not have admin access.",
-      email_not_verified:
-        "Your identity provider did not confirm your email. Verify it and try again.",
-      email_conflict:
-        "An account with this email already exists under a different sign-in provider. Sign in with your original provider.",
-    };
-    if (errorCode && errorMessages[errorCode]) {
-      setError(errorMessages[errorCode]);
-      clientLog("client.login.failed", "warning", { reason: errorCode });
+    const code = new URLSearchParams(window.location.search).get("error");
+    if (code && KNOWN_ERRORS[code]) {
+      clientLog("client.login.failed", "warning", { reason: code });
       window.history.replaceState({}, "", "/login");
     }
     getAuthProviders()
@@ -42,44 +47,44 @@ export function Login() {
   }, []);
 
   return (
-    <div className="flex h-screen items-center justify-center bg-zinc-950">
-      <div className="w-full max-w-sm space-y-6 rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+    <div className="flex h-screen items-center justify-center bg-background">
+      <div className="w-full max-w-sm space-y-6 rounded-xl border border-border bg-card overflow-hidden">
         <img src="/splash.png" alt="Sentinel Auth" className="w-full object-cover" />
         <div className="px-8 pb-8 space-y-6">
-        <div className="text-center">
-          <p className="mt-1 text-sm text-zinc-400">Sign in to access the admin panel</p>
-        </div>
-
-        {error && (
-          <div className="rounded-lg border border-red-800/50 bg-red-950/50 px-4 py-3 text-sm text-red-300">
-            {error}
+          <div className="text-center">
+            <p className="mt-1 text-sm text-muted-foreground">Sign in to access the admin panel</p>
           </div>
-        )}
 
-        <div className="space-y-3">
-          {providers.map((p) => {
-            const meta = PROVIDER_META[p] ?? { label: p, icon: "" };
-            return (
-              <a
-                key={p}
-                href={`${import.meta.env.VITE_API_URL || "http://localhost:9003"}/auth/admin/login/${p}`}
-                className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-600 hover:bg-zinc-750"
-              >
-                {meta.icon && (
-                  <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                    <path d={meta.icon} />
-                  </svg>
-                )}
-                Continue with {meta.label}
-              </a>
-            );
-          })}
-          {providers.length === 0 && (
-            <p className="text-center text-sm text-zinc-500">
-              No OAuth providers configured. Check your .env file.
-            </p>
+          {error && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+              {error}
+            </div>
           )}
-        </div>
+
+          <div className="space-y-3">
+            {providers.map((p) => {
+              const meta = PROVIDER_META[p] ?? { label: p, icon: "" };
+              return (
+                <a
+                  key={p}
+                  href={`${import.meta.env.VITE_API_URL || "http://localhost:9003"}/auth/admin/login/${p}`}
+                  className="flex w-full items-center justify-center gap-2.5 rounded-md border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                >
+                  {meta.icon && (
+                    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                      <path d={meta.icon} />
+                    </svg>
+                  )}
+                  Continue with {meta.label}
+                </a>
+              );
+            })}
+            {providers.length === 0 && (
+              <p className="text-center text-sm text-muted-foreground">
+                No OAuth providers configured. Check your .env file.
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>
