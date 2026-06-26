@@ -21,6 +21,12 @@ export interface SentinelAuthzMiddlewareConfig {
    * a token minted for another service from being replayed here.
    */
   serviceName: string
+  /**
+   * Realm slug (this service's shared scope). When set, the authz token's `svc`
+   * may equal either `serviceName` or this. Realm members resolve it once at
+   * startup via `fetchWhoami` from `@sentinel-auth/js/server`. Omit for standalone.
+   */
+  effectiveScope?: string
   /** Paths that skip auth (e.g. ["/login", "/api/auth"]). */
   publicPaths?: string[]
   /** Redirect target for unauthenticated page requests. Defaults to "/login". */
@@ -71,6 +77,7 @@ export function createSentinelAuthzMiddleware(config: SentinelAuthzMiddlewareCon
     idpAudience,
     idpIssuer,
     serviceName,
+    effectiveScope,
     publicPaths = [],
     loginPath = '/login',
   } = config
@@ -147,8 +154,10 @@ export function createSentinelAuthzMiddleware(config: SentinelAuthzMiddlewareCon
         return handleUnauthenticated(req, loginPath)
       }
 
-      // Enforce svc binding: the authz token was minted for this service.
-      if (!authzClaims.svc || authzClaims.svc !== serviceName) {
+      // Enforce svc binding: the authz token was minted for this service's shared
+      // scope — its own name (standalone) or its realm slug (effectiveScope).
+      const allowedSvc = new Set([serviceName, effectiveScope].filter(Boolean))
+      if (!authzClaims.svc || !allowedSvc.has(authzClaims.svc as string)) {
         return handleUnauthenticated(req, loginPath)
       }
 
