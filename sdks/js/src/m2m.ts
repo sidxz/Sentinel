@@ -68,3 +68,35 @@ export async function fetchWhoami(opts: {
   if (!res.ok) throw new Error(`whoami failed: ${res.status}`)
   return res.json() as Promise<WhoamiResponse>
 }
+
+/**
+ * Mints and caches no-user realm m2m tokens for outbound system calls (sender
+ * side of Flow B). Server entry only — never construct this in a browser; it
+ * holds the service key. Re-mints only once past ~80% of the token's TTL.
+ */
+export class M2mTokenClient {
+  private readonly base: string
+  private readonly serviceKey: string
+  private token: string | null = null
+  private refreshAt = 0
+
+  constructor(sentinelUrl: string, serviceKey: string) {
+    this.base = sentinelUrl.replace(/\/+$/, '')
+    this.serviceKey = serviceKey
+  }
+
+  /** Return a cached token if still fresh, else mint a new one. */
+  async getToken(): Promise<string> {
+    if (this.token && Date.now() < this.refreshAt) return this.token
+    const res = await fetch(`${this.base}/realm/m2m-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Service-Key': this.serviceKey },
+      body: JSON.stringify({}),
+    })
+    if (!res.ok) throw new Error(`m2m mint failed: ${res.status}`)
+    const data = (await res.json()) as { token: string; expires_in: number }
+    this.token = data.token
+    this.refreshAt = Date.now() + data.expires_in * 0.8 * 1000
+    return this.token
+  }
+}

@@ -2,7 +2,7 @@
 export { verifyToken, payloadToUser } from './jwt-verifier'
 export { PermissionClient } from './permissions'
 export { RoleClient } from './roles'
-export { verifyM2mToken, fetchWhoami } from './m2m'
+export { verifyM2mToken, fetchWhoami, M2mTokenClient } from './m2m'
 
 export type {
   SentinelUser,

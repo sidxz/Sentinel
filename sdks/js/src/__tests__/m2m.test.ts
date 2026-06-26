@@ -92,3 +92,34 @@ describe('fetchWhoami', () => {
     vi.restoreAllMocks()
   })
 })
+
+import { M2mTokenClient } from '../m2m'
+
+describe('M2mTokenClient', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('mints then serves from cache within the TTL window', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ token: 'tok-1', expires_in: 300 }), { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const c = new M2mTokenClient('http://localhost:9010', 'k')
+    expect(await c.getToken()).toBe('tok-1')
+    expect(await c.getToken()).toBe('tok-1')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://localhost:9010/realm/m2m-token')
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>)['X-Service-Key']).toBe('k')
+    vi.restoreAllMocks()
+  })
+
+  it('throws when Sentinel rejects the mint', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'not a realm member' }), { status: 403 }),
+    ))
+    const c = new M2mTokenClient('http://localhost:9010', 'k')
+    await expect(c.getToken()).rejects.toThrow(/403/)
+    vi.restoreAllMocks()
+  })
+})
