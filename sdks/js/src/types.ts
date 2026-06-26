@@ -144,3 +144,43 @@ export interface VerifyOptions {
   /** Expected issuer claim. */
   issuer?: string
 }
+
+// ── Realm m2m (no-user) ─────────────────────────────────────────────
+
+export interface M2mJWTPayload {
+  svc: string
+  caller: string
+  actions: string[]
+  aud_target: string | null
+  aud: string | string[]
+  iss: string
+  exp: number
+  iat: number
+  jti: string
+  type: 'm2m'
+}
+
+export interface WhoamiResponse {
+  service_name: string
+  effective_scope: string
+  realm: { slug: string; name: string } | null
+}
+
+export interface M2mVerifyOptions {
+  /** JWKS URL of the Sentinel that signs m2m tokens. */
+  jwksUrl: string
+  /** This service's shared scope (realm slug). The token's `svc` must equal it. */
+  effectiveScope: string
+  /** This service's own name — checked against `aud_target` when the token sets it. */
+  serviceName?: string
+  /** Expected issuer claim. */
+  issuer?: string
+}
+
+/** No-user in-realm caller context — the counterpart to a SentinelUser. */
+export interface SystemAuth {
+  caller: string
+  actions: string[]
+  svc: string
+  can(action: string): boolean
+}
