@@ -1764,6 +1764,10 @@ async def remove_realm_member(
     app = await service_app_service.get_service_app(db, service_app_id)
     if app is None:
         raise HTTPException(status_code=404, detail="Service app not found")
+    if app.realm_id != realm_id:
+        raise HTTPException(
+            status_code=404, detail="Service app is not a member of this realm"
+        )
     await realm_service.remove_member(db, service_app_id)
     await activity_service.log_activity(
         db,

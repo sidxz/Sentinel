@@ -155,7 +155,8 @@ def test_add_member_realm_missing_404(monkeypatch):
 
 def test_remove_member_204_and_audits(monkeypatch):
     app = _build_app(monkeypatch)
-    member = _app(realm_id=uuid.uuid4())
+    realm_id = uuid.uuid4()
+    member = _app(realm_id=realm_id)
 
     async def _get_app(_db, _aid):
         return member
@@ -172,11 +173,27 @@ def test_remove_member_204_and_audits(monkeypatch):
     monkeypatch.setattr(admin_routes.realm_service, "remove_member", _remove)
     monkeypatch.setattr(admin_routes.activity_service, "log_activity", _log)
     resp = TestClient(app).delete(
-        f"/admin/realms/{uuid.uuid4()}/members/{member.id}",
+        f"/admin/realms/{realm_id}/members/{member.id}",
         headers={"X-Requested-With": "XMLHttpRequest"},
     )
     assert resp.status_code == 204
     assert logged["action"] == "realm_member_removed"
+
+
+def test_remove_member_not_in_this_realm_404(monkeypatch):
+    app = _build_app(monkeypatch)
+    member = _app(realm_id=uuid.uuid4())  # belongs to a DIFFERENT realm
+
+    async def _get_app(_db, _aid):
+        return member
+
+    monkeypatch.setattr(admin_routes.service_app_service, "get_service_app", _get_app)
+    # path realm != member.realm_id
+    resp = TestClient(app).delete(
+        f"/admin/realms/{uuid.uuid4()}/members/{member.id}",
+        headers={"X-Requested-With": "XMLHttpRequest"},
+    )
+    assert resp.status_code == 404
 
 
 def test_realm_endpoints_require_admin_auth():
