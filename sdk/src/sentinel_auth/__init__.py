@@ -1,6 +1,6 @@
 from importlib.metadata import version
 
-from sentinel_auth.auth import RequestAuth
+from sentinel_auth.auth import RequestAuth, SystemAuth
 from sentinel_auth.authz import AuthzClient
 from sentinel_auth.authz_middleware import AuthzMiddleware
 from sentinel_auth.dependencies import get_token
@@ -21,6 +21,7 @@ __all__ = [
     "RoleClient",
     "Sentinel",
     "SentinelError",
+    "SystemAuth",
     "WorkspaceContext",
     "__version__",
     "get_token",

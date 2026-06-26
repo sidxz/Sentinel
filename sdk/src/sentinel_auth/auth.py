@@ -270,3 +270,27 @@ class RequestAuth:
             self.user.workspace_id,
             group_id,
         )
+
+
+@dataclass(frozen=True)
+class SystemAuth:
+    """Per-request context for a no-user (machine-to-machine) in-realm call.
+
+    The no-user counterpart to :class:`RequestAuth`. It is produced by
+    ``Sentinel.verify_m2m_token`` after a ``type=m2m`` token (``aud=sentinel:m2m``)
+    passes Sentinel's RS256 signature + realm-scope checks. It carries service
+    identity only — never a user:
+
+    - ``caller``: the realm member that minted the token (server-stamped, for audit).
+    - ``svc``: the realm slug the token is scoped to (the shared ``effective_scope``).
+    - ``actions``: granted actions. ``["*"]`` is full in-realm trust (v1); a narrowed
+      list is honored by ``can`` with no shape change when least-privilege m2m ships.
+    """
+
+    caller: str
+    actions: list[str]
+    svc: str
+
+    def can(self, action: str) -> bool:
+        """Whether this system caller may perform ``action``. No network call."""
+        return "*" in self.actions or action in self.actions
