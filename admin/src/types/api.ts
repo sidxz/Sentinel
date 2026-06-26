@@ -217,6 +217,7 @@ export interface ServiceApp {
   key_prefix: string;
   is_active: boolean;
   allowed_origins: string[];
+  realm_id: string | null;
   last_used_at: string | null;
   created_by: string | null;
   created_at: string;
@@ -324,4 +325,23 @@ export interface SystemSettings {
   rate_limits: RateLimitInfo[];
   service_keys: ServiceKeyInfo[];
   service: ServiceInfoType;
+}
+
+// ── Realms (trusted app groups) ──────────────────────────────────────
+
+export interface Realm {
+  id: string;
+  slug: string;
+  name: string;
+  m2m_ttl_s: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface RealmMember {
+  // `id` is the service-app id — pass it to add/removeRealmMember.
+  id: string;
+  name: string;
+  service_name: string;
+  has_grants: boolean;
 }

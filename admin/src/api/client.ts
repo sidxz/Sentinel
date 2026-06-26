@@ -12,6 +12,8 @@ import type {
   OrganizationDetail,
   OrgUser,
   PaginatedResponse,
+  Realm,
+  RealmMember,
   RoleMember,
   ServiceAction,
   ServiceApp,
@@ -503,3 +505,44 @@ export const setWorkspaceAllowedOrgs = (
     `/admin/workspaces/${workspaceId}/allowed-organizations`,
     { method: "PUT", body: JSON.stringify({ organization_ids }) },
   );
+
+// ── Realms ───────────────────────────────────────────────────────────
+
+export const getRealms = () => request<Realm[]>("/admin/realms");
+
+export const createRealm = (body: {
+  name: string;
+  slug: string;
+  m2m_ttl_s?: number;
+}) =>
+  request<Realm>("/admin/realms", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getRealm = (id: string) => request<Realm>(`/admin/realms/${id}`);
+
+export const updateRealm = (
+  id: string,
+  body: { name?: string; m2m_ttl_s?: number; is_active?: boolean },
+) =>
+  request<Realm>(`/admin/realms/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+export const deleteRealm = (id: string) =>
+  request(`/admin/realms/${id}`, { method: "DELETE" });
+
+export const getRealmMembers = (id: string) =>
+  request<RealmMember[]>(`/admin/realms/${id}/members`);
+
+export const addRealmMember = (realmId: string, serviceAppId: string) =>
+  request(`/admin/realms/${realmId}/members/${serviceAppId}`, {
+    method: "POST",
+  });
+
+export const removeRealmMember = (realmId: string, serviceAppId: string) =>
+  request(`/admin/realms/${realmId}/members/${serviceAppId}`, {
+    method: "DELETE",
+  });
