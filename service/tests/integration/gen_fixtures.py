@@ -41,6 +41,9 @@ os.environ["JWT_PRIVATE_KEY_PATH"] = str(_tmp / "priv.pem")
 os.environ["JWT_PUBLIC_KEY_PATH"] = str(_tmp / "pub.pem")
 os.environ["JWT_PREVIOUS_PUBLIC_KEY_PATHS"] = ""
 os.environ["BASE_URL"] = _ISSUER
+# Keep the committed authz vector long-lived (10y) like the m2m ones — prod default is
+# 5 min, which makes a static committed token a time-bomb (expires 5 min after gen).
+os.environ["AUTHZ_TOKEN_EXPIRE_MINUTES"] = str(10 * 365 * 24 * 60)
 
 from src.auth import key_provider  # noqa: E402
 from src.auth.jwks import build_jwks  # noqa: E402
