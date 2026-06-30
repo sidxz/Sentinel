@@ -230,7 +230,9 @@ class Sentinel:
             if resp.status_code != 200:
                 return None
             data = resp.json()
-        except httpx.HTTPError:
+        except (httpx.HTTPError, ValueError):
+            # ValueError = a non-JSON 200 (e.g. an ingress that serves the admin
+            # SPA/HTML for /realm) — degrade to standalone, never crash startup.
             return None
         self._effective_scope = data.get("effective_scope")
         self._realm = data.get("realm")

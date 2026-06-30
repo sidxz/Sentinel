@@ -66,3 +66,17 @@ async def test_pre_realm_sentinel_404_degrades_to_standalone():
     assert data is None
     assert s.effective_scope == "docs"  # falls back to service_name, no crash
     assert s.realm is None
+
+
+@respx.mock
+async def test_non_json_200_degrades_to_standalone():
+    # An ingress misroute can serve the admin SPA (200 text/html) for /realm/whoami.
+    # resp.json() raises ValueError — must degrade, not crash startup.
+    respx.get("https://sentinel.test/realm/whoami").mock(
+        return_value=httpx.Response(200, html="<!doctype html><html><title>Admin</title></html>")
+    )
+    s = _sentinel()
+    data = await s.fetch_whoami()
+    assert data is None
+    assert s.effective_scope == "docs"
+    assert s.realm is None
