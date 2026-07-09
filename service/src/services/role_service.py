@@ -1,6 +1,7 @@
 import uuid
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.role import Role, RoleAction, ServiceAction, UserRole
@@ -12,35 +13,61 @@ async def register_actions(
     service_name: str,
     actions: list[dict],
 ) -> list[ServiceAction]:
-    action_names = [a["action"] for a in actions]
-    stmt = select(ServiceAction).where(
-        ServiceAction.service_name == service_name,
-        ServiceAction.action.in_(action_names),
-    )
-    result = await db.execute(stmt)
-    existing = {sa.action: sa for sa in result.scalars().all()}
+    """Idempotently register a service's RBAC actions.
 
-    # Update descriptions for existing actions
-    for a in actions:
-        if a["action"] in existing:
-            sa = existing[a["action"]]
-            if a.get("description") is not None:
-                sa.description = a["description"]
+    Uses a single atomic ``INSERT ... ON CONFLICT DO UPDATE`` keyed on the
+    ``uq_service_action`` (service_name, action) constraint. The previous
+    read-then-insert was non-atomic: it held the unique-index lock across the
+    round-trip, so a slow/aborted registrant could strand the lock and stall
+    every concurrent or retried registration (manifesting as client-side
+    ``ReadTimeout`` at startup). The upsert closes that window. A ``NULL``
+    incoming description never clears an existing one.
+    """
+    if not actions:
+        return []
 
-    # Insert new actions
-    new_actions = []
+    # Collapse duplicate action names (last description wins). A single
+    # INSERT ... ON CONFLICT DO UPDATE cannot touch the same target row twice
+    # ("ON CONFLICT DO UPDATE command cannot affect row a second time"), so a
+    # batch containing the same action twice must be deduped before the upsert.
+    deduped: dict[str, dict] = {}
     for a in actions:
-        if a["action"] not in existing:
-            sa = ServiceAction(
-                service_name=service_name,
-                action=a["action"],
-                description=a.get("description"),
+        deduped[a["action"]] = a
+
+    rows = [
+        {
+            "id": uuid.uuid4(),
+            "service_name": service_name,
+            "action": a["action"],
+            "description": a.get("description"),
+        }
+        for a in deduped.values()
+    ]
+    stmt = pg_insert(ServiceAction).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_service_action",
+        set_={
+            "description": func.coalesce(
+                stmt.excluded.description, ServiceAction.description
             )
-            db.add(sa)
-            new_actions.append(sa)
-
+        },
+    )
+    await db.execute(stmt)
     await db.commit()
-    return list(existing.values()) + new_actions
+
+    # Read back deterministically. populate_existing refreshes any instances
+    # already in this session's identity map (expire_on_commit=False), so the
+    # returned descriptions reflect the just-committed values, not stale ones.
+    result = await db.execute(
+        select(ServiceAction)
+        .where(
+            ServiceAction.service_name == service_name,
+            ServiceAction.action.in_(list(deduped)),
+        )
+        .order_by(ServiceAction.action)
+        .execution_options(populate_existing=True)
+    )
+    return list(result.scalars().all())
 
 
 async def check_action(

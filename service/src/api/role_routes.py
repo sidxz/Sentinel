@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.dependencies import (
     CurrentUser,
     ServiceKeyContext,
-    get_current_user,
+    get_user_for_service_call,
     require_service_key,
     verify_service_scope,
 )
@@ -52,7 +52,7 @@ async def register_actions(
 async def check_action(
     body: CheckActionRequest,
     svc: ServiceKeyContext = Depends(require_service_key),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_user_for_service_call),
     db: AsyncSession = Depends(get_db),
 ):
     verify_service_scope(svc, body.service_name)
@@ -74,7 +74,7 @@ async def get_user_actions(
     workspace_id: uuid.UUID = Query(...),
     service_name: str = Query(...),
     svc: ServiceKeyContext = Depends(require_service_key),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_user_for_service_call),
     db: AsyncSession = Depends(get_db),
 ):
     verify_service_scope(svc, service_name)
