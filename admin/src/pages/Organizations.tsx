@@ -18,7 +18,7 @@ export function Organizations() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", slug: "" });
 
-  const { data: orgs = [], isLoading } = useQuery({
+  const { data: orgs = [], isLoading, error } = useQuery({
     queryKey: ["organizations"],
     queryFn: getOrganizations,
   });
@@ -107,6 +107,7 @@ export function Organizations() {
           data={orgs}
           onRowClick={(o) => navigate(`/organizations/${o.id}`)}
           emptyMessage="No organizations"
+          error={error}
         />
       )}
 

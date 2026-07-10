@@ -5,6 +5,7 @@ Revises: 21bddf454fbc
 Create Date: 2026-06-09 15:43:41.691691
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -12,8 +13,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'd5e0f69a4c94'
-down_revision: Union[str, None] = '21bddf454fbc'
+revision: str = "d5e0f69a4c94"
+down_revision: Union[str, None] = "21bddf454fbc"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -146,9 +147,7 @@ def downgrade() -> None:
         table_name="workspace_allowed_organizations",
     )
     op.drop_table("workspace_allowed_organizations")
-    op.drop_index(
-        "ix_organization_domains_org_id", table_name="organization_domains"
-    )
+    op.drop_index("ix_organization_domains_org_id", table_name="organization_domains")
     op.drop_table("organization_domains")
     op.drop_index("uq_one_public_org", table_name="organizations")
     op.drop_table("organizations")

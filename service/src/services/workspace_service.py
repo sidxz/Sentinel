@@ -1,8 +1,11 @@
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.group import Group, GroupMembership
+from src.models.role import Role, UserRole
 from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.services import organization_service, token_service
@@ -19,7 +22,10 @@ async def create_workspace(
         name=name, slug=slug, description=description, created_by=created_by
     )
     db.add(workspace)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise ValueError("A workspace with this slug already exists") from None
 
     # Creator becomes owner
     membership = WorkspaceMembership(
@@ -121,6 +127,15 @@ async def invite_member(
     if not user:
         raise ValueError("User not found")
 
+    existing = await db.execute(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.user_id == user.id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise ValueError("User is already a member of this workspace")
+
     await organization_service.assert_user_allowed_in_workspace(db, user, workspace_id)
 
     membership = WorkspaceMembership(
@@ -132,9 +147,11 @@ async def invite_member(
 
 
 async def _count_owners(db: AsyncSession, workspace_id: uuid.UUID) -> int:
-    # FOR UPDATE locks owner rows to prevent concurrent demotion/removal races
+    # FOR UPDATE locks owner rows to prevent concurrent demotion/removal races.
+    # Postgres forbids FOR UPDATE with aggregates, so lock the rows and count
+    # them client-side instead of SELECT count(*).
     stmt = (
-        select(func.count())
+        select(WorkspaceMembership.user_id)
         .where(
             WorkspaceMembership.workspace_id == workspace_id,
             WorkspaceMembership.role == "owner",
@@ -142,7 +159,7 @@ async def _count_owners(db: AsyncSession, workspace_id: uuid.UUID) -> int:
         .with_for_update()
     )
     result = await db.execute(stmt)
-    return result.scalar_one()
+    return len(result.scalars().all())
 
 
 async def update_member_role(
@@ -215,6 +232,26 @@ async def remove_member(
         if await _count_owners(db, workspace_id) <= 1:
             raise ValueError("Cannot remove the last workspace owner")
 
+    # Purge the user's workspace-scoped groups and RBAC roles in the same
+    # transaction: neither table is FK-tied to workspace_memberships, and
+    # check_action never re-joins it — stale rows would silently reinstate
+    # old privileges on re-invite.
+    await db.execute(
+        delete(GroupMembership).where(
+            GroupMembership.user_id == user_id,
+            GroupMembership.group_id.in_(
+                select(Group.id).where(Group.workspace_id == workspace_id)
+            ),
+        )
+    )
+    await db.execute(
+        delete(UserRole).where(
+            UserRole.user_id == user_id,
+            UserRole.role_id.in_(
+                select(Role.id).where(Role.workspace_id == workspace_id)
+            ),
+        )
+    )
     await db.delete(membership)
     await db.commit()
     # Revoke tokens — user no longer belongs to this workspace

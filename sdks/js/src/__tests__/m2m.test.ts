@@ -114,6 +114,32 @@ describe('M2mTokenClient', () => {
     vi.restoreAllMocks()
   })
 
+  it('dedupes concurrent mints into a single request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ token: 'tok-1', expires_in: 300 }), { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const c = new M2mTokenClient('http://localhost:9010', 'k')
+    const tokens = await Promise.all([c.getToken(), c.getToken(), c.getToken()])
+    expect(tokens).toEqual(['tok-1', 'tok-1', 'tok-1'])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    vi.restoreAllMocks()
+  })
+
+  it('recovers after a failed mint (does not cache the rejection)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('nope', { status: 403 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'tok-2', expires_in: 300 }), { status: 200 }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    const c = new M2mTokenClient('http://localhost:9010', 'k')
+    await expect(c.getToken()).rejects.toThrow(/403/)
+    expect(await c.getToken()).toBe('tok-2')
+    vi.restoreAllMocks()
+  })
+
   it('throws when Sentinel rejects the mint', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ detail: 'not a realm member' }), { status: 403 }),

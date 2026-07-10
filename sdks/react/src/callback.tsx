@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { SentinelUser, WorkspaceOption } from '@sentinel-auth/js'
 import { useAuth } from './hooks'
 
@@ -37,6 +37,7 @@ export function AuthCallback({
   const [loading, setLoading] = useState(true)
   const [selecting, setSelecting] = useState(false)
   const [error, setError] = useState<Error | null>(null)
+  const processedRef = useRef(false)
 
   const code =
     typeof window !== 'undefined'
@@ -44,6 +45,12 @@ export function AuthCallback({
       : null
 
   useEffect(() => {
+    // verifyCallbackState() consumes the one-shot state key, so this effect
+    // must not run twice (React StrictMode double-mounts) — same guard as
+    // AuthzCallback's resolvedRef.
+    if (processedRef.current) return
+    processedRef.current = true
+
     if (!code) {
       const err = new Error('Missing authorization code in callback URL')
       setError(err)

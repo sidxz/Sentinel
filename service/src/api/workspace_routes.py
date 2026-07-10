@@ -44,13 +44,16 @@ async def create_workspace(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    workspace = await workspace_service.create_workspace(
-        db,
-        name=body.name,
-        slug=body.slug,
-        created_by=user.user_id,
-        description=body.description,
-    )
+    try:
+        workspace = await workspace_service.create_workspace(
+            db,
+            name=body.name,
+            slug=body.slug,
+            created_by=user.user_id,
+            description=body.description,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     return workspace
 
 

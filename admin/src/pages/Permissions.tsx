@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   adminGetPermission,
   adminListPermissions,
@@ -31,7 +32,7 @@ export function Permissions() {
     queryFn: getAllWorkspaces,
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["admin-permissions", page, workspaceFilter, serviceFilter, resourceIdFilter, ownerFilter, sortBy, sortOrder],
     queryFn: () =>
       adminListPermissions({
@@ -80,6 +81,11 @@ export function Permissions() {
 
       {isLoading ? (
         <div className="h-64 bg-muted/50 rounded-lg animate-pulse" />
+      ) : isError ? (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
+          <div className="text-sm text-red-600 dark:text-red-400">Failed to load permissions</div>
+          <div className="text-xs text-red-500/70 mt-1">{(error as Error).message}</div>
+        </div>
       ) : (
         <>
           {/* Table */}
@@ -159,6 +165,7 @@ function PermissionRow({
       queryClient.invalidateQueries({ queryKey: ["admin-permissions"] });
       queryClient.invalidateQueries({ queryKey: ["admin-permission", perm.id] });
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const revoke = useMutation({
@@ -168,6 +175,7 @@ function PermissionRow({
       queryClient.invalidateQueries({ queryKey: ["admin-permission", perm.id] });
       queryClient.invalidateQueries({ queryKey: ["admin-permissions"] });
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const share = useMutation({

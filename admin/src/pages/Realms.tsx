@@ -18,7 +18,7 @@ export function Realms() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", slug: "", m2m_ttl_s: "300" });
 
-  const { data: realms = [], isLoading } = useQuery({
+  const { data: realms = [], isLoading, error } = useQuery({
     queryKey: ["realms"],
     queryFn: getRealms,
   });
@@ -93,6 +93,7 @@ export function Realms() {
           data={realms}
           onRowClick={(r) => navigate(`/realms/${r.id}`)}
           emptyMessage="No realms"
+          error={error}
         />
       )}
 

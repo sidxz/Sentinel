@@ -18,7 +18,9 @@ class _TTLCache:
     single-threaded event loops (no locks needed).
 
     Entries are evicted lazily on read. A periodic ``_evict()`` runs when
-    the cache exceeds ``maxsize * 1.5`` to bound memory.
+    the cache exceeds ``maxsize * 1.5``: expired entries go first, then the
+    oldest insertions until back at ``maxsize`` — so a high-cardinality burst
+    within one TTL window can't grow the cache unbounded.
     """
 
     __slots__ = ("_store", "_ttl", "_maxsize")
@@ -60,6 +62,13 @@ class _TTLCache:
         expired = [k for k, (ts, _) in self._store.items() if now - ts > self._ttl]
         for k in expired:
             del self._store[k]
+        # ponytail: oldest-insertion drop, not LRU — read-recency tracking isn't
+        # worth it for a cache whose entries live one short TTL anyway.
+        overflow = len(self._store) - self._maxsize
+        if overflow > 0:
+            oldest = sorted(self._store, key=lambda k: self._store[k][0])[:overflow]
+            for k in oldest:
+                del self._store[k]
 
     def __len__(self) -> int:
         return len(self._store)

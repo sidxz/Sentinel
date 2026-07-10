@@ -99,20 +99,15 @@ async def test_update_realm_missing_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_delete_realm_deletes_and_invalidates_cache(monkeypatch):
-    from src.services import realm_service, service_app_service
+async def test_delete_realm_deletes(monkeypatch):
+    # Cache invalidation moved to the route, AFTER commit — ordering covered by
+    # tests/test_cache_invalidation_ordering.py.
+    from src.services import realm_service
 
-    called = []
-
-    async def _record():
-        called.append(1)
-
-    monkeypatch.setattr(service_app_service, "_invalidate_cache", _record)
     realm = Realm(id=uuid.uuid4(), name="A", slug="acme-suite", m2m_ttl_s=300)
     db = _FakeDB(get_result=realm)
     assert await realm_service.delete_realm(db, realm.id) is True
     assert realm in db.deleted
-    assert called, "delete_realm must invalidate the service-key cache"
 
 
 @pytest.mark.asyncio

@@ -18,7 +18,7 @@ export function Workspaces() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", slug: "", description: "" });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["workspaces", page, search],
     queryFn: () => getWorkspaces(page, 20, search || undefined),
   });
@@ -104,6 +104,7 @@ export function Workspaces() {
             data={data?.items ?? []}
             onRowClick={(w) => navigate(`/workspaces/${w.id}`)}
             emptyMessage="No workspaces found"
+            error={error}
           />
           {data && data.total > data.page_size && (
             <div className="flex items-center justify-between text-xs text-muted-foreground">

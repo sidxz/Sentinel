@@ -27,7 +27,7 @@ export function ClientAppDetail() {
   const [deleteName, setDeleteName] = useState("");
   const [editForm, setEditForm] = useState({ name: "", redirect_uris: "", is_active: true });
 
-  const { data: app } = useQuery({
+  const { data: app, isLoading, isError, error } = useQuery({
     queryKey: ["client-app", id],
     queryFn: () => getClientApp(id!),
     enabled: !!id,
@@ -76,7 +76,27 @@ export function ClientAppDetail() {
     setShowEdit(true);
   };
 
-  if (!app) return <div className="animate-pulse h-64 bg-muted/50 rounded-lg" />;
+  if (isLoading) {
+    return <div className="animate-pulse h-64 bg-muted/50 rounded-lg" />;
+  }
+
+  if (isError || !app) {
+    return (
+      <div className="space-y-3">
+        <Link
+          to="/client-apps"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          ← Login Apps
+        </Link>
+        <div className="border border-border rounded-lg p-6 text-center">
+          <p className="text-sm text-foreground">
+            {(error as Error)?.message ?? "App not found."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

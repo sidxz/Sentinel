@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { bulkUserStatus, exportUsers, getUsers } from "../api/client";
 import { StatusBadge } from "../components/Badge";
 import { ConfirmModal } from "../components/ConfirmModal";
@@ -19,7 +20,7 @@ export function Users() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState<"activate" | "deactivate" | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["users", page, search],
     queryFn: () => getUsers(page, 20, search || undefined),
   });
@@ -32,6 +33,7 @@ export function Users() {
       setSelectedIds(new Set());
       setBulkAction(null);
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const toggleSelect = (id: string) => {
@@ -135,6 +137,7 @@ export function Users() {
             data={data?.items ?? []}
             onRowClick={(u) => navigate(`/users/${u.id}`)}
             emptyMessage="No users found"
+            error={error}
           />
           {data && data.total > data.page_size && (
             <Pagination page={data.page} total={data.total} pageSize={data.page_size} onChange={setPage} />

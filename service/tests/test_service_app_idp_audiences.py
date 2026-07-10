@@ -74,15 +74,10 @@ class _FakeDB:
         pass
 
 
-async def _noop():
-    pass
-
-
 @pytest.mark.asyncio
 async def test_create_service_app_persists_audiences(monkeypatch):
     from src.services import service_app_service
 
-    monkeypatch.setattr(service_app_service, "_invalidate_cache", _noop)
     app, _key = await service_app_service.create_service_app(
         _FakeDB(),
         name="App A",
@@ -97,7 +92,6 @@ async def test_update_service_app_sets_and_preserves_audiences(monkeypatch):
     from src.models.service_app import ServiceApp
     from src.services import service_app_service
 
-    monkeypatch.setattr(service_app_service, "_invalidate_cache", _noop)
     existing = ServiceApp(
         id=uuid.uuid4(),
         name="App A",

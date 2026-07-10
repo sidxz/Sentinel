@@ -77,7 +77,7 @@ export function ServiceAppDetail() {
   const [editForm, setEditForm] = useState({ name: "", is_active: true, allowed_origins: "" });
   const [revealKey, setRevealKey] = useState<string | null>(null);
 
-  const { data: app } = useQuery({
+  const { data: app, isLoading, isError, error } = useQuery({
     queryKey: ["service-app", id],
     queryFn: () => getServiceApp(id!),
     enabled: !!id,
@@ -154,7 +154,27 @@ export function ServiceAppDetail() {
     setShowEdit(true);
   };
 
-  if (!app) return <div className="animate-pulse h-64 bg-muted/50 rounded-lg" />;
+  if (isLoading) {
+    return <div className="animate-pulse h-64 bg-muted/50 rounded-lg" />;
+  }
+
+  if (isError || !app) {
+    return (
+      <div className="space-y-3">
+        <Link
+          to="/service-apps"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          ← Services
+        </Link>
+        <div className="border border-border rounded-lg p-6 text-center">
+          <p className="text-sm text-foreground">
+            {(error as Error)?.message ?? "Service not found."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

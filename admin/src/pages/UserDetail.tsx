@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { addUserToWorkspace, getAllWorkspaces, getUserDetail, revokeUserTokens, updateUser } from "../api/client";
@@ -39,6 +40,7 @@ export function UserDetail() {
       queryClient.invalidateQueries({ queryKey: ["user", id] });
       setEditingName(false);
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const toggleActive = useMutation({
@@ -47,6 +49,7 @@ export function UserDetail() {
       queryClient.invalidateQueries({ queryKey: ["user", id] });
       setShowConfirmToggle(false);
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const toggleAdmin = useMutation({
@@ -55,6 +58,7 @@ export function UserDetail() {
       queryClient.invalidateQueries({ queryKey: ["user", id] });
       setShowConfirmAdmin(false);
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const revokeTokens = useMutation({
@@ -62,6 +66,7 @@ export function UserDetail() {
     onSuccess: () => {
       setShowConfirmRevoke(false);
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const addToWorkspace = useMutation({

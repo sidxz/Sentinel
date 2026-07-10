@@ -36,6 +36,9 @@ const permissions = new PermissionClient(
 )
 ```
 
+!!! note "Which token?"
+    The `token` argument on every `PermissionClient` and `RoleClient` method must be a **Sentinel-signed** token: the access token in proxy mode, or the authz token (the `X-Authz-Token` request header) in [AuthZ mode](authz-client.md). In AuthZ mode the `Authorization` header carries the IdP token — Sentinel can't decode it, so passing it fails every call with a 401.
+
 **can(token, resourceType, resourceId, action)** -- single permission check.
 
 ```typescript

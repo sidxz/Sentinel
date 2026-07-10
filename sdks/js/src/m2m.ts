@@ -79,6 +79,7 @@ export class M2mTokenClient {
   private readonly serviceKey: string
   private token: string | null = null
   private refreshAt = 0
+  private mintPromise: Promise<string> | null = null
 
   constructor(sentinelUrl: string, serviceKey: string) {
     this.base = sentinelUrl.replace(/\/+$/, '')
@@ -88,6 +89,17 @@ export class M2mTokenClient {
   /** Return a cached token if still fresh, else mint a new one. */
   async getToken(): Promise<string> {
     if (this.token && Date.now() < this.refreshAt) return this.token
+    // Share one in-flight mint across concurrent callers (same pattern as
+    // SentinelAuth.refresh) so N parallel calls don't issue N mint requests.
+    if (!this.mintPromise) {
+      this.mintPromise = this.mint().finally(() => {
+        this.mintPromise = null
+      })
+    }
+    return this.mintPromise
+  }
+
+  private async mint(): Promise<string> {
     const res = await fetch(`${this.base}/realm/m2m-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Service-Key': this.serviceKey },

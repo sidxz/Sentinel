@@ -22,10 +22,6 @@ class _FakeDB:
         pass
 
 
-async def _noop():
-    pass
-
-
 def _app() -> ServiceApp:
     return ServiceApp(
         id=uuid.uuid4(),
@@ -52,9 +48,8 @@ async def test_create_realm_sets_fields():
 
 @pytest.mark.asyncio
 async def test_add_member_sets_realm_id(monkeypatch):
-    from src.services import realm_service, service_app_service
+    from src.services import realm_service
 
-    monkeypatch.setattr(service_app_service, "_invalidate_cache", _noop)
     app = _app()
     realm_id = uuid.uuid4()
     out = await realm_service.add_member(_FakeDB(get_result=app), realm_id, app.id)
@@ -63,9 +58,8 @@ async def test_add_member_sets_realm_id(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_remove_member_clears_realm_id(monkeypatch):
-    from src.services import realm_service, service_app_service
+    from src.services import realm_service
 
-    monkeypatch.setattr(service_app_service, "_invalidate_cache", _noop)
     app = _app()
     app.realm_id = uuid.uuid4()
     out = await realm_service.remove_member(_FakeDB(get_result=app), app.id)

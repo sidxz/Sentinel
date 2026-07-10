@@ -18,7 +18,7 @@ export function ClientApps() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", redirect_uris: "" });
 
-  const { data: apps = [], isLoading } = useQuery({
+  const { data: apps = [], isLoading, error } = useQuery({
     queryKey: ["client-apps"],
     queryFn: getClientApps,
   });
@@ -93,6 +93,7 @@ export function ClientApps() {
           data={apps}
           onRowClick={(a) => navigate(`/client-apps/${a.id}`)}
           emptyMessage="No login apps registered"
+          error={error}
         />
       )}
 

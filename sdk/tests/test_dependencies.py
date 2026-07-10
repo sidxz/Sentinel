@@ -11,8 +11,10 @@ from sentinel_auth.auth import RequestAuth
 from sentinel_auth.dependencies import (
     get_current_user,
     get_request_auth_factory,
+    get_token,
     get_workspace_context,
     get_workspace_id,
+    require_action,
     require_role,
 )
 from sentinel_auth.types import AuthenticatedUser
@@ -117,6 +119,100 @@ class TestRequireRole:
         resp = TestClient(app).get("/admin")
         assert resp.status_code == 403
         assert "admin" in resp.json()["detail"]
+
+
+class TestGetToken:
+    def test_prefers_state_token_over_header(self, editor_user):
+        """Authz mode: Authorization carries the IdP token; request.state.token
+        holds the Sentinel authz token and must win."""
+        app = FastAPI()
+        _inject_user(app, editor_user, with_token=True)
+
+        @app.get("/tok")
+        def tok(token: str = Depends(get_token)):
+            return {"token": token}
+
+        resp = TestClient(app).get("/tok", headers={"Authorization": "Bearer idp-token"})
+        assert resp.status_code == 200
+        assert resp.json()["token"] == FAKE_TOKEN
+
+    def test_falls_back_to_header(self, editor_user):
+        app = FastAPI()
+        _inject_user(app, editor_user, with_token=False)
+
+        @app.get("/tok")
+        def tok(token: str = Depends(get_token)):
+            return {"token": token}
+
+        resp = TestClient(app).get("/tok", headers={"Authorization": f"Bearer {FAKE_TOKEN}"})
+        assert resp.json()["token"] == FAKE_TOKEN
+
+    def test_401_when_no_token_anywhere(self, editor_user):
+        app = FastAPI()
+        _inject_user(app, editor_user, with_token=False)
+
+        @app.get("/tok")
+        def tok(token: str = Depends(get_token)):
+            return {"token": token}
+
+        assert TestClient(app).get("/tok").status_code == 401
+
+
+class _RecordingRoleClient:
+    """Stub RoleClient recording which token require_action forwards."""
+
+    def __init__(self, allowed: bool = True):
+        self.allowed = allowed
+        self.seen_tokens: list[str] = []
+
+    async def check_action(self, token, action, workspace_id):
+        self.seen_tokens.append(token)
+        return self.allowed
+
+
+class TestRequireAction:
+    def _app(self, user, role_client, *, with_token: bool) -> FastAPI:
+        app = FastAPI()
+        _inject_user(app, user, with_token=with_token)
+
+        @app.get("/export")
+        def export(u: AuthenticatedUser = Depends(require_action(role_client, "reports:export"))):
+            return {"ok": True}
+
+        return app
+
+    def test_sends_state_token_not_idp_header(self, editor_user):
+        """Authz mode: must forward request.state.token (Sentinel authz token),
+        never the Authorization header's IdP token — Sentinel can't decode that."""
+        rc = _RecordingRoleClient()
+        app = self._app(editor_user, rc, with_token=True)
+
+        resp = TestClient(app).get("/export", headers={"Authorization": "Bearer idp-token"})
+        assert resp.status_code == 200
+        assert rc.seen_tokens == [FAKE_TOKEN]
+
+    def test_falls_back_to_header_token(self, editor_user):
+        """Proxy mode: no state token — the Authorization header is the token."""
+        rc = _RecordingRoleClient()
+        app = self._app(editor_user, rc, with_token=False)
+
+        resp = TestClient(app).get("/export", headers={"Authorization": f"Bearer {FAKE_TOKEN}"})
+        assert resp.status_code == 200
+        assert rc.seen_tokens == [FAKE_TOKEN]
+
+    def test_403_when_action_not_allowed(self, editor_user):
+        rc = _RecordingRoleClient(allowed=False)
+        app = self._app(editor_user, rc, with_token=True)
+
+        resp = TestClient(app).get("/export")
+        assert resp.status_code == 403
+
+    def test_401_when_no_token_anywhere(self, editor_user):
+        rc = _RecordingRoleClient()
+        app = self._app(editor_user, rc, with_token=False)
+
+        assert TestClient(app).get("/export").status_code == 401
+        assert rc.seen_tokens == []
 
 
 class TestGetRequestAuth:

@@ -1,6 +1,7 @@
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.group import Group, GroupMembership
@@ -22,7 +23,12 @@ async def create_group(
         created_by=created_by,
     )
     db.add(group)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        raise ValueError(
+            "A group with this name already exists in this workspace"
+        ) from None
     return group
 
 
@@ -89,7 +95,10 @@ async def add_member(
         raise ValueError("User is not a member of this workspace")
     membership = GroupMembership(group_id=group_id, user_id=user_id)
     db.add(membership)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        raise ValueError("User is already a member of this group") from None
     return membership
 
 

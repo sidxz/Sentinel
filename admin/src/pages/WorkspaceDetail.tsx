@@ -55,7 +55,7 @@ export function WorkspaceDetail() {
   const [deleteSlug, setDeleteSlug] = useState("");
   const [editForm, setEditForm] = useState({ name: "", description: "" });
 
-  const { data: workspace } = useQuery({
+  const { data: workspace, isLoading, isError, error } = useQuery({
     queryKey: ["workspace", id],
     queryFn: () => getWorkspace(id!),
     enabled: !!id,
@@ -71,6 +71,7 @@ export function WorkspaceDetail() {
       queryClient.invalidateQueries({ queryKey: ["workspace", id] });
       setShowEdit(false);
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const remove = useMutation({
@@ -79,6 +80,7 @@ export function WorkspaceDetail() {
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
       navigate("/workspaces");
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const openEdit = () => {
@@ -88,7 +90,27 @@ export function WorkspaceDetail() {
     setShowEdit(true);
   };
 
-  if (!workspace) return <div className="animate-pulse h-64 bg-muted/50 rounded-lg" />;
+  if (isLoading) {
+    return <div className="animate-pulse h-64 bg-muted/50 rounded-lg" />;
+  }
+
+  if (isError || !workspace) {
+    return (
+      <div className="space-y-3">
+        <Link
+          to="/workspaces"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          ← Workspaces
+        </Link>
+        <div className="border border-border rounded-lg p-6 text-center">
+          <p className="text-sm text-foreground">
+            {(error as Error)?.message ?? "Workspace not found."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -236,11 +258,13 @@ function MembersTab({ workspaceId }: { workspaceId: string }) {
     mutationFn: ({ userId, role }: { userId: string; role: string }) =>
       updateMemberRole(workspaceId, userId, role),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceId] }),
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const remove = useMutation({
     mutationFn: (userId: string) => removeMember(workspaceId, userId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceId] }),
+    onError: (e) => toast.error((e as Error).message),
   });
 
   if (isLoading) return <div className="h-32 bg-muted/50 rounded-lg animate-pulse" />;
@@ -363,6 +387,7 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
       setEditingGroup(null);
       setForm({ name: "", description: "" });
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const del = useMutation({
@@ -371,6 +396,7 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
       queryClient.invalidateQueries({ queryKey: ["workspace-groups", workspaceId] });
       setExpandedGroup(null);
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const addMember = useMutation({
@@ -379,11 +405,13 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
       queryClient.invalidateQueries({ queryKey: ["group-members", expandedGroup] });
       setAddMemberEmail("");
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const removeMemberMut = useMutation({
     mutationFn: (userId: string) => removeGroupMember(expandedGroup!, userId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["group-members", expandedGroup] }),
+    onError: (e) => toast.error((e as Error).message),
   });
 
   if (isLoading) return <div className="h-32 bg-muted/50 rounded-lg animate-pulse" />;
@@ -604,6 +632,7 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
       setEditingRole(null);
       setForm({ name: "", description: "" });
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const del = useMutation({
@@ -612,6 +641,7 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
       queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
       setExpandedRole(null);
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const addAction = useMutation({
@@ -621,6 +651,7 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
       queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
       setSelectedActionId("");
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const removeAction = useMutation({
@@ -629,6 +660,7 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
       queryClient.invalidateQueries({ queryKey: ["role-actions", expandedRole] });
       queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const addMember = useMutation({
@@ -638,6 +670,7 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
       queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
       setAddMemberEmail("");
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const removeMemberMut = useMutation({
@@ -646,6 +679,7 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
       queryClient.invalidateQueries({ queryKey: ["role-members", expandedRole] });
       queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   if (isLoading) return <div className="h-32 bg-muted/50 rounded-lg animate-pulse" />;

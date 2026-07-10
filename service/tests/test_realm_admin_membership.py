@@ -36,6 +36,13 @@ def _build_app(monkeypatch):
         return None
 
     monkeypatch.setattr(admin_routes.activity_service, "log_activity", _log)
+
+    async def _noop_invalidate():
+        return None
+
+    monkeypatch.setattr(
+        admin_routes.service_app_service, "invalidate_cache", _noop_invalidate
+    )
     return app
 
 

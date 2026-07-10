@@ -6,6 +6,7 @@ Validates both an IdP token (identity) and a Sentinel authz token
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import TYPE_CHECKING
 
@@ -78,7 +79,11 @@ class AuthzMiddleware(BaseHTTPMiddleware):
             raise ValueError(
                 "AuthzMiddleware requires either sentinel_public_key or sentinel_instance for authz token verification"
             )
-        if not idp_public_key and not idp_jwks_url and not (sentinel_instance and sentinel_instance.idp_jwks_url):
+        if (
+            not idp_public_key
+            and not idp_jwks_url
+            and not (sentinel_instance and (sentinel_instance.idp_jwks_url or sentinel_instance.idp_public_key))
+        ):
             raise ValueError("AuthzMiddleware requires idp_public_key or idp_jwks_url for IdP token verification")
 
         self.service_name = service_name
@@ -94,8 +99,8 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json"]
 
         jwks_url = idp_jwks_url or (sentinel_instance.idp_jwks_url if sentinel_instance else None)
-        # Bound the fetch so a slow remote IdP JWKS can't freeze the event loop
-        # for the 30s urllib default (the call is sync, like the Sentinel one).
+        # The fetch is sync urllib (like the Sentinel one): dispatch runs it via
+        # asyncio.to_thread, and the timeout bounds the worker-thread stall.
         self._idp_jwks_client: PyJWKClient | None = PyJWKClient(jwks_url, timeout=10) if jwks_url else None
 
         # Sentinel (authz token) key resolution. Static sentinel_public_key pins
@@ -196,9 +201,10 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         if not authz_token:
             return JSONResponse(status_code=401, content={"detail": "Missing authz token"})
 
-        # 3. Validate IdP token (signature + audience + optional issuer)
+        # 3. Validate IdP token (signature + audience + optional issuer).
+        #    Off-loop: the kid lookup can trigger a sync JWKS refetch.
         try:
-            idp_payload = self._decode_idp_token(idp_token)
+            idp_payload = await asyncio.to_thread(self._decode_idp_token, idp_token)
         except jwt.ExpiredSignatureError:
             return JSONResponse(status_code=401, content={"detail": "IdP token expired"})
         except (jwt.InvalidTokenError, PyJWKClientError):
@@ -206,7 +212,7 @@ class AuthzMiddleware(BaseHTTPMiddleware):
 
         # 4. Validate authz token (key selected by kid; supports rotation)
         try:
-            authz_payload = self._decode_authz(authz_token)
+            authz_payload = await asyncio.to_thread(self._decode_authz, authz_token)
         except jwt.ExpiredSignatureError:
             return JSONResponse(status_code=401, content={"detail": "Authz token expired"})
         except (jwt.InvalidTokenError, PyJWKClientError):

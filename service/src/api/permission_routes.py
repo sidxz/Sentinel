@@ -153,15 +153,18 @@ async def register_resource(
     db: AsyncSession = Depends(get_db),
 ):
     verify_service_scope(svc, body.service_name)
-    perm = await permission_service.register_resource(
-        db,
-        service_name=body.service_name,
-        resource_type=body.resource_type,
-        resource_id=body.resource_id,
-        workspace_id=body.workspace_id,
-        owner_id=body.owner_id,
-        visibility=body.visibility,
-    )
+    try:
+        perm = await permission_service.register_resource(
+            db,
+            service_name=body.service_name,
+            resource_type=body.resource_type,
+            resource_id=body.resource_id,
+            workspace_id=body.workspace_id,
+            owner_id=body.owner_id,
+            visibility=body.visibility,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     log_audit(
         "permission.resource.registered",
         caller_service=svc.service_name,
@@ -207,12 +210,15 @@ async def revoke_share(
     if not perm:
         raise HTTPException(status_code=404, detail="Permission not found")
     verify_service_scope(svc, perm.service_name)
-    await permission_service.revoke_share(
-        db,
-        permission_id=permission_id,
-        grantee_type=body.grantee_type,
-        grantee_id=body.grantee_id,
-    )
+    try:
+        await permission_service.revoke_share(
+            db,
+            permission_id=permission_id,
+            grantee_type=body.grantee_type,
+            grantee_id=body.grantee_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     log_audit(
         "permission.resource.share_revoked",
         caller_service=svc.service_name,

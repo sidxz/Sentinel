@@ -10,9 +10,13 @@ interface Props<T> {
   data: T[];
   onRowClick?: (row: T) => void;
   emptyMessage?: string;
+  error?: Error | null;
 }
 
-export function DataTable<T>({ columns, data, onRowClick, emptyMessage = "No data" }: Props<T>) {
+export function DataTable<T>({ columns, data, onRowClick, emptyMessage = "No data", error }: Props<T>) {
+  if (error) {
+    return <div className="text-center py-12 text-destructive text-sm">Failed to load: {error.message}</div>;
+  }
   if (data.length === 0) {
     return <div className="text-center py-12 text-muted-foreground text-sm">{emptyMessage}</div>;
   }

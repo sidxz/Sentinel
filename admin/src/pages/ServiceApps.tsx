@@ -59,7 +59,7 @@ export function ServiceApps() {
   const [form, setForm] = useState({ name: "", service_name: "", allowed_origins: "" });
   const [revealKey, setRevealKey] = useState<string | null>(null);
 
-  const { data: apps = [], isLoading } = useQuery({
+  const { data: apps = [], isLoading, error } = useQuery({
     queryKey: ["service-apps"],
     queryFn: getServiceApps,
   });
@@ -139,6 +139,7 @@ export function ServiceApps() {
           data={apps}
           onRowClick={(a) => navigate(`/service-apps/${a.id}`)}
           emptyMessage="No services registered"
+          error={error}
         />
       )}
 

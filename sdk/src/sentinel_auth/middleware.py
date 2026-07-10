@@ -5,6 +5,7 @@ JWT tokens on incoming requests and populate ``request.state.user``
 with an ``AuthenticatedUser`` instance.
 """
 
+import asyncio
 import uuid
 
 import jwt
@@ -119,7 +120,9 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 
         token = auth_header.removeprefix("Bearer ")
         try:
-            key = self._signing_key(token)
+            # PyJWKClient's JWKS fetch is sync urllib — off-loop so a cache-expiry
+            # or rotated-kid refetch can't stall every in-flight request.
+            key = await asyncio.to_thread(self._signing_key, token)
             payload = jwt.decode(token, key, algorithms=[self.algorithm], audience=self.audience)
         except jwt.ExpiredSignatureError:
             return JSONResponse(status_code=401, content={"detail": "Token has expired"})

@@ -1317,6 +1317,7 @@ async def create_service_app(
     )
     await db.commit()
     await db.refresh(app)
+    await service_app_service.invalidate_cache()
     return ServiceAppCreateResponse(
         id=app.id,
         name=app.name,
@@ -1373,6 +1374,7 @@ async def update_service_app(
     )
     await db.commit()
     await db.refresh(app)
+    await service_app_service.invalidate_cache()
     await refresh_origins(db)
     return app
 
@@ -1402,6 +1404,7 @@ async def rotate_service_app_key(
     )
     await db.commit()
     await db.refresh(app)
+    await service_app_service.invalidate_cache()
     return ServiceAppCreateResponse(
         id=app.id,
         name=app.name,
@@ -1447,6 +1450,7 @@ async def delete_service_app(
         )
     await service_app_service.delete_service_app(db, app_id)
     await db.commit()
+    await service_app_service.invalidate_cache()
     await refresh_origins(db)
 
 
@@ -1698,6 +1702,7 @@ async def delete_realm(
         actor_id=uuid.UUID(admin["sub"]),
     )
     await db.commit()
+    await service_app_service.invalidate_cache()
 
 
 async def _member_response(db, app) -> RealmMemberResponse:
@@ -1751,6 +1756,7 @@ async def add_realm_member(
         },
     )
     await db.commit()
+    await service_app_service.invalidate_cache()
     return await _member_response(db, app)
 
 
@@ -1781,3 +1787,4 @@ async def remove_realm_member(
         },
     )
     await db.commit()
+    await service_app_service.invalidate_cache()

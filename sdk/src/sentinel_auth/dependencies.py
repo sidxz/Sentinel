@@ -18,7 +18,15 @@ if TYPE_CHECKING:
 
 
 def get_token(request: Request) -> str:
-    """Extract the bearer token from the Authorization header."""
+    """Return the Sentinel token for this request.
+
+    Prefers ``request.state.token`` (set by the middlewares — in authz mode the
+    Authorization header carries the IdP token, not a Sentinel-signed one), and
+    falls back to the Authorization header when no middleware stored a token.
+    """
+    token: str | None = getattr(request.state, "token", None)
+    if token:
+        return token
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
@@ -82,9 +90,7 @@ def require_action(role_client: RoleClient, action: str) -> Callable:
     """
 
     async def dependency(request: Request, user: AuthenticatedUser = Depends(get_current_user)) -> AuthenticatedUser:
-        token = request.headers.get("Authorization", "").removeprefix("Bearer ")
-        if not token:
-            raise HTTPException(status_code=401, detail="Missing bearer token")
+        token = get_token(request)
         try:
             allowed = await role_client.check_action(token, action, user.workspace_id)
         except (httpx.TransportError, httpx.TimeoutException):
@@ -120,12 +126,6 @@ def get_request_auth_factory(
         request: Request,
         user: AuthenticatedUser = Depends(get_current_user),
     ) -> RequestAuth:
-        token: str | None = getattr(request.state, "token", None)
-        if token is None:
-            auth = request.headers.get("Authorization", "")
-            if not auth.startswith("Bearer "):
-                raise HTTPException(status_code=401, detail="Missing bearer token")
-            token = auth.removeprefix("Bearer ")
-        return RequestAuth(user=user, _token=token, _permissions=permissions, _roles=roles)
+        return RequestAuth(user=user, _token=get_token(request), _permissions=permissions, _roles=roles)
 
     return dependency

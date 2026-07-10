@@ -50,28 +50,23 @@ async def add_member(
     db: AsyncSession, realm_id: uuid.UUID, service_app_id: uuid.UUID
 ) -> ServiceApp:
     """Assign a service app to a realm. The single FK enforces one-realm-max:
-    re-assigning simply overwrites the prior realm. Invalidates the service-key
-    cache because it stores the member's realm slug."""
-    from src.services import service_app_service
-
+    re-assigning simply overwrites the prior realm. The service-key cache stores
+    the member's realm slug — the route invalidates it after commit
+    (service_app_service.invalidate_cache)."""
     app = await db.get(ServiceApp, service_app_id)
     if not app:
         raise ValueError("Service app not found")
     app.realm_id = realm_id
     await db.flush()
-    await service_app_service._invalidate_cache()
     return app
 
 
 async def remove_member(db: AsyncSession, service_app_id: uuid.UUID) -> ServiceApp:
-    from src.services import service_app_service
-
     app = await db.get(ServiceApp, service_app_id)
     if not app:
         raise ValueError("Service app not found")
     app.realm_id = None
     await db.flush()
-    await service_app_service._invalidate_cache()
     return app
 
 
@@ -100,15 +95,13 @@ async def update_realm(
 
 async def delete_realm(db: AsyncSession, realm_id: uuid.UUID) -> bool:
     """Delete a realm. The service_apps.realm_id FK is ON DELETE SET NULL, so members
-    revert to standalone — invalidate the service-key cache (it stores realm slugs)."""
-    from src.services import service_app_service
-
+    revert to standalone — the route invalidates the service-key cache after commit
+    (it stores realm slugs)."""
     realm = await db.get(Realm, realm_id)
     if realm is None:
         return False
     await db.delete(realm)
     await db.flush()
-    await service_app_service._invalidate_cache()
     return True
 
 

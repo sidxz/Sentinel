@@ -13,7 +13,7 @@ export function Activity() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["activity", page, action, targetType, workspaceId, fromDate, toDate],
     queryFn: () =>
       getActivity({
@@ -133,6 +133,11 @@ export function Activity() {
       {/* Table */}
       {isLoading ? (
         <div className="h-64 bg-muted/50 rounded-lg animate-pulse" />
+      ) : isError ? (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
+          <div className="text-sm text-red-600 dark:text-red-400">Failed to load activity</div>
+          <div className="text-xs text-red-500/70 mt-1">{(error as Error).message}</div>
+        </div>
       ) : (
         <>
           <div className="rounded-lg border border-border divide-y divide-border">

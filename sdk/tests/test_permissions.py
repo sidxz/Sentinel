@@ -193,6 +193,16 @@ class TestTTLCache:
         cache.clear()
         assert len(cache) == 0
 
+    def test_maxsize_bounds_memory_when_nothing_expired(self):
+        # High-cardinality burst within one TTL window: lazy expiry evicts
+        # nothing, so maxsize must be enforced by dropping oldest entries.
+        cache = _TTLCache(ttl=60, maxsize=10)
+        for i in range(100):
+            cache.set(("k", i), i)
+        assert len(cache) <= 15  # never above the maxsize * 1.5 trigger
+        assert cache.get(("k", 99)) == 99  # newest entries survive
+        assert cache.get(("k", 0)) is None  # oldest evicted first
+
 
 class TestPermissionClientCache:
     @respx.mock

@@ -10,6 +10,7 @@ Revises: d5e0f69a4c94
 Create Date: 2026-06-17 00:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -18,8 +19,8 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'f1a9c0b3d2e4'
-down_revision: Union[str, None] = 'd5e0f69a4c94'
+revision: str = "f1a9c0b3d2e4"
+down_revision: Union[str, None] = "d5e0f69a4c94"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

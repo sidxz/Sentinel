@@ -10,7 +10,7 @@ export function ServiceActions() {
   const queryClient = useQueryClient();
   const [deleteTarget, setDeleteTarget] = useState<ServiceAction | null>(null);
 
-  const { data: actions = [], isLoading } = useQuery({
+  const { data: actions = [], isLoading, isError, error } = useQuery({
     queryKey: ["service-actions"],
     queryFn: () => getServiceActions(),
   });
@@ -26,6 +26,15 @@ export function ServiceActions() {
   });
 
   if (isLoading) return <div className="animate-pulse h-64 bg-muted/50 rounded-lg" />;
+
+  if (isError) {
+    return (
+      <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
+        <div className="text-sm text-red-600 dark:text-red-400">Failed to load service actions</div>
+        <div className="text-xs text-red-500/70 mt-1">{(error as Error).message}</div>
+      </div>
+    );
+  }
 
   // Group by service_name
   const grouped = actions.reduce<Record<string, ServiceAction[]>>((acc, a) => {

@@ -65,7 +65,6 @@ async def create_service_app(
     )
     db.add(app)
     await db.flush()
-    await _invalidate_cache()
     return app, plaintext
 
 
@@ -104,7 +103,6 @@ async def rotate_key(db: AsyncSession, app_id: uuid.UUID) -> tuple[ServiceApp, s
     app.key_hash = sha
     app.key_prefix = prefix
     await db.flush()
-    await _invalidate_cache()
     return app, plaintext
 
 
@@ -144,7 +142,6 @@ async def update_service_app(
     if allowed_idp_audiences is not None:
         app.allowed_idp_audiences = allowed_idp_audiences
     await db.flush()
-    await _invalidate_cache()
     return app
 
 
@@ -154,7 +151,6 @@ async def delete_service_app(db: AsyncSession, app_id: uuid.UUID) -> None:
         raise ValueError("Service app not found")
     await db.delete(app)
     await db.flush()
-    await _invalidate_cache()
 
 
 async def has_active_apps(db: AsyncSession) -> bool:
@@ -226,7 +222,12 @@ async def _rebuild_origin_cache(db: AsyncSession) -> None:
     await pipe.execute()
 
 
-async def _invalidate_cache() -> None:
+async def invalidate_cache() -> None:
+    """Clear the key/origin caches. Routes must call this AFTER db.commit():
+    invalidating pre-commit lets a concurrent cache-miss rebuild repopulate from
+    the not-yet-committed DB state (READ COMMITTED), resurrecting e.g. a
+    rotated-out key for a full _CACHE_TTL. Mutating service functions therefore
+    do NOT invalidate themselves — same contract as cors.refresh_origins()."""
     r = await get_redis()
     await r.delete(_CACHE_KEY, _ORIGIN_CACHE_KEY)
 
@@ -235,7 +236,7 @@ async def _touch_last_used(db: AsyncSession, app_id: uuid.UUID) -> bool:
     """Update last_used_at timestamp (best-effort). Returns False if app is inactive."""
     app = await db.get(ServiceApp, app_id)
     if not app or not app.is_active:
-        await _invalidate_cache()
+        await invalidate_cache()
         return False
     app.last_used_at = datetime.now(UTC)
     await db.commit()
