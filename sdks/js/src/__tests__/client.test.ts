@@ -46,13 +46,36 @@ describe('SentinelAuth', () => {
     vi.restoreAllMocks()
   })
 
-  it('getProviders calls correct endpoint', async () => {
+  it('getProviders unwraps the ProviderListResponse wire shape', async () => {
+    // Server returns {"providers": [...]} (ProviderListResponse), never a bare array
     vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify(['google', 'github']), { status: 200 }),
+      new Response(JSON.stringify({ providers: ['google', 'github'] }), {
+        status: 200,
+      }),
     )
     const providers = await client.getProviders()
     expect(providers).toEqual(['google', 'github'])
     expect(fetch).toHaveBeenCalledWith('http://localhost:9003/auth/providers')
+  })
+
+  it('getWorkspaces POSTs the code with the PKCE verifier', async () => {
+    sessionStorage.setItem('sentinel_pkce_verifier', 'v'.repeat(43))
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([{ id: 'ws-1', name: 'WS', slug: 'ws', role: 'editor' }]),
+        { status: 200 },
+      ),
+    )
+    const workspaces = await client.getWorkspaces('code-123')
+    expect(workspaces).toHaveLength(1)
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:9003/auth/workspaces',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ code: 'code-123', code_verifier: 'v'.repeat(43) }),
+      }),
+    )
+    sessionStorage.removeItem('sentinel_pkce_verifier')
   })
 
   it('login constructs correct redirect URL', async () => {

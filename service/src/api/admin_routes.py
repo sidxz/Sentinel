@@ -1135,7 +1135,9 @@ async def assign_role_member(
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        # Role existence is already 404'd above, so a ValueError here is the
+        # target-not-a-workspace-member check — a bad request, not a 404.
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to assign role")
@@ -1303,6 +1305,10 @@ async def create_service_app(
             allowed_origins=body.allowed_origins,
             allowed_idp_audiences=body.allowed_idp_audiences,
         )
+    except ValueError as e:
+        # Actionable validation failure (e.g. name collides with a realm slug) —
+        # surface it like create_realm does, not as a generic 400.
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to create service app")
@@ -1634,13 +1640,16 @@ async def create_realm(
     db: AsyncSession = Depends(get_db),
 ):
     actor_id = uuid.UUID(admin["sub"])
-    realm = await realm_service.create_realm(
-        db,
-        name=body.name,
-        slug=body.slug,
-        m2m_ttl_s=body.m2m_ttl_s,
-        created_by=actor_id,
-    )
+    try:
+        realm = await realm_service.create_realm(
+            db,
+            name=body.name,
+            slug=body.slug,
+            m2m_ttl_s=body.m2m_ttl_s,
+            created_by=actor_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     await activity_service.log_activity(
         db,
         action="realm_created",

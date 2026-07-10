@@ -62,11 +62,16 @@ Both variants set these on success, readable in Server Components and Route Hand
 | Header | Value |
 |--------|-------|
 | `x-sentinel-user-id` | User ID |
-| `x-sentinel-email` | Email |
-| `x-sentinel-name` | Display name |
+| `x-sentinel-email` | Email (percent-encoded) |
+| `x-sentinel-name` | Display name (percent-encoded) |
 | `x-sentinel-workspace-id` | Workspace ID |
 | `x-sentinel-workspace-slug` | Workspace slug |
 | `x-sentinel-workspace-role` | Workspace role |
+
+> **Prefer `getUser()` over reading these directly.** `x-sentinel-email` and
+> `x-sentinel-name` are percent-encoded on the wire (HTTP header values are
+> Latin-1, so a display name like `中文` or `Zoë` would otherwise throw). `getUser()`
+> decodes them for you; if you read the raw headers, `decodeURIComponent()` them.
 
 ## Server helpers
 

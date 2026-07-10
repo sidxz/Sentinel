@@ -283,6 +283,17 @@ async def assign_user_role(
         raise ValueError("Role not found")
     if workspace_id is not None and role.workspace_id != workspace_id:
         raise ValueError("Role not found in this workspace")
+    # Roles must only bind to current workspace members — check_action never
+    # re-joins membership, so a role pre-assigned to a non-member would lie
+    # dormant and silently go live if that user is ever invited.
+    from src.models.workspace import WorkspaceMembership
+
+    member_stmt = select(WorkspaceMembership).where(
+        WorkspaceMembership.workspace_id == role.workspace_id,
+        WorkspaceMembership.user_id == user_id,
+    )
+    if not (await db.execute(member_stmt)).scalar_one_or_none():
+        raise ValueError("User is not a member of this workspace")
     ur = UserRole(user_id=user_id, role_id=role_id, assigned_by=assigned_by)
     db.add(ur)
     await db.commit()

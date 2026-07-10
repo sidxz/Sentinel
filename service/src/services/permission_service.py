@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select, union
+from sqlalchemy import func, select, union
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -165,16 +165,30 @@ async def share_resource(
         if not group or group.workspace_id != perm.workspace_id:
             raise ValueError("Group does not belong to this workspace")
 
-    share = ResourceShare(
-        resource_permission_id=permission_id,
-        grantee_type=grantee_type,
-        grantee_id=grantee_id,
-        permission=permission,
-        granted_by=granted_by,
+    # Atomic upsert on uq_resource_share: re-sharing the same grantee is a
+    # permission upgrade/downgrade, not an IntegrityError → 500.
+    stmt = (
+        pg_insert(ResourceShare)
+        .values(
+            resource_permission_id=permission_id,
+            grantee_type=grantee_type,
+            grantee_id=grantee_id,
+            permission=permission,
+            granted_by=granted_by,
+        )
+        .on_conflict_do_update(
+            constraint="uq_resource_share",
+            set_={
+                "permission": permission,
+                "granted_by": granted_by,
+                "granted_at": func.now(),
+            },
+        )
+        .returning(ResourceShare.id)
     )
-    db.add(share)
+    share_id = (await db.execute(stmt)).scalar_one()
     await db.commit()
-    return share
+    return await db.get(ResourceShare, share_id)
 
 
 async def revoke_share(

@@ -5,7 +5,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.realm import Realm
@@ -52,6 +52,21 @@ async def create_service_app(
     allowed_idp_audiences: list[str] | None = None,
 ) -> tuple[ServiceApp, str]:
     """Create a new service app. Returns (app, plaintext_key)."""
+    # Symmetric with realm_service.create_realm — service_names and realm
+    # slugs share the authz `svc` claim namespace (effective_scope). Same
+    # advisory lock keyed on the name, so a concurrent create_realm with the
+    # same name serializes and the collision check can't be raced.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": f"sentinel:scope:{service_name}"},
+    )
+    collision = await db.execute(
+        select(Realm.id).where(Realm.slug == service_name).limit(1)
+    )
+    if collision.scalar_one_or_none():
+        raise ValueError(
+            f"Service name '{service_name}' is already in use as a realm slug"
+        )
     plaintext, sha, prefix = _generate_key()
     app = ServiceApp(
         id=uuid.uuid4(),

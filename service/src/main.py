@@ -135,8 +135,11 @@ async def lifespan(app: FastAPI):
         if _redis_no_tls:
             logger.warning("app.config.insecure", category="app", reason="redis_no_tls")
         if _redis_no_cert_verify:
-            logger.warning(
-                "app.config.insecure", category="app", reason="redis_no_cert_verify"
+            errors.append(
+                (
+                    "redis_no_cert_verify",
+                    "REDIS_TLS_VERIFY is not 'required' — rediss:// accepts any certificate (MITM); set REDIS_TLS_VERIFY=required",
+                )
             )
         if "*" in settings.allowed_hosts_list:
             errors.append(

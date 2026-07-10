@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.group import Group, GroupMembership
+from src.models.permission import ResourcePermission, ResourceShare
 from src.models.role import Role, UserRole
 from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
@@ -232,10 +233,11 @@ async def remove_member(
         if await _count_owners(db, workspace_id) <= 1:
             raise ValueError("Cannot remove the last workspace owner")
 
-    # Purge the user's workspace-scoped groups and RBAC roles in the same
-    # transaction: neither table is FK-tied to workspace_memberships, and
-    # check_action never re-joins it — stale rows would silently reinstate
-    # old privileges on re-invite.
+    # Purge the user's workspace-scoped groups, RBAC roles, and entity-ACL
+    # shares in the same transaction: none of these tables is FK-tied to
+    # workspace_memberships, and neither check_action nor check_permission
+    # re-joins it — stale rows would silently reinstate old privileges on
+    # re-invite.
     await db.execute(
         delete(GroupMembership).where(
             GroupMembership.user_id == user_id,
@@ -249,6 +251,17 @@ async def remove_member(
             UserRole.user_id == user_id,
             UserRole.role_id.in_(
                 select(Role.id).where(Role.workspace_id == workspace_id)
+            ),
+        )
+    )
+    await db.execute(
+        delete(ResourceShare).where(
+            ResourceShare.grantee_type == "user",
+            ResourceShare.grantee_id == user_id,
+            ResourceShare.resource_permission_id.in_(
+                select(ResourcePermission.id).where(
+                    ResourcePermission.workspace_id == workspace_id
+                )
             ),
         )
     )

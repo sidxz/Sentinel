@@ -283,18 +283,15 @@ async def get_current_user_flexible(
     Use this on endpoints that need to work in both proxy mode (browser → access token)
     and authz mode (backend → service key + authz token).
 
-    Security: authz tokens are only accepted when X-Service-Key is present AND
-    validated against the database. The service key's ``service_name`` MUST equal
-    the authz token's ``svc`` claim — otherwise the token was minted for a
-    different service and must not be accepted.
+    Security: authz tokens presented as the Bearer are only accepted when
+    X-Service-Key is present AND validated against the database, with the key's
+    effective scope equal to the token's ``svc`` claim. Additionally, a browser
+    in authz mode (no service key — the SDK's SentinelAuthz helpers) may present
+    its Sentinel-minted authz token in ``X-Authz-Token``: that token is then the
+    credential (Sentinel-signed, short-TTL, carries sub/wid/wrole/groups). Its
+    ``svc`` claim binds it to a downstream service, not to Sentinel, so no scope
+    comparison applies — the caller is the token's own subject.
     """
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
-    token = auth.removeprefix("Bearer ")
-    if len(token) > 8192:
-        raise HTTPException(status_code=401, detail="Token too large")
-
     # Validate the service key against the database — not just check for presence
     service_key_service_name: str | None = None
     service_key_effective_scope: str | None = None
@@ -308,7 +305,38 @@ async def get_current_user_flexible(
             service_key_effective_scope = result[2] or result[0]
 
     has_valid_service_key = service_key_service_name is not None
-    audiences = [_AUD_ACCESS, _AUD_AUTHZ] if has_valid_service_key else _AUD_ACCESS
+    # Browser authz-mode path: the Bearer slot carries the IdP token (which
+    # Sentinel cannot re-validate here without per-app IdP context), so the
+    # authz token rides in its own header and is what we authenticate.
+    #
+    # ACCEPTED RISK: the authz token is minted bound to a downstream service (its
+    # `svc` claim); here we honor it as Sentinel-side identity without re-checking
+    # `svc` or re-binding to the IdP token. Deliberately scoped — this dependency
+    # guards only READ-only, workspace-scoped share-dialog endpoints (own profile
+    # + the token's OWN workspace members/groups), data the subject is already
+    # entitled to and that proxy mode already exposes to the browser. It cannot
+    # reach writes/sharing (service-key gated) or /admin (admin cookie). Residual:
+    # a captured authz token can read the user's own workspace directory at
+    # Sentinel for its ~5-min TTL. Accepted over full IdP re-binding, which would
+    # cost a per-request IdP re-verification (a GitHub API call per hit) for a
+    # narrow, user-entitled surface. Still subject to the hygiene check below.
+    browser_authz_token = (
+        None if has_valid_service_key else request.headers.get("X-Authz-Token")
+    )
+
+    if browser_authz_token:
+        token = browser_authz_token
+        audiences: str | list[str] = _AUD_AUTHZ
+        valid_types: tuple[str, ...] = ("authz",)
+    else:
+        auth = request.headers.get("Authorization")
+        if not auth or not auth.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Missing Bearer token")
+        token = auth.removeprefix("Bearer ")
+        audiences = [_AUD_ACCESS, _AUD_AUTHZ] if has_valid_service_key else _AUD_ACCESS
+        valid_types = ("access", "authz") if has_valid_service_key else ("access",)
+    if len(token) > 8192:
+        raise HTTPException(status_code=401, detail="Token too large")
 
     try:
         payload = decode_token(token, audience=audiences)
@@ -316,7 +344,6 @@ async def get_current_user_flexible(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     token_type = payload.get("type")
-    valid_types = ("access", "authz") if has_valid_service_key else ("access",)
     if token_type not in valid_types:
         raise HTTPException(status_code=401, detail="Invalid token type")
 
@@ -325,7 +352,7 @@ async def get_current_user_flexible(
 
     await _enforce_token_hygiene(payload)
 
-    if token_type == "authz":
+    if token_type == "authz" and has_valid_service_key:
         token_svc = payload.get("svc")
         if not token_svc or token_svc != service_key_effective_scope:
             raise HTTPException(

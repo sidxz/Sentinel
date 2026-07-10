@@ -1,10 +1,11 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.group import Group, GroupMembership
+from src.models.permission import ResourceShare
 from src.models.user import User
 from src.services import token_service
 
@@ -72,8 +73,30 @@ async def delete_group(
     db: AsyncSession, group_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> None:
     group = await _get_group_in_workspace(db, group_id, workspace_id)
+    member_ids = list(
+        (
+            await db.execute(
+                select(GroupMembership.user_id).where(
+                    GroupMembership.group_id == group_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    # ResourceShare has no FK to groups — purge the group's shares explicitly
+    # or they orphan permanently.
+    await db.execute(
+        delete(ResourceShare).where(
+            ResourceShare.grantee_type == "group",
+            ResourceShare.grantee_id == group_id,
+        )
+    )
     await db.delete(group)
     await db.commit()
+    # Revoke members' tokens so stale group claims can't be used
+    for uid in member_ids:
+        await token_service.revoke_all_user_tokens(str(uid))
 
 
 async def add_member(

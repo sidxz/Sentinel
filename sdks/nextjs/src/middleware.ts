@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyToken, payloadToUser } from '@sentinel-auth/js/server'
+import { encodeHeaderValue } from './header-codec'
 
 export interface SentinelMiddlewareConfig {
   /** URL to the JWKS endpoint. */
@@ -97,8 +98,9 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
 
       // Forward verified user info in request headers for server components/route handlers
       requestHeaders.set('x-sentinel-user-id', user.userId)
-      requestHeaders.set('x-sentinel-email', user.email)
-      requestHeaders.set('x-sentinel-name', user.name)
+      // Email/name may contain code points >255 (ByteString limit) — encode.
+      requestHeaders.set('x-sentinel-email', encodeHeaderValue(user.email))
+      requestHeaders.set('x-sentinel-name', encodeHeaderValue(user.name))
       requestHeaders.set('x-sentinel-workspace-id', user.workspaceId)
       requestHeaders.set('x-sentinel-workspace-slug', user.workspaceSlug)
       requestHeaders.set('x-sentinel-workspace-role', user.workspaceRole)

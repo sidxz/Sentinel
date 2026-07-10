@@ -3,7 +3,7 @@
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.realm import Realm
@@ -18,6 +18,21 @@ async def create_realm(
     m2m_ttl_s: int = 300,
     created_by: uuid.UUID | None = None,
 ) -> Realm:
+    # Realm slugs and standalone service_names share the authz `svc` claim
+    # namespace (ServiceKeyContext.effective_scope) — a collision would let
+    # tokens minted for one trust domain verify at the other. Take a
+    # transaction advisory lock keyed on the name first (create_service_app
+    # takes the same lock for the same name), so two concurrent creates of the
+    # same name serialize and the check below can't be raced.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": f"sentinel:scope:{slug}"},
+    )
+    collision = await db.execute(
+        select(ServiceApp.id).where(ServiceApp.service_name == slug).limit(1)
+    )
+    if collision.scalar_one_or_none():
+        raise ValueError(f"Slug '{slug}' is already in use as a service name")
     realm = Realm(
         id=uuid.uuid4(),
         name=name,

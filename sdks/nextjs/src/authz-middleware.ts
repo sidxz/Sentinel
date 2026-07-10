@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { verifyToken } from '@sentinel-auth/js/server'
+import { encodeHeaderValue } from './header-codec'
 
 export interface SentinelAuthzMiddlewareConfig {
   /** Base URL of the Sentinel service. Derives /.well-known/jwks.json for authz token verification. */
@@ -164,8 +165,15 @@ export function createSentinelAuthzMiddleware(config: SentinelAuthzMiddlewareCon
       // Forward verified user info in request headers for server components / route handlers
       // Identity (email, name) comes from IdP token; authorization from authz token
       requestHeaders.set('x-sentinel-user-id', String(authzPayload.sub))
-      requestHeaders.set('x-sentinel-email', String(idpPayload.email ?? ''))
-      requestHeaders.set('x-sentinel-name', String(idpPayload.name ?? ''))
+      // Email/name may contain code points >255 (ByteString limit) — encode.
+      requestHeaders.set(
+        'x-sentinel-email',
+        encodeHeaderValue(String(idpPayload.email ?? '')),
+      )
+      requestHeaders.set(
+        'x-sentinel-name',
+        encodeHeaderValue(String(idpPayload.name ?? '')),
+      )
       requestHeaders.set('x-sentinel-workspace-id', String(authzPayload.wid))
       requestHeaders.set('x-sentinel-workspace-slug', String(authzPayload.wslug))
       requestHeaders.set('x-sentinel-workspace-role', String(authzPayload.wrole))

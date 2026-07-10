@@ -21,6 +21,7 @@ from src.schemas.auth import (
     RefreshRequest,
     SelectWorkspaceRequest,
     TokenResponse,
+    WorkspaceListRequest,
     WorkspaceOptionResponse,
 )
 from src.logging_events import log_security
@@ -105,6 +106,7 @@ async def login(
     redirect_uri: str = Query(...),
     code_challenge: str = Query(...),
     code_challenge_method: str = Query("S256"),
+    state: str | None = Query(None, max_length=512),
     db: AsyncSession = Depends(get_db),
 ):
     configured = get_configured_providers()
@@ -147,6 +149,10 @@ async def login(
     request.session["code_challenge"] = code_challenge
     request.session["code_challenge_method"] = code_challenge_method
     request.session["client_app_id"] = str(client_app.id)
+    # SPA-supplied CSRF state — opaque to Sentinel, echoed back verbatim on the
+    # final redirect so the SPA can verify its own round-trip.
+    if state:
+        request.session["spa_state"] = state
 
     client = oauth.create_client(provider)
     oauth_redirect_uri = f"{settings.base_url}/auth/callback/{provider}"
@@ -284,6 +290,7 @@ async def callback(
         code_challenge = request.session.pop("code_challenge", None)
         code_challenge_method = request.session.pop("code_challenge_method", None)
         session_client_app_id = request.session.pop("client_app_id", None)
+        spa_state = request.session.pop("spa_state", None)
         request.session.clear()
         if not redirect_uri or not session_client_app_id:
             return _error_page(
@@ -328,9 +335,12 @@ async def callback(
             provider=provider,
             actor=str(user.id),
         )
+        redirect_params = {"code": code}
+        if spa_state:
+            redirect_params["state"] = spa_state
         separator = "&" if "?" in redirect_uri else "?"
         return RedirectResponse(
-            url=f"{redirect_uri}{separator}{urlencode({'code': code})}"
+            url=f"{redirect_uri}{separator}{urlencode(redirect_params)}"
         )
     except Exception as e:
         log_security(
@@ -348,19 +358,37 @@ async def callback(
         )
 
 
-@router.get("/workspaces", response_model=list[WorkspaceOptionResponse])
+@router.post("/workspaces", response_model=list[WorkspaceOptionResponse])
 @limiter.limit(settings.rate_limit_auth)
 async def list_workspaces_for_login(
     request: Request,
-    code: str = Query(...),
+    body: WorkspaceListRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """List workspaces a user belongs to (for workspace selection after OAuth)."""
-    code_data = await auth_code_service.peek_auth_code(code)
+    """List workspaces a user belongs to (for workspace selection after OAuth).
+
+    POST with the PKCE verifier: the auth code travels in the redirect URL
+    (history/logs/Referer), so mere possession of a leaked code must not
+    disclose the victim's workspace names/slugs/roles — the same proof
+    /auth/token demands. The peek stays non-consuming so the subsequent
+    /auth/token call can redeem the code.
+    """
+    code_data = await auth_code_service.peek_auth_code(body.code)
     if not code_data:
         raise HTTPException(
             status_code=400, detail="Invalid or expired authorization code"
         )
+
+    stored_challenge = code_data.get("code_challenge")
+    challenge_method = code_data.get("code_challenge_method", "S256")
+    if not stored_challenge:
+        raise HTTPException(
+            status_code=400, detail="Authorization code missing PKCE challenge"
+        )
+    if not auth_code_service.verify_code_challenge(
+        body.code_verifier, stored_challenge, challenge_method
+    ):
+        raise HTTPException(status_code=400, detail="PKCE verification failed")
 
     user_id = uuid.UUID(code_data["user_id"])
     user = await db.get(User, user_id)

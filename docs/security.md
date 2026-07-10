@@ -170,7 +170,7 @@ After OAuth callback, Sentinel issues a short-lived authorization code (not raw 
 
 1. Frontend sends `code_challenge` + `code_challenge_method=S256` on `GET /auth/login/{provider}`
 2. Callback stores the code in Redis with a 5-minute TTL alongside the `code_challenge`
-3. `GET /auth/workspaces?code=X` peeks at the code (non-destructive)
+3. `POST /auth/workspaces` (body: `code` + `code_verifier`) verifies PKCE, then peeks at the code (non-destructive)
 4. `POST /auth/token` verifies `SHA256(code_verifier) == code_challenge`, then consumes the code via `GETDEL`
 
 Redis key: `ac:{code}` -- JSON `{user_id, provider, code_challenge, code_challenge_method}`, 5-minute TTL.

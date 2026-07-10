@@ -34,6 +34,11 @@ class SelectWorkspaceRequest(BaseModel):
     code_verifier: str = Field(min_length=43, max_length=128)
 
 
+class WorkspaceListRequest(BaseModel):
+    code: str
+    code_verifier: str = Field(min_length=43, max_length=128)
+
+
 class WorkspaceOptionResponse(BaseModel):
     id: uuid.UUID
     name: str

@@ -98,16 +98,20 @@ _register_test_provider()
 # ---------------------------------------------------------------------------
 
 _JWKS_CACHE_TTL = 3600  # 1 hour — Google rotates keys roughly every 6 hours
+# Floor for forced (decode-failure) refetches — bounds the amplification a
+# forged token could otherwise get by triggering a JWKS fetch per attempt.
+_JWKS_REFRESH_MIN_INTERVAL = 60
 
 _jwks_cache: dict[str, tuple[list[dict], float]] = {}
 
 
-async def _fetch_jwks(provider: str) -> list[dict]:
+async def _fetch_jwks(provider: str, *, force_refresh: bool = False) -> list[dict]:
     """Fetch and cache JWKS public keys for the given OIDC provider."""
     cached = _jwks_cache.get(provider)
     if cached:
         keys, fetched_at = cached
-        if time.monotonic() - fetched_at < _JWKS_CACHE_TTL:
+        age = time.monotonic() - fetched_at
+        if age < (_JWKS_REFRESH_MIN_INTERVAL if force_refresh else _JWKS_CACHE_TTL):
             return keys
 
     config = _PROVIDER_CONFIG[provider]
@@ -127,6 +131,31 @@ async def _fetch_jwks(provider: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # OIDC token validation (Google / EntraID)
 # ---------------------------------------------------------------------------
+
+
+def _decode_with_jwks(
+    idp_token: str, jwks: list[dict], audience: Any, issuer: str
+) -> tuple[dict[str, Any] | None, Exception | None]:
+    """Try each JWKS key; return (payload, None) or (None, last_error)."""
+    last_error: Exception | None = None
+    for key_data in jwks:
+        public_key = RSAAlgorithm.from_jwk(key_data)
+        try:
+            payload = jwt.decode(
+                idp_token,
+                public_key,
+                algorithms=["RS256"],
+                audience=audience,
+                issuer=issuer,
+            )
+            return payload, None
+        except jwt.ExpiredSignatureError:
+            # Don't try other keys — the token is definitively expired
+            raise IdpValidationError("Token expired")
+        except jwt.PyJWTError as exc:
+            last_error = exc
+            continue
+    return None, last_error
 
 
 async def _validate_oidc_token(
@@ -182,26 +211,16 @@ async def _validate_oidc_token(
             issuer = issuer()
 
         jwks = await _fetch_jwks(provider)
-
-        payload = None
-        last_error: Exception | None = None
-        for key_data in jwks:
-            public_key = RSAAlgorithm.from_jwk(key_data)
-            try:
-                payload = jwt.decode(
-                    idp_token,
-                    public_key,
-                    algorithms=["RS256"],
-                    audience=audience,
-                    issuer=issuer,
+        payload, last_error = _decode_with_jwks(idp_token, jwks, audience, issuer)
+        if payload is None:
+            # The signing key may have rotated in after our cached snapshot
+            # (≤1h old) — refetch once, rate-limited, and retry before
+            # rejecting. Mirrors PyJWKClient's refresh-on-miss in the SDK.
+            fresh = await _fetch_jwks(provider, force_refresh=True)
+            if fresh is not jwks:
+                payload, last_error = _decode_with_jwks(
+                    idp_token, fresh, audience, issuer
                 )
-                break  # successfully decoded
-            except jwt.ExpiredSignatureError:
-                # Don't try other keys — the token is definitively expired
-                raise IdpValidationError("Token expired")
-            except jwt.PyJWTError as exc:
-                last_error = exc
-                continue
 
         if payload is None:
             raise IdpValidationError(
@@ -324,7 +343,9 @@ async def validate_idp_token(
         one of these — the calling app's registered IdP client_id(s). Binds the
         token to the app it was issued for, so a token minted for one app cannot
         mint via another app's service key. Unset => fall back to the provider's
-        single deployment-wide audience (prior behavior). Ignored for GitHub.
+        single deployment-wide audience (prior behavior). GitHub tokens are
+        opaque and cannot be audience-bound — if this is set, GitHub is
+        rejected outright (fail closed, never silently unbound).
     _override_key:
         **Test hook** — when provided, uses this key instead of fetching JWKS
         and skips audience/issuer verification.
@@ -349,6 +370,15 @@ async def validate_idp_token(
             _override_key=_override_key,
         )
     elif provider == "github":
+        if expected_audiences:
+            # GitHub tokens are opaque — per-app audience binding cannot be
+            # enforced (only the deployment-wide app-binding check below).
+            # Fail closed rather than silently skip a configured control.
+            raise IdpValidationError(
+                "Per-app IdP audience binding is configured for this app but "
+                "cannot be enforced for GitHub tokens — remove GitHub from the "
+                "app's providers or clear allowed_idp_audiences"
+            )
         return await _validate_github_token(idp_token)
     else:
         raise IdpValidationError(f"Unsupported provider: {provider}")

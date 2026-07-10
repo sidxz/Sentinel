@@ -60,12 +60,24 @@ def test_update_request_none_means_unchanged_empty_means_clear():
 # ---------------------------------------------------------------------------
 
 
+class _FakeResult:
+    def __init__(self, value=None):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+
 class _FakeDB:
-    def __init__(self, get_result=None):
+    def __init__(self, get_result=None, execute_result=None):
         self._get = get_result
+        self._execute = execute_result
 
     async def get(self, _model, _pk):
         return self._get
+
+    async def execute(self, _stmt, *_args, **_kwargs):
+        return _FakeResult(self._execute)
 
     def add(self, _obj):
         pass

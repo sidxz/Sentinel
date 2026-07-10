@@ -95,7 +95,7 @@ Full OAuth2 + PKCE flow with browser redirects. The SDK handles this automatical
 | GET | `/auth/providers` | None | -- |
 | GET | `/auth/login/{provider}` | None | 10/min |
 | GET | `/auth/callback/{provider}` | None | 10/min |
-| GET | `/auth/workspaces` | None | 10/min |
+| POST | `/auth/workspaces` | None | 10/min |
 | POST | `/auth/token` | None | 10/min |
 | POST | `/auth/refresh` | None | 10/min |
 | POST | `/auth/logout` | Bearer JWT | -- |
@@ -121,22 +121,28 @@ Starts the OAuth flow. Redirects to the provider's consent screen.
 | `redirect_uri` | query | Yes | Must be listed on the client app's registered `redirect_uris` |
 | `code_challenge` | query | Yes | PKCE S256 challenge |
 | `code_challenge_method` | query | No | Only `S256` supported (default) |
+| `state` | query | No | Opaque SPA CSRF state (max 512 chars) — echoed back verbatim on the final callback redirect |
 
 **Response:** `302` redirect to provider. On the callback the same `client_app_id` is re-validated against `redirect_uri` before the auth code is issued.
 
 ### GET /auth/callback/{provider}
 
-Handles the OAuth callback. Creates/updates the user, generates a single-use authorization code, and redirects to `{redirect_uri}?code={code}`.
+Handles the OAuth callback. Creates/updates the user, generates a single-use authorization code, and redirects to `{redirect_uri}?code={code}` (plus `state={state}` echoed verbatim when the SPA passed `state` to `/auth/login/{provider}`).
 
 The authorization code expires in 5 minutes and is stored in Redis.
 
-### GET /auth/workspaces
+### POST /auth/workspaces
 
-Lists workspaces for a user identified by authorization code. Used for workspace selection.
+Lists workspaces for a user identified by authorization code. Used for workspace selection. Requires the PKCE verifier: the code travels in the redirect URL (history/logs/Referer), so possession of a leaked code alone must not disclose workspace names/slugs/roles. The code is not consumed — `POST /auth/token` redeems it afterwards.
 
-| Parameter | In | Required | Description |
-|---|---|---|---|
-| `code` | query | Yes | Authorization code from callback |
+**Request Body:**
+
+```json
+{
+  "code": "authorization_code",
+  "code_verifier": "original_code_verifier_string_43_to_128_chars"
+}
+```
 
 **Response:** `200 OK`
 

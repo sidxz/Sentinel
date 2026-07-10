@@ -426,3 +426,62 @@ async def test_no_expected_audiences_falls_back_to_provider_audience(
     )
     result = await validate_idp_token(token, "test_oidc")
     assert result["sub"] == "u1"
+
+
+# ---------------------------------------------------------------------------
+# GitHub × per-app audience binding — fail closed, never silently unbound
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_github_rejected_when_app_configures_audience_binding():
+    """GitHub tokens are opaque — a configured per-app audience binding must
+    fail closed rather than silently skip enforcement."""
+    with pytest.raises(IdpValidationError, match="cannot be enforced for GitHub"):
+        await validate_idp_token("gho_x", "github", expected_audiences=["client-a"])
+
+
+# ---------------------------------------------------------------------------
+# JWKS rotate-in: one cache-busting refetch instead of failing until TTL
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_jwks_refetch_on_unknown_key(rsa_keypair, make_token, monkeypatch):
+    """A token signed by a key rotated in after the cached JWKS snapshot must
+    trigger one rate-limited refetch instead of failing until the 1h TTL lapses."""
+    import json
+
+    from jwt.algorithms import RSAAlgorithm
+
+    from src.services import idp_validator
+
+    _, public_key = rsa_keypair
+    good_jwk = json.loads(RSAAlgorithm.to_jwk(public_key))
+    stale_pub = rsa.generate_private_key(
+        public_exponent=65537, key_size=2048
+    ).public_key()
+    stale_jwk = json.loads(RSAAlgorithm.to_jwk(stale_pub))
+
+    # Cached snapshot: within the 1h TTL but past the 60s forced-refresh floor
+    idp_validator._jwks_cache["google"] = ([stale_jwk], time.monotonic() - 120)
+    respx.get("https://www.googleapis.com/oauth2/v3/certs").mock(
+        return_value=httpx.Response(200, json={"keys": [good_jwk]})
+    )
+    monkeypatch.setattr(settings, "google_client_id", "gcid")
+
+    token = make_token(
+        {
+            "sub": "u1",
+            "email": "u@x.test",
+            "email_verified": True,
+            "iss": "https://accounts.google.com",
+            "aud": "gcid",
+        }
+    )
+    try:
+        result = await validate_idp_token(token, "google")
+    finally:
+        idp_validator._jwks_cache.pop("google", None)
+    assert result["sub"] == "u1"

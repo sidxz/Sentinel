@@ -235,6 +235,8 @@ async def rotate_refresh_token(
     if result is None:
         # Already consumed or expired — possible theft.
         # Extract family_id from the JWT and revoke the entire family.
+        # (Benign concurrent double-submits are prevented client-side by the
+        # SDK's single-flight refresh; the server stays strict on reuse.)
         family_id = payload.get("fid")
         actor = payload.get("sub")
         log_security(

@@ -12,6 +12,135 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ## [Unreleased]
 
+<!-- Add next-version entries here -->
+
+---
+
+## [0.15.0] – 2026-07-10 — Security hardening + auth-contract fixes
+
+A correctness/security round across the service and SDKs: closes an auth-code
+information-disclosure gap, hardens Redis TLS and cross-tenant cleanup, and fixes
+several broken auth flows (proxy-mode React login, authz-mode profile/share
+calls, Next.js non-ASCII display names). Validated end-to-end against the
+Layer-2 live pentest (tenant isolation and auth-token integrity both proven).
+
+### Breaking changes
+
+- **`POST /auth/workspaces` + PKCE verifier** (was `GET /auth/workspaces?code=`). The
+  auth code travels in the redirect URL, so possession of a leaked code alone must not
+  disclose the victim's workspace names/slugs/roles — the endpoint now requires the same
+  `code_verifier` proof `POST /auth/token` demands. `@sentinel-auth/js` `getWorkspaces()`
+  is updated in lockstep. **Upgrade the server and `@sentinel-auth/js` together.**
+
+### Security
+
+- **`/auth/workspaces` information disclosure** — see Breaking changes; a non-consuming
+  peek with no PKCE let any holder of a leaked auth code enumerate a victim's workspaces
+  and roles.
+- **Redis TLS fails closed in production** — a `rediss://` deployment with
+  `REDIS_TLS_VERIFY` unset (default `none`) previously only warned and accepted any
+  certificate (MITM). Startup now refuses to boot with `DEBUG=False` unless
+  `REDIS_TLS_VERIFY=required`.
+- **`remove_member` purges entity-ACL shares** — removing a user from a workspace left
+  their per-resource `resource_shares` behind, silently reinstating old access if they
+  were re-invited. Now cleaned up alongside group memberships and RBAC roles.
+- **`delete_group` purges group shares and revokes member tokens** — deleting a group
+  left its `resource_shares` orphaned and members' group-derived access live until token
+  expiry.
+- **Realm slug ↔ service_name uniqueness** — realm slugs and standalone service names
+  share the authz `svc` scope namespace; creation now rejects a collision at both paths so
+  a token minted for one trust domain can't be honored by the other.
+- **`assign_user_role` requires current workspace membership** — a role could be assigned
+  to a non-member and silently activate if that user was later invited.
+- **GitHub IdP audience binding fails closed** — when an app configures
+  `allowed_idp_audiences`, GitHub tokens (opaque, un-bindable) are now rejected instead of
+  silently skipping the per-app binding check.
+
+### Fixed
+
+- **Proxy-mode React login** (`@sentinel-auth/js`, `react`) — the SPA sends an OAuth
+  `state` parameter the server never echoed, so `verifyCallbackState()` always threw and
+  every packaged proxy-mode login failed. The server now round-trips `state` on the
+  callback redirect.
+- **AuthZ-mode profile / share-dialog calls** — the SDK's browser helpers send the authz
+  token in `X-Authz-Token`, which the server never read (`get_current_user_flexible` only
+  accepted a Sentinel access token), so every such call `401`'d. The server now
+  authenticates the `X-Authz-Token`.
+- **Next.js middleware crash on non-Latin-1 display names** (`@sentinel-auth/nextjs`) — a
+  display name with a code point > 255 (CJK, Cyrillic, …) threw when written to a request
+  header and was misclassified as an auth failure, looping the user through login. Names
+  are now percent-encoded on write and decoded on read.
+- **`share_resource` 500 on re-share** — re-sharing a resource with the same grantee (e.g.
+  a view→edit upgrade) violated `uq_resource_share` and surfaced as HTTP 500; it is now an
+  atomic upsert.
+- **`@sentinel-auth/js` `getProviders()`** — unwraps the server's
+  `{ "providers": [...] }` response instead of returning the object as an array.
+- **IdP JWKS refetch on unknown key** — a token signed by an IdP key rotated in after the
+  cached JWKS snapshot failed until the 1-hour TTL lapsed; the validator now refetches
+  once (rate-limited) before rejecting.
+- **CSV user import isolation** — a DB-level error on one row poisoned the async session so
+  every later row failed and the whole import 500'd; each row now runs in a savepoint.
+- **Multi-tab logout on token refresh** (`@sentinel-auth/js`) — with the same origin open in
+  several tabs, they refreshed at the same instant using the same rotating refresh token; the
+  server correctly saw the second use as reuse and revoked the whole session, logging every tab
+  out. The SDK now serializes refresh across tabs with the **Web Locks API** (single-flight), and a
+  tab that finds the token already rotated picks up the new one instead of replaying the consumed
+  one. Degrades safely when Web Locks is unavailable (runs unlocked, guarded by the re-read check),
+  fails soft rather than replaying the token if the lock can't be acquired in time, staggers refresh
+  timers with jitter, and uses a `BroadcastChannel` so logout / refresh propagate across tabs
+  immediately. The server stays strict on reuse detection — the fix is entirely client-side.
+
+---
+
+## [0.14.1] – 2026-06-30
+
+### Fixed
+
+- **`sentinel-auth-sdk` (Python)** — `Sentinel.fetch_whoami` tolerates a non-JSON `200`
+  from `/realm/whoami` (catches `ValueError` / JSON decode errors and degrades to
+  standalone), so a misrouted `/realm/whoami` serving the admin SPA can no longer crash a
+  downstream authz service on startup.
+
+---
+
+## [0.14.0] – 2026-06-29 — Realms (trusted app groups) + admin UI re-skin
+
+### Added
+
+- **Realms — trusted app groups + no-user (m2m) authz** — a shared authz scope across a
+  group of apps, plus machine-to-machine tokens with no user context: `sentinel:m2m`
+  tokens, `/realm/whoami` and `/realm/m2m-token` endpoints, admin Realms CRUD + membership
+  UI, and Python/JS SDK helpers (`SystemAuth`, `mint_m2m_token`, `verify_m2m_token`,
+  `require_system`).
+- **Service tiers** — `create_app(tier)` splits apps into public / internal / all.
+
+### Changed
+
+- **Admin panel rebuilt** on shadcn/ui with light/dark theme tokens and IBM Plex.
+
+---
+
+## [0.13.1] – 2026-06-20
+
+### Fixed
+
+- **Access-log `http.route`** — starlette 1.x renamed `route.path` → `path_format`, so the
+  access-log middleware logged `__unmatched__` for every request; it now prefers
+  `scope["route"]` / `path_format` and records the real route template.
+
+### Changed
+
+- **Dependency upgrade** clearing all lockfile HIGH advisories (starlette 0.52 → 1.3,
+  redis 7 → 8, structlog 25 → 26, cryptography 46 → 49, fastapi → 0.138, and others).
+
+---
+
+## [0.13.0] – 2026-06-17 — Structured logging + AuthZ session robustness
+
+Commercial-grade structured JSON logging across the service and admin SPA (an
+AI-ready envelope for anomaly detection), per-app IdP audience binding, and a fix
+for the AuthZ JS "zombie session" after reload.
+
 ### Fixed
 
 - **AuthZ "zombie session" after page reload** (`@sentinel-auth/js`, `react`, `nextjs`) — auth state was derived from the `localStorage` authz token alone, so after a reload (when the memory-only IdP token is gone) the app rendered as authenticated while every API request 401'd with `Missing IdP token`. `getUser()` / `isAuthenticated` now require a usable IdP token, so a reloaded session honestly reports as needing re-auth and the app shows login instead of a broken page.
@@ -25,8 +154,6 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 ### Breaking changes
 
 - **`SentinelAuthz.handleCallback()`** now returns a discriminated result — `{ status: 'success', idpToken, provider, returnTo } | { status: 'silent_failed', error, provider, returnTo } | null` — instead of `{ idpToken, provider } | null`. Migration: gate on `cb?.status === 'success'` before reading `cb.idpToken` / `cb.provider`. It also accepts an optional pre-captured hash argument for React StrictMode.
-
-<!-- Add next-version entries here -->
 
 ---
 

@@ -1,5 +1,6 @@
 import { headers } from 'next/headers'
 import type { SentinelUser, WorkspaceRole } from '@sentinel-auth/js'
+import { decodeHeaderValue } from './header-codec'
 
 /**
  * Read the current Sentinel user from request headers (set by middleware).
@@ -13,8 +14,8 @@ export async function getUser(): Promise<SentinelUser | null> {
 
   return {
     userId,
-    email: h.get('x-sentinel-email') ?? '',
-    name: h.get('x-sentinel-name') ?? '',
+    email: decodeHeaderValue(h.get('x-sentinel-email') ?? ''),
+    name: decodeHeaderValue(h.get('x-sentinel-name') ?? ''),
     workspaceId,
     workspaceSlug: h.get('x-sentinel-workspace-slug') ?? '',
     workspaceRole: (h.get('x-sentinel-workspace-role') ?? 'viewer') as WorkspaceRole,

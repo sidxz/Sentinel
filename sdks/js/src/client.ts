@@ -13,7 +13,24 @@ import type {
 const PKCE_KEY = 'sentinel_pkce_verifier'
 const STATE_KEY = 'sentinel_oauth_state'
 
+// Cap on how long to wait for the cross-tab refresh lock before giving up and
+// refreshing unlocked — a stuck lock must never wedge auth forever.
+const REFRESH_LOCK_TIMEOUT_MS = 5000
+
+// Max random amount to pull each tab's scheduled refresh *earlier*, so tabs
+// sharing a store don't all fire at the same instant and pile onto the lock.
+// Subtracted (never added) so a token is never left to expire.
+const REFRESH_JITTER_MS = 5000
+
 type AuthStateListener = (user: SentinelUser | null) => void
+
+interface LockManagerLike {
+  request(
+    name: string,
+    options: { signal?: AbortSignal },
+    callback: () => Promise<unknown>,
+  ): Promise<unknown>
+}
 
 /**
  * Browser auth client for Sentinel. Handles PKCE, token storage, refresh, and
@@ -29,6 +46,8 @@ export class SentinelAuth {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null
   private refreshPromise: Promise<boolean> | null = null
   private listeners: Set<AuthStateListener> = new Set()
+  private readonly refreshLockName: string
+  private channel: BroadcastChannel | null = null
 
   constructor(config: SentinelConfig) {
     this.url = config.sentinelUrl.replace(/\/+$/, '')
@@ -46,11 +65,36 @@ export class SentinelAuth {
     this.store = config.storage ?? new MemoryStore()
     this.autoRefresh = config.autoRefresh ?? true
     this.refreshBuffer = config.refreshBuffer ?? 60
+    // Per-app lock name so tabs of the same app coordinate but distinct apps
+    // on one origin don't contend.
+    this.refreshLockName = `sentinel:refresh:${this.clientId}`
+    // Cross-tab auth events (logout / refreshed) so other tabs of this app
+    // react immediately instead of only on their own next timer or request.
+    if (typeof BroadcastChannel !== 'undefined') {
+      this.channel = new BroadcastChannel(`sentinel:auth:${this.clientId}`)
+      this.channel.onmessage = (e: MessageEvent) => this.onBroadcast(e.data)
+    }
     warnIfInsecure(this.url, 'SentinelAuth')
 
     // Schedule a refresh if we already have a valid token
     if (this.autoRefresh && this.store.getAccessToken()) {
       this.scheduleRefresh()
+    }
+  }
+
+  private onBroadcast(msg: { type?: string } | null): void {
+    // Apply the sibling tab's event locally. Never re-broadcast here, or two
+    // tabs would ping-pong forever. A message may still be dispatched right
+    // after destroy() closed the channel — ignore it rather than re-arm a
+    // timer on a torn-down instance.
+    if (!this.channel || !msg) return
+    if (msg.type === 'logout') {
+      this.store.clear()
+      this.clearRefreshTimer()
+      this.notify()
+    } else if (msg.type === 'refreshed') {
+      this.notify()
+      if (this.autoRefresh) this.scheduleRefresh()
     }
   }
 
@@ -60,7 +104,9 @@ export class SentinelAuth {
   async getProviders(): Promise<string[]> {
     const res = await fetch(`${this.url}/auth/providers`)
     if (!res.ok) throw new Error('Failed to fetch providers')
-    return res.json()
+    // Server wire shape is ProviderListResponse: { providers: [...] }
+    const data = await res.json()
+    return data.providers
   }
 
   /** Initiate OAuth + PKCE login. Redirects the browser. */
@@ -103,9 +149,16 @@ export class SentinelAuth {
 
   /** Fetch available workspaces for the given auth code. */
   async getWorkspaces(code: string): Promise<WorkspaceOption[]> {
-    const res = await fetch(
-      `${this.url}/auth/workspaces?code=${encodeURIComponent(code)}`,
-    )
+    // POST with the PKCE verifier: possession of a leaked auth code alone
+    // must not disclose workspace names/slugs/roles (server enforces this).
+    const codeVerifier = sessionStorage.getItem(PKCE_KEY)
+    if (!codeVerifier) throw new Error('Missing PKCE code verifier')
+
+    const res = await fetch(`${this.url}/auth/workspaces`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, code_verifier: codeVerifier }),
+    })
     if (!res.ok) throw new Error('Failed to fetch workspaces')
     return res.json()
   }
@@ -136,24 +189,80 @@ export class SentinelAuth {
     if (this.autoRefresh) this.scheduleRefresh()
   }
 
-  /** Refresh the access token using the stored refresh token. Returns true on success. */
+  /** Refresh the access token using the stored refresh token. Returns true on success.
+   *
+   * Single-flight across the whole origin: an in-tab promise dedupes concurrent
+   * calls, and a Web Locks lock serializes tabs so only one ever sends a given
+   * refresh token. Whoever holds the lock re-reads the store first and skips the
+   * network entirely if another tab already rotated — replaying a consumed
+   * refresh token would trip the server's reuse detection and log every tab out.
+   */
   async refresh(): Promise<boolean> {
     if (this.refreshPromise) return this.refreshPromise
-    this.refreshPromise = this._doRefresh().finally(() => {
+    const captured = this.store.getRefreshToken()
+    if (!captured) return false
+    this.refreshPromise = this._refreshLocked(captured).finally(() => {
       this.refreshPromise = null
     })
     return this.refreshPromise
   }
 
-  private async _doRefresh(): Promise<boolean> {
-    const refreshToken = this.store.getRefreshToken()
-    if (!refreshToken) return false
+  /**
+   * Serialize refresh across tabs of the origin via the Web Locks API so only
+   * one tab ever sends a given refresh token.
+   * - No Web Locks (SSR / old browser / insecure context): run directly; the
+   *   re-read guard in _doRefresh still prevents replaying a rotated token.
+   * - Lock acquisition times out (the holder is mid-refresh and hasn't rotated
+   *   yet): do NOT replay our captured token unlocked — that would trip the
+   *   server's reuse detection and log every tab out. Adopt an already-rotated
+   *   token if one appeared, else fail soft (the caller retries).
+   */
+  private async _refreshLocked(captured: string): Promise<boolean> {
+    const locks = (globalThis as { navigator?: { locks?: LockManagerLike } })
+      .navigator?.locks
+    if (!locks?.request) return this._doRefresh(captured)
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), REFRESH_LOCK_TIMEOUT_MS)
+    let acquired = false
+    try {
+      return (await locks.request(
+        this.refreshLockName,
+        { signal: controller.signal },
+        async () => {
+          acquired = true
+          clearTimeout(timer)
+          return this._doRefresh(captured)
+        },
+      )) as boolean
+    } catch (err) {
+      if (acquired) throw err // failure came from _doRefresh, not acquisition
+      return this._doRefresh(captured, false) // timed out → don't replay
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  private async _doRefresh(captured: string, allowNetwork = true): Promise<boolean> {
+    // Re-read after acquiring the lock: another tab may have rotated while we
+    // waited. Pick up its result instead of replaying the (now consumed)
+    // captured token.
+    const current = this.store.getRefreshToken()
+    if (!current) return false
+    if (current !== captured) {
+      this.notify()
+      if (this.autoRefresh) this.scheduleRefresh()
+      return true
+    }
+    // Reached without the lock (acquisition timed out): the holder is still
+    // rotating, so replaying our captured token would trip reuse detection.
+    if (!allowNetwork) return false
 
     try {
       const res = await fetch(`${this.url}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken }),
+        body: JSON.stringify({ refresh_token: current }),
       })
       if (!res.ok) {
         if (res.status === 401) {
@@ -168,6 +277,7 @@ export class SentinelAuth {
       this.store.setTokens(data.access_token, data.refresh_token)
       this.notify()
       if (this.autoRefresh) this.scheduleRefresh()
+      this.channel?.postMessage({ type: 'refreshed' })
       return true
     } catch {
       return false
@@ -179,6 +289,7 @@ export class SentinelAuth {
     this.store.clear()
     this.clearRefreshTimer()
     this.notify()
+    this.channel?.postMessage({ type: 'logout' })
   }
 
   // ── Token access ──────────────────────────────────────────────────
@@ -252,10 +363,12 @@ export class SentinelAuth {
 
   // ── Cleanup ───────────────────────────────────────────────────────
 
-  /** Clean up timers. Call when done (e.g. component unmount). */
+  /** Clean up timers and the cross-tab channel. Call when done (e.g. unmount). */
   destroy(): void {
     this.clearRefreshTimer()
     this.listeners.clear()
+    this.channel?.close()
+    this.channel = null
   }
 
   // ── Private ───────────────────────────────────────────────────────
@@ -280,7 +393,11 @@ export class SentinelAuth {
       const parts = token.split('.')
       const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
       const expiresAt = payload.exp * 1000
-      const delay = expiresAt - Date.now() - this.refreshBuffer * 1000
+      const delay =
+        expiresAt -
+        Date.now() -
+        this.refreshBuffer * 1000 -
+        Math.random() * REFRESH_JITTER_MS
       if (delay <= 0) {
         // Token already near expiry, refresh immediately
         void this.refresh()
