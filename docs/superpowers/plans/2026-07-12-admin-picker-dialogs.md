@@ -489,11 +489,9 @@ In `function RolesTab`, **delete**:
 
 ```tsx
 const [showAddActions, setShowAddActions] = useState(false);
-const [showAddMembers, setShowAddMembers] = useState(false);
-const [showAddGroups, setShowAddGroups] = useState(false);
 ```
 
-(`showAddMembers`/`showAddGroups` are used by Task 4 — adding all three now avoids touching this block twice.)
+(Task 4 adds `showAddMembers`/`showAddGroups` when it wires those dialogs — declaring them earlier trips `noUnusedLocals`.)
 
 **Add** derived items where `availableActions` was:
 
@@ -509,12 +507,10 @@ const actionItems: PickerItem[] = allActions.map((a) => ({
 }));
 ```
 
-In the role-row `onClick` that expands/collapses (`setExpandedRole(...)`), delete only the `setSelectedActionId("");` line and add these three (leave `setAddMemberEmail("")` and `setSelectedGroupId("")` untouched — Task 4 removes them with their state):
+In the role-row `onClick` that expands/collapses (`setExpandedRole(...)`), delete only the `setSelectedActionId("");` line and add this one (leave `setAddMemberEmail("")` and `setSelectedGroupId("")` untouched — Task 4 removes them with their state):
 
 ```tsx
 setShowAddActions(false);
-setShowAddMembers(false);
-setShowAddGroups(false);
 ```
 
 - [ ] **Step 2: Replace the Actions section picker row**
@@ -583,7 +579,7 @@ git commit -m "feat(admin): role action picker becomes service-grouped multi-sel
 - Modify: `admin/src/pages/WorkspaceDetail.tsx` (function `RolesTab`, Members + Groups sections)
 
 **Interfaces:**
-- Consumes: `AddItemsDialog`, `PickerItem`, `batchAdd` (Task 1); `showAddMembers`/`showAddGroups` state (Task 3); existing `addRoleMember`, `addRoleGroup` client functions.
+- Consumes: `AddItemsDialog`, `PickerItem`, `batchAdd` (Task 1); existing `addRoleMember`, `addRoleGroup` client functions.
 - Produces: nothing new.
 
 - [ ] **Step 1: Delete single-pick state and mutations**
@@ -592,7 +588,21 @@ In `function RolesTab`, **delete**:
 - state lines for `addMemberEmail` and `selectedGroupId`
 - the whole `const addMember = useMutation({ ... });` and `const addGroup = useMutation({ ... });` blocks
 - the line `const selectedMember = members.find((m) => m.email === addMemberEmail);`
-- in the expand/collapse `onClick`, any remaining `setAddMemberEmail("")` / `setSelectedGroupId("")` lines
+- in the expand/collapse `onClick`, the `setAddMemberEmail("")` / `setSelectedGroupId("")` lines
+
+**Add** state (next to `showAddActions` from Task 3):
+
+```tsx
+const [showAddMembers, setShowAddMembers] = useState(false);
+const [showAddGroups, setShowAddGroups] = useState(false);
+```
+
+and in the same expand/collapse `onClick`, next to `setShowAddActions(false);`:
+
+```tsx
+setShowAddMembers(false);
+setShowAddGroups(false);
+```
 
 **Add** derived items next to `actionItems` (from Task 3):
 
