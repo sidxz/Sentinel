@@ -50,7 +50,7 @@ The spec says role-group picker rows show `"N members"` as sublabel. The `Group`
     items: PickerItem[];
     onSearch?: (q: string) => void;   // present = server-search mode
     isLoading?: boolean;
-    onAdd: (ids: string[]) => Promise<void>; // throw → dialog stays open
+    onAdd: (items: PickerItem[]) => Promise<void>; // throw → dialog stays open
     addLabel: (n: number) => string;
     footer?: ReactNode;
   }): JSX.Element;
@@ -96,8 +96,13 @@ type Props = {
   /** Present = server-search mode: debounced query is pushed up, parent re-renders items. */
   onSearch?: (q: string) => void;
   isLoading?: boolean;
-  /** Throw to keep the dialog open (caller surfaces its own error toast). */
-  onAdd: (ids: string[]) => Promise<void>;
+  /**
+   * Receives the full selected items — in server-search mode selections can
+   * span multiple search pages, so callers must not re-derive them from the
+   * currently rendered list. Throw to keep the dialog open (caller surfaces
+   * its own error toast).
+   */
+  onAdd: (items: PickerItem[]) => Promise<void>;
   addLabel: (n: number) => string;
   /** Rendered left of Cancel/Add — e.g. the batch role select. */
   footer?: ReactNode;
@@ -115,14 +120,17 @@ export function AddItemsDialog({
   footer,
 }: Props) {
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Map keeps the full PickerItem per selected id: in server mode the list
+  // under the checkboxes changes with every search, so ids alone couldn't be
+  // resolved back to items at add-time.
+  const [selected, setSelected] = useState<Map<string, PickerItem>>(new Map());
   const [pending, setPending] = useState(false);
 
   // Fresh state every time the dialog opens (guards stale-picker bugs, cf. 563e53f).
   useEffect(() => {
     if (open) {
       setQuery("");
-      setSelected(new Set());
+      setSelected(new Map());
     }
   }, [open]);
 
@@ -153,11 +161,11 @@ export function AddItemsDialog({
     return [...m.entries()];
   }, [visible]);
 
-  const toggle = (id: string) =>
+  const toggle = (item: PickerItem) =>
     setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const next = new Map(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.set(item.id, item);
       return next;
     });
 
@@ -165,10 +173,10 @@ export function AddItemsDialog({
     const enabled = groupItems.filter((i) => !i.disabled);
     const allIn = enabled.length > 0 && enabled.every((i) => selected.has(i.id));
     setSelected((prev) => {
-      const next = new Set(prev);
+      const next = new Map(prev);
       for (const i of enabled) {
         if (allIn) next.delete(i.id);
-        else next.add(i.id);
+        else next.set(i.id, i);
       }
       return next;
     });
@@ -177,7 +185,7 @@ export function AddItemsDialog({
   const handleAdd = async () => {
     setPending(true);
     try {
-      await onAdd([...selected]);
+      await onAdd([...selected.values()]);
       onOpenChange(false);
     } catch {
       // caller toasted; keep dialog open
@@ -246,7 +254,7 @@ export function AddItemsDialog({
                       <Checkbox
                         checked={selected.has(item.id)}
                         disabled={item.disabled}
-                        onCheckedChange={() => toggle(item.id)}
+                        onCheckedChange={() => toggle(item)}
                       />
                       <span className="min-w-0 flex-1 text-sm">
                         <span className="text-foreground">{item.label}</span>
@@ -429,12 +437,12 @@ Where the old `<Modal>` block was, render instead:
       ))}
     </select>
   }
-  onAdd={async (ids) => {
-    const emailById = new Map(foundUsers.map((u) => [u.id, u.email]));
-    const sel = userItems.filter((i) => ids.includes(i.id));
+  onAdd={async (sel) => {
+    // sublabel carries the email for user items; selections may span searches,
+    // so `sel` (not the current page) is the source of truth.
     await batchAdd(
       sel,
-      (i) => inviteMember(workspaceId, emailById.get(i.id)!, batchRole),
+      (i) => inviteMember(workspaceId, i.sublabel!, batchRole),
       "user",
     );
     queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceId] });
@@ -540,9 +548,9 @@ with a header row + dialog:
   title={`Add actions to ${r.name}`}
   items={actionItems}
   addLabel={(n) => `Add ${n} action${n === 1 ? "" : "s"}`}
-  onAdd={async (ids) => {
+  onAdd={async (sel) => {
     try {
-      await addRoleActions(expandedRole!, ids);
+      await addRoleActions(expandedRole!, sel.map((i) => i.id));
     } catch (e) {
       toast.error((e as Error).message);
       throw e;
@@ -626,8 +634,7 @@ Replace the `select` + `Add` row in the role Members section with:
   title={`Add members to ${r.name}`}
   items={roleMemberItems}
   addLabel={(n) => `Add ${n} member${n === 1 ? "" : "s"}`}
-  onAdd={async (ids) => {
-    const sel = roleMemberItems.filter((i) => ids.includes(i.id));
+  onAdd={async (sel) => {
     await batchAdd(sel, (i) => addRoleMember(expandedRole!, i.id), "member");
     queryClient.invalidateQueries({ queryKey: ["role-members", expandedRole] });
     queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
@@ -654,8 +661,7 @@ Replace the `select` + `Add` row in the role Groups section with:
   title={`Add groups to ${r.name}`}
   items={roleGroupItems}
   addLabel={(n) => `Add ${n} group${n === 1 ? "" : "s"}`}
-  onAdd={async (ids) => {
-    const sel = roleGroupItems.filter((i) => ids.includes(i.id));
+  onAdd={async (sel) => {
     await batchAdd(sel, (i) => addRoleGroup(expandedRole!, i.id), "group");
     queryClient.invalidateQueries({ queryKey: ["role-groups", expandedRole] });
     queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
@@ -737,8 +743,7 @@ Replace the `select` + `Add` row inside the expanded-group block with:
   title={`Add members to ${g.name}`}
   items={groupMemberItems}
   addLabel={(n) => `Add ${n} member${n === 1 ? "" : "s"}`}
-  onAdd={async (ids) => {
-    const sel = groupMemberItems.filter((i) => ids.includes(i.id));
+  onAdd={async (sel) => {
     await batchAdd(sel, (i) => addGroupMember(expandedGroup!, i.id), "member");
     queryClient.invalidateQueries({ queryKey: ["group-members", expandedGroup] });
   }}
