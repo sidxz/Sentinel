@@ -2,9 +2,11 @@ import uuid
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.role import Role, RoleAction, ServiceAction, UserRole
+from src.models.group import Group, GroupMembership
+from src.models.role import GroupRole, Role, RoleAction, ServiceAction, UserRole
 from src.models.user import User
 
 
@@ -200,9 +202,18 @@ async def list_workspace_roles(
         .correlate(Role)
         .scalar_subquery()
     )
+    group_count = (
+        select(func.count(GroupRole.id))
+        .where(GroupRole.role_id == Role.id)
+        .correlate(Role)
+        .scalar_subquery()
+    )
     stmt = (
         select(
-            Role, action_count.label("action_count"), member_count.label("member_count")
+            Role,
+            action_count.label("action_count"),
+            member_count.label("member_count"),
+            group_count.label("group_count"),
         )
         .where(Role.workspace_id == workspace_id)
         .order_by(Role.created_at)
@@ -218,8 +229,9 @@ async def list_workspace_roles(
             "created_at": role.created_at,
             "action_count": ac,
             "member_count": mc,
+            "group_count": gc,
         }
-        for role, ac, mc in result.all()
+        for role, ac, mc, gc in result.all()
     ]
 
 
@@ -337,4 +349,77 @@ async def list_role_members(
             "assigned_by": ur.assigned_by,
         }
         for ur, user in result.all()
+    ]
+
+
+async def assign_group_role(
+    db: AsyncSession,
+    group_id: uuid.UUID,
+    role_id: uuid.UUID,
+    assigned_by: uuid.UUID | None = None,
+) -> GroupRole:
+    role = await db.get(Role, role_id)
+    if not role:
+        raise ValueError("Role not found")
+    group = await db.get(Group, group_id)
+    if not group:
+        raise ValueError("Group not found")
+    # Groups are workspace-scoped and group members are guaranteed workspace
+    # members (group_service.add_member guard + remove_member purge), so this
+    # is the only scope check a group binding needs.
+    if group.workspace_id != role.workspace_id:
+        raise ValueError("Group and role belong to different workspaces")
+    gr = GroupRole(group_id=group_id, role_id=role_id, assigned_by=assigned_by)
+    db.add(gr)
+    try:
+        await db.commit()
+    except IntegrityError:
+        raise ValueError("Group is already assigned to this role") from None
+    return gr
+
+
+async def remove_group_role(
+    db: AsyncSession,
+    group_id: uuid.UUID,
+    role_id: uuid.UUID,
+) -> None:
+    stmt = select(GroupRole).where(
+        GroupRole.group_id == group_id,
+        GroupRole.role_id == role_id,
+    )
+    result = await db.execute(stmt)
+    gr = result.scalar_one_or_none()
+    if not gr:
+        raise ValueError("Group role not found")
+    await db.delete(gr)
+    await db.commit()
+
+
+async def list_role_groups(
+    db: AsyncSession,
+    role_id: uuid.UUID,
+) -> list[dict]:
+    member_count = (
+        select(func.count(GroupMembership.id))
+        .where(GroupMembership.group_id == Group.id)
+        .correlate(Group)
+        .scalar_subquery()
+    )
+    stmt = (
+        select(GroupRole, Group, member_count.label("member_count"))
+        .join(Group, GroupRole.group_id == Group.id)
+        .where(GroupRole.role_id == role_id)
+        .order_by(GroupRole.assigned_at)
+    )
+    result = await db.execute(stmt)
+    return [
+        {
+            "group_id": gr.group_id,
+            "name": g.name,
+            "description": g.description,
+            "member_count": mc,
+            "assigned_at": gr.assigned_at,
+            "assigned_by": gr.assigned_by,
+        }
+        for gr, g, mc in result.all()
     ]
