@@ -89,7 +89,7 @@ Behavior:
 | Members tab | **+ Add Users** | `getUsers(1, 20, q)` results; existing members `disabled` ("already a member") | server | N × `inviteMember(email, role)` |
 | Role → Actions | + Add Actions | `getServiceActions()`, `group = service_name`, `label = action`, `sublabel = description`; assigned `disabled` ("already assigned") | client | **one** `addRoleActions(roleId, ids)` |
 | Role → Members | + Add Members | workspace members; in-role `disabled` | client | N × `addRoleMember` |
-| Role → Groups | + Add Groups | workspace groups, `sublabel = "N members"`; assigned `disabled` | client | N × `addRoleGroup` |
+| Role → Groups | + Add Groups | workspace groups, `sublabel = description` (`Group` has no `member_count`); assigned `disabled` | client | N × `addRoleGroup` |
 | Group → Members | + Add Members | workspace members; in-group `disabled` | client | N × `addGroupMember` |
 
 Notes:
