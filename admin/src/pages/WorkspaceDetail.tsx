@@ -598,9 +598,11 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
   const [editingRole, setEditingRole] = useState<string | null>(null);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", description: "" });
-  const [selectedActionId, setSelectedActionId] = useState("");
   const [addMemberEmail, setAddMemberEmail] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [showAddActions, setShowAddActions] = useState(false);
+  const [showAddMembers, setShowAddMembers] = useState(false);
+  const [showAddGroups, setShowAddGroups] = useState(false);
 
   const { data: roles = [], isLoading } = useQuery({
     queryKey: ["workspace-roles", workspaceId],
@@ -668,16 +670,6 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
     onError: (e) => toast.error((e as Error).message),
   });
 
-  const addAction = useMutation({
-    mutationFn: (actionId: string) => addRoleActions(expandedRole!, [actionId]),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["role-actions", expandedRole] });
-      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
-      setSelectedActionId("");
-    },
-    onError: (e) => toast.error((e as Error).message),
-  });
-
   const removeAction = useMutation({
     mutationFn: (actionId: string) => removeRoleAction(expandedRole!, actionId),
     onSuccess: () => {
@@ -727,9 +719,15 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
 
   if (isLoading) return <div className="h-32 bg-muted/50 rounded-lg animate-pulse" />;
 
-  const availableActions = allActions.filter(
-    (a) => !roleActions.some((ra) => ra.id === a.id),
-  );
+  const assignedActionIds = new Set(roleActions.map((a) => a.id));
+  const actionItems: PickerItem[] = allActions.map((a) => ({
+    id: a.id,
+    label: a.action,
+    sublabel: a.description ?? undefined,
+    group: a.service_name,
+    disabled: assignedActionIds.has(a.id),
+    disabledReason: "already assigned",
+  }));
   const selectedMember = members.find((m) => m.email === addMemberEmail);
 
   return (
@@ -751,9 +749,11 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
               className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors"
               onClick={() => {
                 setExpandedRole(expandedRole === r.id ? null : r.id);
-                setSelectedActionId("");
                 setAddMemberEmail("");
                 setSelectedGroupId("");
+                setShowAddActions(false);
+                setShowAddMembers(false);
+                setShowAddGroups(false);
               }}
             >
               <div>
@@ -793,27 +793,31 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
                 {/* Actions section */}
                 <div>
                   <div className="text-xs font-medium text-muted-foreground pt-2 pb-1">Actions</div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectedActionId}
-                      onChange={(e) => setSelectedActionId(e.target.value)}
-                      className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground"
-                    >
-                      <option value="">Select action to add...</option>
-                      {availableActions.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.service_name}:{a.action}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      size="sm"
-                      onClick={() => { if (selectedActionId) addAction.mutate(selectedActionId); }}
-                      disabled={!selectedActionId || addAction.isPending}
-                    >
-                      Add
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-medium text-muted-foreground">
+                      {roleActions.length} assigned
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setShowAddActions(true)}>
+                      + Add Actions
                     </Button>
                   </div>
+                  <AddItemsDialog
+                    open={showAddActions}
+                    onOpenChange={setShowAddActions}
+                    title={`Add actions to ${r.name}`}
+                    items={actionItems}
+                    addLabel={(n) => `Add ${n} action${n === 1 ? "" : "s"}`}
+                    onAdd={async (sel) => {
+                      try {
+                        await addRoleActions(expandedRole!, sel.map((i) => i.id));
+                      } catch (e) {
+                        toast.error((e as Error).message);
+                        throw e;
+                      }
+                      queryClient.invalidateQueries({ queryKey: ["role-actions", expandedRole] });
+                      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+                    }}
+                  />
                   <div className="divide-y divide-border mt-1">
                     {roleActions.map((a) => (
                       <div key={a.id} className="flex items-center justify-between py-2">
