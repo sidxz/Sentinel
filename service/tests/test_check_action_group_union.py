@@ -106,6 +106,12 @@ async def test_both_paths_filter_by_workspace_service_and_user():
         workspace_id=uuid.uuid4(),
     )
     sql = _compiled(db)
-    assert sql.count("workspace_id") >= 2
-    assert sql.count("service_name") >= 2
-    assert sql.count("user_id") >= 2
+    # Each scoped branch contributes 2 hits per filter (column identifier +
+    # bind param), so both-branches-filtered means >= 4; a single branch
+    # dropping a filter falls to 2 and fails.
+    assert sql.count("workspace_id") >= 4
+    assert sql.count("service_name") >= 4
+    assert sql.count("user_id") >= 4
+    # The user filter uses a different column per branch — pin both.
+    assert "user_roles.user_id" in sql
+    assert "group_memberships.user_id" in sql
