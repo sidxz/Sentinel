@@ -16,6 +16,51 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ---
 
+## [0.16.0] – 2026-07-12 — Groups as role assignees
+
+Workspace groups can now be assigned to custom RBAC roles: every member of a
+bound group holds the role's actions for as long as they are in the group.
+Binding a group to a role is admin-panel-only; workspace admins control who is
+in a bound group, never what the group can do (mirrors how group shares already
+work in entity ACLs). Group-derived grants resolve live at check time and flow
+into authz-token `actions` claims with no client-side changes.
+
+### Breaking changes
+
+None. The API surface is additive; existing SDKs are fully compatible.
+
+### Service
+
+- **Added** `group_roles` table (migration `c8e1a4f7d3b9`, auto-applies on
+  startup) mirroring `user_roles` — CASCADE FKs mean group/role deletion and
+  workspace-member removal clean up bindings with no extra purge logic.
+- **Changed** `check_action` / `get_user_actions` to resolve a UNION of direct
+  (`user_roles`) and group-derived (`group_roles` ⋈ `group_memberships`)
+  grants. Endpoint contracts (`/roles/check-action`, `/roles/user-actions`)
+  are unchanged in shape and semantics.
+- **Added** admin endpoints `GET/POST/DELETE /admin/roles/{role_id}/groups[/{group_id}]`
+  with `role_group_added` / `role_group_removed` activity events;
+  `RoleResponse` gains `group_count`.
+- **Added** activity events for user-facing group mutations
+  (`group_created`, `group_deleted`, `group_member_added`,
+  `group_member_removed`) — previously unaudited, and now a privilege-grant
+  path.
+
+### Admin panel
+
+- **Added** Groups section in the role detail row (bind/unbind groups, member
+  counts) and group counts in the roles list.
+- **Fixed** stale picker state when switching expanded role rows — a selection
+  made on one role could silently apply to another role's add action/member/
+  group picker.
+
+### SDKs (Python + JS/React/Next.js)
+
+- No code changes — published at 0.16.0 for version alignment only. No
+  upgrade required.
+
+---
+
 ## [0.15.0] – 2026-07-10 — Security hardening + auth-contract fixes
 
 A correctness/security round across the service and SDKs: closes an auth-code
