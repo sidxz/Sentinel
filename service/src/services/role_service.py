@@ -93,8 +93,15 @@ def _granted_stmt(
             stmt = stmt.where(ServiceAction.action == action)
         return stmt
 
+    # select_from(Role) anchors the FROM clause on Role regardless of which
+    # column is selected. Without it, selecting ServiceAction.action (as
+    # get_user_actions does) makes SQLAlchemy infer FROM service_actions, and
+    # the join to UserRole/GroupRole (whose ON-clause references Role.id
+    # before Role is in the join graph) compiles but is rejected by Postgres
+    # at execution time: "missing FROM-clause entry for table roles".
     direct = _scoped(
         select(col)
+        .select_from(Role)
         .join(UserRole, UserRole.role_id == Role.id)
         .join(RoleAction, RoleAction.role_id == Role.id)
         .join(ServiceAction, RoleAction.service_action_id == ServiceAction.id)
@@ -102,6 +109,7 @@ def _granted_stmt(
     )
     via_group = _scoped(
         select(col)
+        .select_from(Role)
         .join(GroupRole, GroupRole.role_id == Role.id)
         .join(GroupMembership, GroupMembership.group_id == GroupRole.group_id)
         .join(RoleAction, RoleAction.role_id == Role.id)
