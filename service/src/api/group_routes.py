@@ -18,7 +18,7 @@ from src.schemas.group import (
     GroupResponse,
     GroupUpdateRequest,
 )
-from src.services import group_service
+from src.services import activity_service, group_service
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/groups", tags=["groups"])
 
@@ -51,7 +51,7 @@ async def create_group(
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
     try:
-        return await group_service.create_group(
+        group = await group_service.create_group(
             db,
             workspace_id=workspace_id,
             name=body.name,
@@ -60,6 +60,16 @@ async def create_group(
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    await activity_service.log_activity(
+        db,
+        action="group_created",
+        target_type="group",
+        target_id=group.id,
+        actor_id=user.user_id,
+        workspace_id=workspace_id,
+    )
+    await db.commit()
+    return group
 
 
 @router.get("", response_model=list[GroupResponse])
@@ -103,6 +113,15 @@ async def delete_group(
         await group_service.delete_group(db, group_id, workspace_id)
     except ValueError as e:
         raise _to_http(e)
+    await activity_service.log_activity(
+        db,
+        action="group_deleted",
+        target_type="group",
+        target_id=group_id,
+        actor_id=user.user_id,
+        workspace_id=workspace_id,
+    )
+    await db.commit()
 
 
 @router.get("/{group_id}/members", response_model=list[GroupMemberResponse])
@@ -139,6 +158,16 @@ async def add_group_member(
         await group_service.add_member(db, group_id, workspace_id, member_user_id)
     except ValueError as e:
         raise _to_http(e)
+    await activity_service.log_activity(
+        db,
+        action="group_member_added",
+        target_type="user",
+        target_id=member_user_id,
+        actor_id=user.user_id,
+        workspace_id=workspace_id,
+        detail={"group_id": str(group_id)},
+    )
+    await db.commit()
     return {"status": "ok"}
 
 
@@ -156,3 +185,13 @@ async def remove_group_member(
         await group_service.remove_member(db, group_id, workspace_id, member_user_id)
     except ValueError as e:
         raise _to_http(e)
+    await activity_service.log_activity(
+        db,
+        action="group_member_removed",
+        target_type="user",
+        target_id=member_user_id,
+        actor_id=user.user_id,
+        workspace_id=workspace_id,
+        detail={"group_id": str(group_id)},
+    )
+    await db.commit()
