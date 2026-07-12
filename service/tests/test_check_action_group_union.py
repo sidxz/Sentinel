@@ -61,6 +61,9 @@ async def test_check_action_unions_direct_and_group_paths():
     assert "user_roles" in sql
     assert "group_roles" in sql
     assert "group_memberships" in sql
+    # Pin the group-path join condition: a mangled join here would grant/deny
+    # the wrong users while every table/filter assertion still passes.
+    assert "group_memberships.group_id = group_roles.group_id" in sql
 
 
 @pytest.mark.asyncio
