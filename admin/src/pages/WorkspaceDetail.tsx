@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ import {
   getRoleGroups,
   getRoleMembers,
   getServiceActions,
+  getUsers,
   getWorkspace,
   getWorkspaceAllowedOrgs,
   getWorkspaceGroups,
@@ -38,6 +39,7 @@ import {
 } from "../api/client";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
+import { AddItemsDialog, batchAdd, type PickerItem } from "../components/AddItemsDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -239,22 +241,20 @@ export function WorkspaceDetail() {
 
 function MembersTab({ workspaceId }: { workspaceId: string }) {
   const queryClient = useQueryClient();
-  const [showInvite, setShowInvite] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("viewer");
+  const [showAdd, setShowAdd] = useState(false);
+  const [userQuery, setUserQuery] = useState("");
+  const [batchRole, setBatchRole] = useState("viewer");
+
+  const { data: userPage } = useQuery({
+    queryKey: ["user-picker", userQuery],
+    queryFn: () => getUsers(1, 20, userQuery || undefined),
+    enabled: showAdd,
+    placeholderData: keepPreviousData,
+  });
 
   const { data: members = [], isLoading } = useQuery({
     queryKey: ["workspace-members", workspaceId],
     queryFn: () => getWorkspaceMembers(workspaceId),
-  });
-
-  const invite = useMutation({
-    mutationFn: () => inviteMember(workspaceId, inviteEmail, inviteRole),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceId] });
-      setShowInvite(false);
-      setInviteEmail("");
-    },
   });
 
   const changeRole = useMutation({
@@ -272,11 +272,21 @@ function MembersTab({ workspaceId }: { workspaceId: string }) {
 
   if (isLoading) return <div className="h-32 bg-muted/50 rounded-lg animate-pulse" />;
 
+  const memberIds = new Set(members.map((m) => m.user_id));
+  const foundUsers = userPage?.items ?? [];
+  const userItems: PickerItem[] = foundUsers.map((u) => ({
+    id: u.id,
+    label: u.name,
+    sublabel: u.email,
+    disabled: memberIds.has(u.id),
+    disabledReason: "already a member",
+  }));
+
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={() => setShowInvite(true)}>
-          + Invite Member
+        <Button variant="outline" size="sm" onClick={() => setShowAdd(true)}>
+          + Add Users
         </Button>
       </div>
 
@@ -314,38 +324,37 @@ function MembersTab({ workspaceId }: { workspaceId: string }) {
         )}
       </div>
 
-      <Modal open={showInvite} onClose={() => setShowInvite(false)} title="Invite Member">
-        <div className="space-y-3">
-          <Input
-            type="email"
-            value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
-            placeholder="user@example.com"
-          />
+      <AddItemsDialog
+        open={showAdd}
+        onOpenChange={setShowAdd}
+        title="Add users to this workspace"
+        items={userItems}
+        onSearch={setUserQuery}
+        isLoading={showAdd && !userPage}
+        addLabel={(n) => `Add ${n} user${n === 1 ? "" : "s"}`}
+        footer={
           <select
-            value={inviteRole}
-            onChange={(e) => setInviteRole(e.target.value)}
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+            value={batchRole}
+            onChange={(e) => setBatchRole(e.target.value)}
+            className={selectClass}
+            aria-label="Role for added users"
           >
             {["viewer", "editor", "admin", "owner"].map((r) => (
               <option key={r} value={r}>{r}</option>
             ))}
           </select>
-          {invite.isError && (
-            <div className="text-xs text-destructive">{(invite.error as Error).message}</div>
-          )}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" size="sm" onClick={() => setShowInvite(false)}>Cancel</Button>
-            <Button
-              size="sm"
-              onClick={() => invite.mutate()}
-              disabled={!inviteEmail || invite.isPending}
-            >
-              Invite
-            </Button>
-          </div>
-        </div>
-      </Modal>
+        }
+        onAdd={async (ids) => {
+          const emailById = new Map(foundUsers.map((u) => [u.id, u.email]));
+          const sel = userItems.filter((i) => ids.includes(i.id));
+          await batchAdd(
+            sel,
+            (i) => inviteMember(workspaceId, emailById.get(i.id)!, batchRole),
+            "user",
+          );
+          queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceId] });
+        }}
+      />
     </div>
   );
 }
