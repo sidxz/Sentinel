@@ -77,8 +77,10 @@ Behavior:
   button (`addLabel(n)`, disabled when `n === 0` or while `onAdd` pends).
 - Selection and search state **reset every time the dialog opens** (guards
   the stale-picker-state class of bug fixed in 563e53f).
-- Empty states: "No matches" (search) / "Nothing left to add" (all items
-  disabled or list empty).
+- Empty states: "No matches" (search) / "Nothing left to add" (empty source
+  list). A fully-disabled list is not an empty state: it renders every row
+  grayed with its `disabledReason`, which tells the admin *why* there is
+  nothing to pick.
 
 ## Call sites
 

@@ -795,7 +795,7 @@ Checklist:
 2. Members tab partial failure: try adding a user blocked by an org restriction (or re-add raced member) → dialog closes, error toast lists `name — reason`, the addable one still got added.
 3. Role → Actions: dialog groups by service with sticky headers; "select all" on one service selects only that service's enabled rows; search narrows across groups; "Add N actions" lands them in one request; already-assigned rows grayed.
 4. Role → Members and Role → Groups: multi-add works, counts on the role row update, switching expanded roles never leaks selection state (dialog reopens empty).
-5. Group → Members: multi-add works; "Nothing left to add" empty state shows when every workspace member is already in the group.
+5. Group → Members: multi-add works; when every workspace member is already in the group, all rows render grayed with "already a member" ("Nothing left to add" appears only for an empty source list).
 6. Toggle dark mode: dialog, sticky group headers, disabled rows, and skeletons all use theme tokens correctly in both themes.
 
 - [ ] **Step 4: Fix anything found, re-verify, commit fixes**
