@@ -72,6 +72,45 @@ async def register_actions(
     return list(result.scalars().all())
 
 
+def _granted_stmt(
+    col,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    service_name: str,
+    action: str | None = None,
+):
+    """UNION of the two grant paths: direct (user_roles) and via group
+    (group_roles ⋈ group_memberships). UNION dedups, so a role granted both
+    ways appears once. Group members are always workspace members
+    (group_service guards + remove_member purge), so no membership re-join."""
+
+    def _scoped(stmt):
+        stmt = stmt.where(
+            Role.workspace_id == workspace_id,
+            ServiceAction.service_name == service_name,
+        )
+        if action is not None:
+            stmt = stmt.where(ServiceAction.action == action)
+        return stmt
+
+    direct = _scoped(
+        select(col)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .join(RoleAction, RoleAction.role_id == Role.id)
+        .join(ServiceAction, RoleAction.service_action_id == ServiceAction.id)
+        .where(UserRole.user_id == user_id)
+    )
+    via_group = _scoped(
+        select(col)
+        .join(GroupRole, GroupRole.role_id == Role.id)
+        .join(GroupMembership, GroupMembership.group_id == GroupRole.group_id)
+        .join(RoleAction, RoleAction.role_id == Role.id)
+        .join(ServiceAction, RoleAction.service_action_id == ServiceAction.id)
+        .where(GroupMembership.user_id == user_id)
+    )
+    return direct.union(via_group)
+
+
 async def check_action(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -79,18 +118,7 @@ async def check_action(
     action: str,
     workspace_id: uuid.UUID,
 ) -> tuple[bool, list[str]]:
-    stmt = (
-        select(Role.name)
-        .join(UserRole, UserRole.role_id == Role.id)
-        .join(RoleAction, RoleAction.role_id == Role.id)
-        .join(ServiceAction, RoleAction.service_action_id == ServiceAction.id)
-        .where(
-            UserRole.user_id == user_id,
-            Role.workspace_id == workspace_id,
-            ServiceAction.service_name == service_name,
-            ServiceAction.action == action,
-        )
-    )
+    stmt = _granted_stmt(Role.name, user_id, workspace_id, service_name, action)
     result = await db.execute(stmt)
     roles = list(result.scalars().all())
     return (len(roles) > 0, roles)
@@ -102,18 +130,7 @@ async def get_user_actions(
     service_name: str,
     workspace_id: uuid.UUID,
 ) -> list[str]:
-    stmt = (
-        select(ServiceAction.action)
-        .join(RoleAction, RoleAction.service_action_id == ServiceAction.id)
-        .join(Role, RoleAction.role_id == Role.id)
-        .join(UserRole, UserRole.role_id == Role.id)
-        .where(
-            UserRole.user_id == user_id,
-            Role.workspace_id == workspace_id,
-            ServiceAction.service_name == service_name,
-        )
-        .distinct()
-    )
+    stmt = _granted_stmt(ServiceAction.action, user_id, workspace_id, service_name)
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
