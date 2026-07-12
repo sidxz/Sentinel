@@ -365,7 +365,7 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
   const [editingGroup, setEditingGroup] = useState<string | null>(null);
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", description: "" });
-  const [addMemberEmail, setAddMemberEmail] = useState("");
+  const [showAddMembers, setShowAddMembers] = useState(false);
 
   const { data: groups = [], isLoading } = useQuery({
     queryKey: ["workspace-groups", workspaceId],
@@ -411,15 +411,6 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
     onError: (e) => toast.error((e as Error).message),
   });
 
-  const addMember = useMutation({
-    mutationFn: (userId: string) => addGroupMember(expandedGroup!, userId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["group-members", expandedGroup] });
-      setAddMemberEmail("");
-    },
-    onError: (e) => toast.error((e as Error).message),
-  });
-
   const removeMemberMut = useMutation({
     mutationFn: (userId: string) => removeGroupMember(expandedGroup!, userId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["group-members", expandedGroup] }),
@@ -428,7 +419,14 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
 
   if (isLoading) return <div className="h-32 bg-muted/50 rounded-lg animate-pulse" />;
 
-  const selectedMember = members.find((m) => m.email === addMemberEmail);
+  const groupMemberIds = new Set(groupMembers.map((gm) => gm.user_id));
+  const groupMemberItems: PickerItem[] = members.map((m) => ({
+    id: m.user_id,
+    label: m.name,
+    sublabel: m.email,
+    disabled: groupMemberIds.has(m.user_id),
+    disabledReason: "already a member",
+  }));
 
   return (
     <div className="space-y-3">
@@ -447,7 +445,10 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
           <div key={g.id}>
             <div
               className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors"
-              onClick={() => setExpandedGroup(expandedGroup === g.id ? null : g.id)}
+              onClick={() => {
+                setExpandedGroup(expandedGroup === g.id ? null : g.id);
+                setShowAddMembers(false);
+              }}
             >
               <div>
                 <div className="text-sm font-medium">{g.name}</div>
@@ -480,31 +481,25 @@ function GroupsTab({ workspaceId }: { workspaceId: string }) {
             {/* Expanded group members */}
             {expandedGroup === g.id && (
               <div className="px-4 pb-3 space-y-2 bg-muted/50">
-                <div className="flex items-center gap-2 pt-2">
-                  <select
-                    value={addMemberEmail}
-                    onChange={(e) => setAddMemberEmail(e.target.value)}
-                    className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground"
-                  >
-                    <option value="">Select member to add...</option>
-                    {members
-                      .filter((m) => !groupMembers.some((gm) => gm.user_id === m.user_id))
-                      .map((m) => (
-                        <option key={m.user_id} value={m.email}>
-                          {m.name} ({m.email})
-                        </option>
-                      ))}
-                  </select>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      if (selectedMember) addMember.mutate(selectedMember.user_id);
-                    }}
-                    disabled={!selectedMember || addMember.isPending}
-                  >
-                    Add
+                <div className="flex items-center justify-between pt-2">
+                  <div className="text-xs font-medium text-muted-foreground">
+                    {groupMembers.length} member{groupMembers.length === 1 ? "" : "s"}
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setShowAddMembers(true)}>
+                    + Add Members
                   </Button>
                 </div>
+                <AddItemsDialog
+                  open={showAddMembers}
+                  onOpenChange={setShowAddMembers}
+                  title={`Add members to ${g.name}`}
+                  items={groupMemberItems}
+                  addLabel={(n) => `Add ${n} member${n === 1 ? "" : "s"}`}
+                  onAdd={async (sel) => {
+                    await batchAdd(sel, (i) => addGroupMember(expandedGroup!, i.id), "member");
+                    queryClient.invalidateQueries({ queryKey: ["group-members", expandedGroup] });
+                  }}
+                />
                 <div className="divide-y divide-border">
                   {groupMembers.map((gm) => (
                     <div key={gm.user_id} className="flex items-center justify-between py-2">
