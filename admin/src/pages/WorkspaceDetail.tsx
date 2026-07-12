@@ -601,8 +601,6 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
   const [addMemberEmail, setAddMemberEmail] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [showAddActions, setShowAddActions] = useState(false);
-  const [showAddMembers, setShowAddMembers] = useState(false);
-  const [showAddGroups, setShowAddGroups] = useState(false);
 
   const { data: roles = [], isLoading } = useQuery({
     queryKey: ["workspace-roles", workspaceId],
@@ -752,8 +750,6 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
                 setAddMemberEmail("");
                 setSelectedGroupId("");
                 setShowAddActions(false);
-                setShowAddMembers(false);
-                setShowAddGroups(false);
               }}
             >
               <div>
