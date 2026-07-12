@@ -740,7 +740,12 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
           <div key={r.id}>
             <div
               className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors"
-              onClick={() => setExpandedRole(expandedRole === r.id ? null : r.id)}
+              onClick={() => {
+                setExpandedRole(expandedRole === r.id ? null : r.id);
+                setSelectedActionId("");
+                setAddMemberEmail("");
+                setSelectedGroupId("");
+              }}
             >
               <div>
                 <div className="text-sm font-medium font-mono">{r.name}</div>
