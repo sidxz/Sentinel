@@ -299,6 +299,7 @@ export function AddItemsDialog({
 }
 
 /** Run one call per item, then toast a single summary. Never throws. */
+// eslint-disable-next-line react-refresh/only-export-components
 export async function batchAdd(
   selected: PickerItem[],
   call: (item: PickerItem) => Promise<unknown>,
