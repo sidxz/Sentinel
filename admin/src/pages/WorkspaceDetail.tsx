@@ -598,9 +598,9 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
   const [editingRole, setEditingRole] = useState<string | null>(null);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", description: "" });
-  const [addMemberEmail, setAddMemberEmail] = useState("");
-  const [selectedGroupId, setSelectedGroupId] = useState("");
   const [showAddActions, setShowAddActions] = useState(false);
+  const [showAddMembers, setShowAddMembers] = useState(false);
+  const [showAddGroups, setShowAddGroups] = useState(false);
 
   const { data: roles = [], isLoading } = useQuery({
     queryKey: ["workspace-roles", workspaceId],
@@ -677,31 +677,11 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
     onError: (e) => toast.error((e as Error).message),
   });
 
-  const addMember = useMutation({
-    mutationFn: (userId: string) => addRoleMember(expandedRole!, userId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["role-members", expandedRole] });
-      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
-      setAddMemberEmail("");
-    },
-    onError: (e) => toast.error((e as Error).message),
-  });
-
   const removeMemberMut = useMutation({
     mutationFn: (userId: string) => removeRoleMember(expandedRole!, userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["role-members", expandedRole] });
       queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
-    },
-    onError: (e) => toast.error((e as Error).message),
-  });
-
-  const addGroup = useMutation({
-    mutationFn: (groupId: string) => addRoleGroup(expandedRole!, groupId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["role-groups", expandedRole] });
-      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
-      setSelectedGroupId("");
     },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -726,7 +706,22 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
     disabled: assignedActionIds.has(a.id),
     disabledReason: "already assigned",
   }));
-  const selectedMember = members.find((m) => m.email === addMemberEmail);
+  const roleMemberIds = new Set(roleMembers.map((rm) => rm.user_id));
+  const roleMemberItems: PickerItem[] = members.map((m) => ({
+    id: m.user_id,
+    label: m.name,
+    sublabel: m.email,
+    disabled: roleMemberIds.has(m.user_id),
+    disabledReason: "already assigned",
+  }));
+  const roleGroupIds = new Set(roleGroups.map((rg) => rg.group_id));
+  const roleGroupItems: PickerItem[] = groups.map((g) => ({
+    id: g.id,
+    label: g.name,
+    sublabel: g.description ?? undefined,
+    disabled: roleGroupIds.has(g.id),
+    disabledReason: "already assigned",
+  }));
 
   return (
     <div className="space-y-3">
@@ -747,9 +742,9 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
               className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors"
               onClick={() => {
                 setExpandedRole(expandedRole === r.id ? null : r.id);
-                setAddMemberEmail("");
-                setSelectedGroupId("");
                 setShowAddActions(false);
+                setShowAddMembers(false);
+                setShowAddGroups(false);
               }}
             >
               <div>
@@ -840,29 +835,26 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
                 {/* Members section */}
                 <div>
                   <div className="text-xs font-medium text-muted-foreground pb-1">Members</div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={addMemberEmail}
-                      onChange={(e) => setAddMemberEmail(e.target.value)}
-                      className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground"
-                    >
-                      <option value="">Select member to add...</option>
-                      {members
-                        .filter((m) => !roleMembers.some((rm) => rm.user_id === m.user_id))
-                        .map((m) => (
-                          <option key={m.user_id} value={m.email}>
-                            {m.name} ({m.email})
-                          </option>
-                        ))}
-                    </select>
-                    <Button
-                      size="sm"
-                      onClick={() => { if (selectedMember) addMember.mutate(selectedMember.user_id); }}
-                      disabled={!selectedMember || addMember.isPending}
-                    >
-                      Add
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-medium text-muted-foreground">
+                      {roleMembers.length} assigned
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setShowAddMembers(true)}>
+                      + Add Members
                     </Button>
                   </div>
+                  <AddItemsDialog
+                    open={showAddMembers}
+                    onOpenChange={setShowAddMembers}
+                    title={`Add members to ${r.name}`}
+                    items={roleMemberItems}
+                    addLabel={(n) => `Add ${n} member${n === 1 ? "" : "s"}`}
+                    onAdd={async (sel) => {
+                      await batchAdd(sel, (i) => addRoleMember(expandedRole!, i.id), "member");
+                      queryClient.invalidateQueries({ queryKey: ["role-members", expandedRole] });
+                      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+                    }}
+                  />
                   <div className="divide-y divide-border mt-1">
                     {roleMembers.map((rm) => (
                       <div key={rm.user_id} className="flex items-center justify-between py-2">
@@ -889,29 +881,26 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
                 {/* Groups section */}
                 <div>
                   <div className="text-xs font-medium text-muted-foreground pb-1">Groups</div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectedGroupId}
-                      onChange={(e) => setSelectedGroupId(e.target.value)}
-                      className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground"
-                    >
-                      <option value="">Select group to add...</option>
-                      {groups
-                        .filter((g) => !roleGroups.some((rg) => rg.group_id === g.id))
-                        .map((g) => (
-                          <option key={g.id} value={g.id}>
-                            {g.name}
-                          </option>
-                        ))}
-                    </select>
-                    <Button
-                      size="sm"
-                      onClick={() => { if (selectedGroupId) addGroup.mutate(selectedGroupId); }}
-                      disabled={!selectedGroupId || addGroup.isPending}
-                    >
-                      Add
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-medium text-muted-foreground">
+                      {roleGroups.length} assigned
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setShowAddGroups(true)}>
+                      + Add Groups
                     </Button>
                   </div>
+                  <AddItemsDialog
+                    open={showAddGroups}
+                    onOpenChange={setShowAddGroups}
+                    title={`Add groups to ${r.name}`}
+                    items={roleGroupItems}
+                    addLabel={(n) => `Add ${n} group${n === 1 ? "" : "s"}`}
+                    onAdd={async (sel) => {
+                      await batchAdd(sel, (i) => addRoleGroup(expandedRole!, i.id), "group");
+                      queryClient.invalidateQueries({ queryKey: ["role-groups", expandedRole] });
+                      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+                    }}
+                  />
                   <div className="divide-y divide-border mt-1">
                     {roleGroups.map((rg) => (
                       <div key={rg.group_id} className="flex items-center justify-between py-2">
