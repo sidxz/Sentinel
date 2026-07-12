@@ -344,12 +344,12 @@ function MembersTab({ workspaceId }: { workspaceId: string }) {
             ))}
           </select>
         }
-        onAdd={async (ids) => {
-          const emailById = new Map(foundUsers.map((u) => [u.id, u.email]));
-          const sel = userItems.filter((i) => ids.includes(i.id));
+        onAdd={async (sel) => {
+          // sublabel carries the email for user items; selections may span searches,
+          // so `sel` (not the current page) is the source of truth.
           await batchAdd(
             sel,
-            (i) => inviteMember(workspaceId, emailById.get(i.id)!, batchRole),
+            (i) => inviteMember(workspaceId, i.sublabel!, batchRole),
             "user",
           );
           queryClient.invalidateQueries({ queryKey: ["workspace-members", workspaceId] });

@@ -28,8 +28,13 @@ type Props = {
   /** Present = server-search mode: debounced query is pushed up, parent re-renders items. */
   onSearch?: (q: string) => void;
   isLoading?: boolean;
-  /** Throw to keep the dialog open (caller surfaces its own error toast). */
-  onAdd: (ids: string[]) => Promise<void>;
+  /**
+   * Receives the full selected items — in server-search mode selections can
+   * span multiple search pages, so callers must not re-derive them from the
+   * currently rendered list. Throw to keep the dialog open (caller surfaces
+   * its own error toast).
+   */
+  onAdd: (items: PickerItem[]) => Promise<void>;
   addLabel: (n: number) => string;
   /** Rendered left of Cancel/Add — e.g. the batch role select. */
   footer?: ReactNode;
@@ -47,14 +52,17 @@ export function AddItemsDialog({
   footer,
 }: Props) {
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Map keeps the full PickerItem per selected id: in server mode the list
+  // under the checkboxes changes with every search, so ids alone couldn't be
+  // resolved back to items at add-time.
+  const [selected, setSelected] = useState<Map<string, PickerItem>>(new Map());
   const [pending, setPending] = useState(false);
 
   // Fresh state every time the dialog opens (guards stale-picker bugs, cf. 563e53f).
   useEffect(() => {
     if (open) {
       setQuery("");
-      setSelected(new Set());
+      setSelected(new Map());
     }
   }, [open]);
 
@@ -85,11 +93,11 @@ export function AddItemsDialog({
     return [...m.entries()];
   }, [visible]);
 
-  const toggle = (id: string) =>
+  const toggle = (item: PickerItem) =>
     setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const next = new Map(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.set(item.id, item);
       return next;
     });
 
@@ -97,10 +105,10 @@ export function AddItemsDialog({
     const enabled = groupItems.filter((i) => !i.disabled);
     const allIn = enabled.length > 0 && enabled.every((i) => selected.has(i.id));
     setSelected((prev) => {
-      const next = new Set(prev);
+      const next = new Map(prev);
       for (const i of enabled) {
         if (allIn) next.delete(i.id);
-        else next.add(i.id);
+        else next.set(i.id, i);
       }
       return next;
     });
@@ -109,7 +117,7 @@ export function AddItemsDialog({
   const handleAdd = async () => {
     setPending(true);
     try {
-      await onAdd([...selected]);
+      await onAdd([...selected.values()]);
       onOpenChange(false);
     } catch {
       // caller toasted; keep dialog open
@@ -178,7 +186,7 @@ export function AddItemsDialog({
                       <Checkbox
                         checked={selected.has(item.id)}
                         disabled={item.disabled}
-                        onCheckedChange={() => toggle(item.id)}
+                        onCheckedChange={() => toggle(item)}
                       />
                       <span className="min-w-0 flex-1 text-sm">
                         <span className="text-foreground">{item.label}</span>
