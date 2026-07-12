@@ -16,6 +16,39 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ---
 
+## [0.17.0] – 2026-07-12 — Admin picker dialogs
+
+The admin panel's five "add X" pickers (workspace members, role actions, role
+members, role groups, group members) are replaced by one shared searchable
+multi-select dialog. The workspace Members flow is renamed from "Invite
+Member" to "Add Users" — Sentinel has no invitation mechanism; users always
+come from IdPs, and the backend has only ever attached existing users.
+
+### Breaking changes
+
+None. Admin SPA only — no service, API, or SDK changes (service and SDK
+packages republished for version alignment).
+
+### Admin
+
+- **Added** `AddItemsDialog`, a shared picker: search box, grouped checkbox
+  list (role actions group by service with per-service "select all"),
+  disabled rows with reasons ("already a member" / "already assigned"), and
+  a single "Add N …" batch commit. Selections survive across searches in
+  server-search mode.
+- **Changed** Members tab to "+ Add Users": server-side search over existing
+  users (name/email), multi-select, one batch role applied to all (default
+  `viewer`; per-member roles remain editable inline afterward).
+- **Changed** role-action adds to one batched `addRoleActions` request;
+  member/group adds fan out per item and report partial failures in a single
+  summary toast (org-restriction rejections and duplicate races surface
+  per user).
+- **Removed** all user-facing "invite" wording (the backend route
+  `/admin/workspaces/{id}/members/invite` and API client names are
+  intentionally unchanged).
+
+---
+
 ## [0.16.0] – 2026-07-12 — Groups as role assignees
 
 Workspace groups can now be assigned to custom RBAC roles: every member of a
