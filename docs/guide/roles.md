@@ -93,11 +93,25 @@ POST /admin/roles/{role_id}/actions
 { "service_action_ids": ["uuid-of-reports-export", "uuid-of-reports-view"] }
 ```
 
-### 3. Assign Users to Roles (Admin)
+### 3. Assign Users or Groups to Roles (Admin)
 
 ```
 POST /admin/roles/{role_id}/members/{user_id}
+POST /admin/roles/{role_id}/groups/{group_id}
 ```
+
+Assigning a **group** grants the role's actions to every member of the group,
+for as long as they are in it. Groups are flat (no nesting) and
+workspace-scoped; a role and its groups must belong to the same workspace.
+Group-derived grants resolve live: adding someone to the group grants the
+actions on their next check, removing them (or deleting the group) revokes.
+
+!!! note "Delegation boundary"
+    Binding a group to a role is admin-panel-only, but *group membership* is
+    managed by workspace admins/owners. Once a group is bound, workspace
+    admins effectively control who holds those actions — they choose who is
+    on the team, never what the team can do. This mirrors how group shares
+    already work in entity ACLs.
 
 ### 4. Check Actions at Runtime
 

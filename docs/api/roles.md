@@ -57,7 +57,7 @@ curl -X POST http://localhost:9003/roles/actions/register \
 
 ## POST /roles/check-action
 
-Checks whether the user can perform a specific action in a workspace. Returns the roles that grant the action.
+Checks whether the user can perform a specific action in a workspace. Returns the roles that grant the action — whether assigned to the user directly or via a group the user belongs to.
 
 **Auth:** Service key + Bearer JWT.
 
