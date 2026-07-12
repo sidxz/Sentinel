@@ -127,7 +127,7 @@ export function AddItemsDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(o) => { if (!pending) onOpenChange(o); }}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -135,6 +135,7 @@ export function AddItemsDialog({
         <Input
           autoFocus
           placeholder="Search…"
+          aria-label="Search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -213,7 +214,12 @@ export function AddItemsDialog({
           </span>
           <div className="flex items-center gap-2">
             {footer}
-            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              onClick={() => onOpenChange(false)}
+            >
               Cancel
             </Button>
             <Button

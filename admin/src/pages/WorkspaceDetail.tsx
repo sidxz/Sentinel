@@ -800,6 +800,7 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
                         toast.error((e as Error).message);
                         throw e;
                       }
+                      toast.success(`Added ${sel.length} action${sel.length === 1 ? "" : "s"}`);
                       queryClient.invalidateQueries({ queryKey: ["role-actions", expandedRole] });
                       queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
                     }}
@@ -1059,7 +1060,7 @@ function AccessTabInner({
           Organization access
         </h3>
         <p className="text-xs text-muted-foreground">
-          Restrict which organizations' users may be invited to this workspace.
+          Restrict which organizations' users may be added to this workspace.
         </p>
       </div>
 
@@ -1073,7 +1074,7 @@ function AccessTabInner({
       </label>
       {!restrict && (
         <p className="text-xs text-muted-foreground -mt-2">
-          Open — members from any organization may be invited.
+          Open — members from any organization may be added.
         </p>
       )}
 
