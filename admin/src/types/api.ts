@@ -122,12 +122,22 @@ export interface CustomRole {
   created_at: string;
   action_count: number;
   member_count: number;
+  group_count: number;
 }
 
 export interface RoleMember {
   user_id: string;
   email: string;
   name: string;
+  assigned_at: string;
+  assigned_by: string | null;
+}
+
+export interface RoleGroup {
+  group_id: string;
+  name: string;
+  description: string | null;
+  member_count: number;
   assigned_at: string;
   assigned_by: string | null;
 }

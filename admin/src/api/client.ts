@@ -14,6 +14,7 @@ import type {
   PaginatedResponse,
   Realm,
   RealmMember,
+  RoleGroup,
   RoleMember,
   ServiceAction,
   ServiceApp,
@@ -325,6 +326,15 @@ export const addRoleMember = (roleId: string, userId: string) =>
 
 export const removeRoleMember = (roleId: string, userId: string) =>
   request(`/admin/roles/${roleId}/members/${userId}`, { method: "DELETE" });
+
+export const getRoleGroups = (roleId: string) =>
+  request<RoleGroup[]>(`/admin/roles/${roleId}/groups`);
+
+export const addRoleGroup = (roleId: string, groupId: string) =>
+  request(`/admin/roles/${roleId}/groups/${groupId}`, { method: "POST" });
+
+export const removeRoleGroup = (roleId: string, groupId: string) =>
+  request(`/admin/roles/${roleId}/groups/${groupId}`, { method: "DELETE" });
 
 // ── Client Apps ─────────────────────────────────────────────────────
 

@@ -6,6 +6,7 @@ import { Copy } from "lucide-react";
 import {
   addGroupMember,
   addRoleActions,
+  addRoleGroup,
   addRoleMember,
   createGroup,
   createRole,
@@ -15,6 +16,7 @@ import {
   getGroupMembers,
   getOrganizations,
   getRoleActions,
+  getRoleGroups,
   getRoleMembers,
   getServiceActions,
   getWorkspace,
@@ -26,6 +28,7 @@ import {
   removeMember,
   removeGroupMember,
   removeRoleAction,
+  removeRoleGroup,
   removeRoleMember,
   setWorkspaceAllowedOrgs,
   updateGroup,
@@ -588,6 +591,7 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
   const [form, setForm] = useState({ name: "", description: "" });
   const [selectedActionId, setSelectedActionId] = useState("");
   const [addMemberEmail, setAddMemberEmail] = useState("");
+  const [selectedGroupId, setSelectedGroupId] = useState("");
 
   const { data: roles = [], isLoading } = useQuery({
     queryKey: ["workspace-roles", workspaceId],
@@ -613,6 +617,17 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
   const { data: roleMembers = [] } = useQuery({
     queryKey: ["role-members", expandedRole],
     queryFn: () => getRoleMembers(expandedRole!),
+    enabled: !!expandedRole,
+  });
+
+  const { data: groups = [] } = useQuery({
+    queryKey: ["workspace-groups", workspaceId],
+    queryFn: () => getWorkspaceGroups(workspaceId),
+  });
+
+  const { data: roleGroups = [] } = useQuery({
+    queryKey: ["role-groups", expandedRole],
+    queryFn: () => getRoleGroups(expandedRole!),
     enabled: !!expandedRole,
   });
 
@@ -682,6 +697,25 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
     onError: (e) => toast.error((e as Error).message),
   });
 
+  const addGroup = useMutation({
+    mutationFn: (groupId: string) => addRoleGroup(expandedRole!, groupId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["role-groups", expandedRole] });
+      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+      setSelectedGroupId("");
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const removeGroupMut = useMutation({
+    mutationFn: (groupId: string) => removeRoleGroup(expandedRole!, groupId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["role-groups", expandedRole] });
+      queryClient.invalidateQueries({ queryKey: ["workspace-roles", workspaceId] });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
   if (isLoading) return <div className="h-32 bg-muted/50 rounded-lg animate-pulse" />;
 
   const availableActions = allActions.filter(
@@ -712,7 +746,7 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
                 <div className="text-sm font-medium font-mono">{r.name}</div>
                 {r.description && <div className="text-xs text-muted-foreground mt-0.5">{r.description}</div>}
                 <div className="text-xs text-muted-foreground mt-0.5">
-                  {r.action_count} actions · {r.member_count} members
+                  {r.action_count} actions · {r.member_count} members · {r.group_count} groups
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -834,6 +868,57 @@ function RolesTab({ workspaceId }: { workspaceId: string }) {
                     ))}
                     {roleMembers.length === 0 && (
                       <div className="py-2 text-xs text-muted-foreground">No members in this role</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Groups section */}
+                <div>
+                  <div className="text-xs font-medium text-muted-foreground pb-1">Groups</div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedGroupId}
+                      onChange={(e) => setSelectedGroupId(e.target.value)}
+                      className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground"
+                    >
+                      <option value="">Select group to add...</option>
+                      {groups
+                        .filter((g) => !roleGroups.some((rg) => rg.group_id === g.id))
+                        .map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}
+                          </option>
+                        ))}
+                    </select>
+                    <Button
+                      size="sm"
+                      onClick={() => { if (selectedGroupId) addGroup.mutate(selectedGroupId); }}
+                      disabled={!selectedGroupId || addGroup.isPending}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                  <div className="divide-y divide-border mt-1">
+                    {roleGroups.map((rg) => (
+                      <div key={rg.group_id} className="flex items-center justify-between py-2">
+                        <div className="text-sm">
+                          <span className="text-foreground">{rg.name}</span>
+                          <span className="text-muted-foreground ml-2 text-xs">
+                            {rg.member_count} member{rg.member_count === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeGroupMut.mutate(rg.group_id)}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                    {roleGroups.length === 0 && (
+                      <div className="py-2 text-xs text-muted-foreground">No groups assigned</div>
                     )}
                   </div>
                 </div>
