@@ -6,7 +6,7 @@ from src.models.user import User, SocialAccount
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.models.group import Group, GroupMembership
 from src.models.permission import ResourcePermission, ResourceShare
-from src.models.role import ServiceAction, Role, RoleAction, UserRole
+from src.models.role import ServiceAction, Role, RoleAction, UserRole, GroupRole
 from src.models.organization import (
     Organization,
     OrganizationDomain,
@@ -30,6 +30,7 @@ __all__ = [
     "Role",
     "RoleAction",
     "UserRole",
+    "GroupRole",
     "Organization",
     "OrganizationDomain",
     "WorkspaceAllowedOrganization",

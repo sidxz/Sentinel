@@ -58,6 +58,9 @@ class Role(Base):
     user_roles: Mapped[list["UserRole"]] = relationship(
         back_populates="role", cascade="all, delete-orphan"
     )
+    group_roles: Mapped[list["GroupRole"]] = relationship(
+        back_populates="role", cascade="all, delete-orphan"
+    )
 
 
 class RoleAction(Base):
@@ -111,3 +114,31 @@ class UserRole(Base):
     user: Mapped["User"] = relationship(  # noqa: F821
         back_populates="user_roles", foreign_keys=[user_id]
     )
+
+
+class GroupRole(Base):
+    __tablename__ = "group_roles"
+    __table_args__ = (
+        UniqueConstraint("group_id", "role_id", name="uq_group_role"),
+        Index("ix_group_roles_group_id", "group_id"),
+        Index("ix_group_roles_role_id", "role_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("groups.id", ondelete="CASCADE"), nullable=False
+    )
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("roles.id", ondelete="CASCADE"), nullable=False
+    )
+    assigned_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    role: Mapped["Role"] = relationship(back_populates="group_roles")
+    group: Mapped["Group"] = relationship(back_populates="group_roles")  # noqa: F821

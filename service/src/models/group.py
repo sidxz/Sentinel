@@ -34,6 +34,9 @@ class Group(Base):
     memberships: Mapped[list["GroupMembership"]] = relationship(
         back_populates="group", cascade="all, delete-orphan"
     )
+    group_roles: Mapped[list["GroupRole"]] = relationship(  # noqa: F821
+        back_populates="group", cascade="all, delete-orphan"
+    )
 
 
 class GroupMembership(Base):
