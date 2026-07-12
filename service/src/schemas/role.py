@@ -58,12 +58,22 @@ class RoleResponse(BaseModel):
     created_at: datetime
     action_count: int = 0
     member_count: int = 0
+    group_count: int = 0
 
 
 class RoleMemberResponse(BaseModel):
     user_id: uuid.UUID
     email: str
     name: str
+    assigned_at: datetime
+    assigned_by: uuid.UUID | None
+
+
+class RoleGroupResponse(BaseModel):
+    group_id: uuid.UUID
+    name: str
+    description: str | None
+    member_count: int
     assigned_at: datetime
     assigned_by: uuid.UUID | None
 

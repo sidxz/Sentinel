@@ -62,6 +62,7 @@ from src.schemas.permission import ShareRequest, UpdateVisibilityRequest
 from src.schemas.role import (
     AddRoleActionsRequest,
     RoleCreateRequest,
+    RoleGroupResponse,
     RoleMemberResponse,
     RoleResponse,
     RoleUpdateRequest,
@@ -1171,6 +1172,72 @@ async def remove_role_member(
         action="role_member_removed",
         target_type="user",
         target_id=user_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={"role_id": str(role_id)},
+    )
+    await db.commit()
+
+
+@router.get("/roles/{role_id}/groups", response_model=list[RoleGroupResponse])
+async def list_role_groups(
+    role_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    return await role_service.list_role_groups(db, role_id)
+
+
+def _group_role_error(e: ValueError) -> HTTPException:
+    detail = str(e)
+    if "not found" in detail.lower():
+        return HTTPException(status_code=404, detail=detail)
+    if "already assigned" in detail.lower():
+        return HTTPException(status_code=409, detail=detail)
+    return HTTPException(status_code=400, detail=detail)
+
+
+@router.post("/roles/{role_id}/groups/{group_id}", status_code=201)
+async def assign_role_group(
+    role_id: uuid.UUID,
+    group_id: uuid.UUID,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await role_service.assign_group_role(
+            db, group_id, role_id, assigned_by=uuid.UUID(admin["sub"])
+        )
+    except ValueError as e:
+        raise _group_role_error(e)
+
+    await activity_service.log_activity(
+        db,
+        action="role_group_added",
+        target_type="group",
+        target_id=group_id,
+        actor_id=uuid.UUID(admin["sub"]),
+        detail={"role_id": str(role_id)},
+    )
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/roles/{role_id}/groups/{group_id}", status_code=204)
+async def remove_role_group(
+    role_id: uuid.UUID,
+    group_id: uuid.UUID,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await role_service.remove_group_role(db, group_id, role_id)
+    except ValueError as e:
+        raise _group_role_error(e)
+
+    await activity_service.log_activity(
+        db,
+        action="role_group_removed",
+        target_type="group",
+        target_id=group_id,
         actor_id=uuid.UUID(admin["sub"]),
         detail={"role_id": str(role_id)},
     )
