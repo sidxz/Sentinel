@@ -16,6 +16,27 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ---
 
+## [0.17.1] – 2026-07-18 — /health exempt from Host validation
+
+Patch for Kubernetes deployments: liveness/readiness probes hit the pod IP
+directly, so their Host header is never on the `ALLOWED_HOSTS` allowlist —
+the probe got a 400 from `TrustedHostMiddleware`, failed repeatedly, and
+kubelet killed an otherwise-healthy pod ~90 seconds after startup.
+
+### Breaking changes
+
+None. Service only — SDK and admin packages republished for version alignment.
+
+### Service
+
+- **Fixed** `/health` is now exempt from TrustedHost (Host header) validation.
+  The endpoint returns a static `{"status": "ok"}` with no version or
+  dependency detail, so the check added nothing there. All other routes remain
+  host-validated. No config changes needed; k8s probes work without a custom
+  `Host` header.
+
+---
+
 ## [0.17.0] – 2026-07-12 — Admin picker dialogs
 
 The admin panel's five "add X" pickers (workspace members, role actions, role
