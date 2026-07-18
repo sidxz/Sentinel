@@ -227,6 +227,16 @@ def _resolve_tier() -> str:
     return tier
 
 
+class HealthExemptTrustedHostMiddleware(TrustedHostMiddleware):
+    """TrustedHost check that lets /health through regardless of Host header."""
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"] == "/health":
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
+
+
 def create_app(tier: str) -> FastAPI:
     """Build a listener for the given tier. Same image, different surface."""
     app = FastAPI(
@@ -267,10 +277,14 @@ def create_app(tier: str) -> FastAPI:
             max_age=600,  # 10 min — bounds the OAuth flow window
         )
 
-    # Trusted host validation (prevents Host header attacks)
+    # Trusted host validation (prevents Host header attacks). /health is exempt:
+    # k8s probes hit the pod IP directly, so their Host header can never be on
+    # the allowlist — and the endpoint returns a static body, so the check adds
+    # nothing there.
     if "*" not in settings.allowed_hosts_list:
         app.add_middleware(
-            TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list
+            HealthExemptTrustedHostMiddleware,
+            allowed_hosts=settings.allowed_hosts_list,
         )
 
     if tier in ("public", "all"):
