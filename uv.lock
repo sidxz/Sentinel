@@ -1439,7 +1439,7 @@ wheels = [
 
 [[package]]
 name = "sentinel-auth"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "service" }
 dependencies = [
     { name = "alembic" },
@@ -1482,7 +1482,7 @@ requires-dist = [
 
 [[package]]
 name = "sentinel-auth-sdk"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "sdk" }
 dependencies = [
     { name = "cryptography" },
