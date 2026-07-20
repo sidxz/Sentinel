@@ -16,6 +16,28 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ---
 
+## [0.17.2] – 2026-07-20 — CORS preflight allows X-Authz-Token
+
+Patch for browser authz-mode: the JS SDK's member-directory and share-dialog
+helpers (`searchMembers`, `listGroups`, `getGroupMembers`, `getProfile`) send
+`X-Authz-Token` cross-origin, but the header was missing from the CORS
+`allow_headers` list — the preflight returned 400 "Disallowed CORS headers"
+and the fetch threw before the request ever reached the endpoint. The
+server-side accept path shipped in 0.15.0; the CORS config lagged behind it.
+
+### Breaking changes
+
+None. Service only — SDK and admin packages republished for version alignment.
+
+### Service
+
+- **Fixed** `X-Authz-Token` added to CORS `allow_headers`, so cross-origin
+  browser calls in authz mode (member directory, groups, profile) pass
+  preflight. New regression test asserts the preflight accepts every header
+  the browser SDKs send.
+
+---
+
 ## [0.17.1] – 2026-07-18 — /health exempt from Host validation
 
 Patch for Kubernetes deployments: liveness/readiness probes hit the pod IP
