@@ -1,5 +1,6 @@
 import uuid
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +22,7 @@ from src.schemas.role import (
 from src.services import role_service
 
 router = APIRouter(prefix="/roles", tags=["roles"])
+logger = structlog.get_logger()
 
 
 # --- Service-only auth: service key ---
@@ -66,6 +68,29 @@ async def check_action(
         action=body.action,
         workspace_id=body.workspace_id,
     )
+    # Best-effort: a failed usage/denial record must never break the verdict
+    # response — this is the SDK require_action hot path.
+    try:
+        await role_service.record_action_check(
+            db,
+            allowed=allowed,
+            user_id=user.user_id,
+            service_name=body.service_name,
+            action=body.action,
+            workspace_id=body.workspace_id,
+        )
+        await db.commit()
+    except Exception:
+        logger.warning(
+            "audit.write_failed",
+            category="app",
+            reason="action_check_record",
+            exc_info=True,
+        )
+        try:
+            await db.rollback()
+        except Exception:
+            pass
     return CheckActionResponse(allowed=allowed, roles=roles)
 
 

@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -6,8 +7,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.group import Group, GroupMembership
-from src.models.role import GroupRole, Role, RoleAction, ServiceAction, UserRole
+from src.models.role import (
+    ActionUsage,
+    GroupRole,
+    Role,
+    RoleAction,
+    ServiceAction,
+    UserRole,
+)
 from src.models.user import User
+from src.services import activity_service
 
 
 async def register_actions(
@@ -130,6 +139,56 @@ async def check_action(
     result = await db.execute(stmt)
     roles = list(result.scalars().all())
     return (len(roles) > 0, roles)
+
+
+async def record_action_check(
+    db: AsyncSession,
+    *,
+    allowed: bool,
+    user_id: uuid.UUID,
+    service_name: str,
+    action: str,
+    workspace_id: uuid.UUID,
+) -> None:
+    """Record one check_action verdict. Caller commits (and must not let a
+    recording failure break the check response — this is the SDK hot path).
+
+    Allowed → +1 on the action_usage daily rollup (per-event rows would bloat).
+    Denied → admin-visible ``action_denied`` activity event (rare, high signal).
+    """
+    if allowed:
+        stmt = (
+            pg_insert(ActionUsage)
+            .values(
+                day=datetime.now(UTC).date(),
+                workspace_id=workspace_id,
+                user_id=user_id,
+                service_name=service_name,
+                action=action,
+                count=1,
+            )
+            .on_conflict_do_update(
+                index_elements=[
+                    "day",
+                    "workspace_id",
+                    "user_id",
+                    "service_name",
+                    "action",
+                ],
+                set_={"count": ActionUsage.count + 1},
+            )
+        )
+        await db.execute(stmt)
+    else:
+        await activity_service.log_activity(
+            db,
+            action="action_denied",
+            target_type="user",
+            target_id=user_id,
+            actor_id=user_id,
+            workspace_id=workspace_id,
+            detail={"service_name": service_name, "action": action},
+        )
 
 
 async def get_user_actions(

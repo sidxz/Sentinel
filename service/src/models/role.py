@@ -1,7 +1,15 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Text, UniqueConstraint
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -114,6 +122,32 @@ class UserRole(Base):
     user: Mapped["User"] = relationship(  # noqa: F821
         back_populates="user_roles", foreign_keys=[user_id]
     )
+
+
+class ActionUsage(Base):
+    """Daily rollup of ALLOWED /roles/check-action verdicts.
+
+    Checks are hot-path (SDK require_action), so per-event rows would bloat;
+    one upserted counter per (day, workspace, user, service, action) is enough
+    for role mining / dormant-grant detection. Denied checks are the rare,
+    high-signal case and go to activity_logs as ``action_denied`` instead.
+    """
+
+    __tablename__ = "action_usage"
+    __table_args__ = (Index("ix_action_usage_workspace_id", "workspace_id"),)
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    service_name: Mapped[str] = mapped_column(Text, primary_key=True)
+    action: Mapped[str] = mapped_column(Text, primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class GroupRole(Base):
