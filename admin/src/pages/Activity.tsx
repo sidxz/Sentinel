@@ -50,7 +50,7 @@ export function Activity() {
     "user_login", "admin_login",
     "login_failed", "admin_login_failed",
     "refresh_context_changed", "refresh_reuse_detected",
-    "action_denied",
+    "token_family_revoked", "action_denied",
     "user_activated", "user_deactivated", "user_updated",
     "user_promoted_admin", "user_demoted_admin",
     "workspace_created", "workspace_updated", "workspace_deleted",

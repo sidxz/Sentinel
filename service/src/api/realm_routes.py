@@ -10,7 +10,6 @@ cannot impersonate another member or jump realms.
 (Plan 3 moves this router onto the unpublished internal listener.)
 """
 
-import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,13 +27,13 @@ from src.schemas.realm import (
 )
 from src.services import realm_service
 
-logger = structlog.get_logger()
-
 router = APIRouter(prefix="/realm", tags=["realm"])
 
 
 @router.get("/whoami", response_model=WhoamiResponse)
+@limiter.limit(settings.rate_limit_authz_resolve, key_func=service_or_ip_key)
 async def whoami(
+    request: Request,
     svc: ServiceKeyContext = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
@@ -50,8 +49,10 @@ async def whoami(
             # Key resolved a realm slug, but the realm row is gone (deleted, or a
             # stale key cache). Surface the anomaly; still answer with the slug scope
             # the key is operating under — 404-ing would break SDK scope discovery.
-            logger.warning(
+            log_security(
                 "realm.whoami.orphan_realm",
+                outcome="failure",
+                reason="orphan_realm",
                 caller_service=svc.service_name,
                 realm=svc.realm_slug,
             )
@@ -78,12 +79,26 @@ async def mint_m2m_token(
     impersonate another member or jump realms.
     """
     if not svc.realm_slug:
+        # Leaked-standalone-key mint attempt — the docstring's threat model.
+        log_security(
+            "realm.m2m.denied",
+            outcome="denied",
+            reason="not_a_realm_member",
+            caller_service=svc.service_name,
+        )
         raise HTTPException(
             status_code=403,
             detail="Service is not a realm member; no-user tokens require a realm",
         )
     realm = await realm_service.get_realm_by_slug(db, svc.realm_slug)
     if realm is None or not realm.is_active:
+        log_security(
+            "realm.m2m.denied",
+            outcome="denied",
+            reason="realm_inactive",
+            caller_service=svc.service_name,
+            realm=svc.realm_slug,
+        )
         raise HTTPException(
             status_code=403,
             detail="Realm is inactive or no longer exists",

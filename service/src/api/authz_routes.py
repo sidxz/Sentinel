@@ -64,6 +64,14 @@ async def _validate_authz_redirect_uri(db: AsyncSession, redirect_uri: str) -> N
     )
     result = await db.execute(stmt)
     if not result.first():
+        # This flow delivers a raw IdP token to redirect_uri in the URL
+        # fragment — an allowlist probe here is an attempted token exfil.
+        log_security(
+            "authz.idp.redirect_rejected",
+            outcome="denied",
+            reason="origin_not_allowed",
+            origin=origin,
+        )
         raise HTTPException(
             status_code=400,
             detail="redirect_uri origin is not registered on any active service",
@@ -149,6 +157,14 @@ async def idp_callback(
     # code exchange) so a CSRF'd callback fails fast with no side effects.
     # Constant-time compare to avoid leaking the valid state via timing.
     if not state or not session_state or not hmac.compare_digest(state, session_state):
+        # The login-CSRF detector firing: a callback whose state doesn't match
+        # the session that started the flow.
+        log_security(
+            "authz.idp.callback_rejected",
+            outcome="denied",
+            reason="state_mismatch",
+            provider="github",
+        )
         raise HTTPException(
             status_code=400,
             detail="Invalid or missing OAuth state — start from /authz/idp/{provider}/login",
@@ -188,6 +204,13 @@ async def idp_callback(
     access_token = token_data.get("access_token")
     if not access_token:
         error = token_data.get("error_description", token_data.get("error", "unknown"))
+        log_security(
+            "authz.idp.callback_rejected",
+            outcome="failure",
+            reason="github_oauth_error",
+            provider="github",
+            error=str(error)[:200],
+        )
         raise HTTPException(status_code=400, detail=f"GitHub OAuth error: {error}")
 
     # Redirect back with token in hash (matches SDK's handleCallback expectations)
@@ -219,6 +242,14 @@ async def resolve(
     # lower-trust (just Origin-header match) and must not be sufficient to
     # issue a credential. Discovery (workspace list) is safe for Origin auth.
     if body.workspace_id is not None and service_ctx.origin_authenticated:
+        # A lower-trust Origin-authenticated caller (browser) attempting the
+        # credential-issuance step — privilege escalation against the mint gate.
+        log_security(
+            "authz.token.denied",
+            outcome="denied",
+            reason="origin_auth_cannot_mint",
+            caller_service=service_ctx.service_name,
+        )
         raise HTTPException(
             status_code=403,
             detail=(

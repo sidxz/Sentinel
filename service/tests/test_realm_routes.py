@@ -80,7 +80,7 @@ def test_whoami_orphan_realm_returns_slug_scope_and_null_realm(monkeypatch):
         return None
 
     monkeypatch.setattr(realm_routes.realm_service, "get_realm_by_slug", _none)
-    monkeypatch.setattr(realm_routes.logger, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(realm_routes, "log_security", lambda *a, **k: None)
     resp = TestClient(_build_app(realm_slug="acme-suite")).get("/realm/whoami")
     assert resp.status_code == 200
     body = resp.json()

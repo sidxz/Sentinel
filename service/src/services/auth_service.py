@@ -206,6 +206,17 @@ async def issue_tokens(
         access_jti=at_payload["jti"],
     )
 
+    # The session-creation record: every access+refresh pair minted, with the
+    # family_id that later reuse/revocation events correlate on.
+    log_security(
+        "auth.token.issued",
+        outcome="success",
+        actor=str(user.id),
+        workspace_id=str(workspace_id),
+        client_app_id=str(client_app_id) if client_app_id else None,
+        family_id=family_id,
+    )
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
@@ -229,6 +240,13 @@ async def rotate_refresh_token(
     try:
         payload = decode_token(refresh_token_str, audience=_AUD_REFRESH)
     except Exception:
+        # Malformed/expired/bad-signature refresh tokens are the brute-force
+        # signal; without this they only surface as category=app noise.
+        log_security(
+            "auth.token.refresh_rejected",
+            outcome="denied",
+            reason="invalid_token",
+        )
         raise ValueError("Invalid refresh token")
 
     jti = payload["jti"]
@@ -350,8 +368,36 @@ async def rotate_refresh_token(
             client_app_id=client_app_id,
             access_jti=new_at_payload["jti"],
         )
-    except Exception:
+    except Exception as e:
         await token_service.revoke_token_family(family_id)
+        # A whole session family just died fail-closed (deactivated user, lost
+        # membership, org kill-switch, or unexpected error) — record it in both
+        # channels; the reuse path above already does the same for theft.
+        log_security(
+            "auth.token.family_revoked",
+            outcome="denied",
+            reason=str(e)[:200] or type(e).__name__,
+            actor=str(user_id),
+            family_id=family_id,
+        )
+        try:
+            await db.rollback()
+            await activity_service.log_activity(
+                db,
+                action="token_family_revoked",
+                target_type="user",
+                target_id=user_id,
+                actor_id=user_id,
+                workspace_id=workspace_id,
+                detail={"family_id": family_id, "reason": str(e)[:200]},
+            )
+            await db.commit()
+        except Exception:
+            log_security(
+                "audit.write_failed",
+                outcome="failure",
+                reason="family_revoked_audit_row",
+            )
         raise
 
     # Session-context anomaly signal: same token family suddenly refreshing

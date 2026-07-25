@@ -181,6 +181,17 @@ async def login(
     result = await db.execute(stmt)
     client_app = result.scalar_one_or_none()
     if not client_app:
+        # Probe signal: unknown client_id or unregistered redirect_uri —
+        # indefinitely repeatable enumeration attempts must leave a trace.
+        log_security(
+            "auth.login.rejected",
+            outcome="denied",
+            reason="redirect_uri_not_allowed",
+            provider=provider,
+            client_id=str(client_id),
+            redirect_uri=redirect_uri,
+            source_ip=get_client_ip(request),
+        )
         return _error_page(
             400,
             "App Not Allowed",
@@ -368,6 +379,16 @@ async def callback(
         result = await db.execute(stmt)
         client_app = result.scalar_one_or_none()
         if not client_app:
+            # redirect_uri-substitution detector: the (client_app, redirect_uri)
+            # binding that passed at login start no longer holds at callback.
+            log_security(
+                "auth.login.rejected",
+                outcome="denied",
+                reason="app_not_allowed_at_callback",
+                provider=provider,
+                client_app_id=session_client_app_id,
+                actor=str(user.id),
+            )
             return _error_page(
                 400,
                 "App Not Allowed",
@@ -444,6 +465,14 @@ async def list_workspaces_for_login(
     if not auth_code_service.verify_code_challenge(
         body.code_verifier, stored_challenge, challenge_method
     ):
+        # A leaked auth code being probed without the PKCE verifier.
+        log_security(
+            "auth.token.rejected",
+            outcome="denied",
+            reason="pkce_failed",
+            stage="workspace_list",
+            source_ip=get_client_ip(request),
+        )
         raise HTTPException(status_code=400, detail="PKCE verification failed")
 
     user_id = uuid.UUID(code_data["user_id"])
@@ -490,28 +519,37 @@ async def select_workspace_and_issue_tokens(
     db: AsyncSession = Depends(get_db),
 ):
     """Exchange authorization code + workspace_id + PKCE verifier for JWT tokens."""
+
+    def _reject(status: int, detail: str, reason: str, **fields):
+        log_security(
+            "auth.token.rejected",
+            outcome="denied",
+            reason=reason,
+            stage="token",
+            source_ip=get_client_ip(request),
+            **fields,
+        )
+        raise HTTPException(status_code=status, detail=detail)
+
     code_data = await auth_code_service.consume_auth_code(body.code)
     if not code_data:
-        raise HTTPException(
-            status_code=400, detail="Invalid or expired authorization code"
-        )
+        _reject(400, "Invalid or expired authorization code", "invalid_code")
 
     # Defense-in-depth: validate provider matches a configured IdP
     stored_provider = code_data.get("provider")
     if stored_provider and stored_provider not in get_configured_providers():
-        raise HTTPException(status_code=400, detail="Invalid authorization code")
+        _reject(400, "Invalid authorization code", "provider_not_configured")
 
     # PKCE verification — code_challenge is always present (mandatory)
     stored_challenge = code_data.get("code_challenge")
     challenge_method = code_data.get("code_challenge_method", "S256")
     if not stored_challenge:
-        raise HTTPException(
-            status_code=400, detail="Authorization code missing PKCE challenge"
-        )
+        _reject(400, "Authorization code missing PKCE challenge", "missing_challenge")
     if not auth_code_service.verify_code_challenge(
         body.code_verifier, stored_challenge, challenge_method
     ):
-        raise HTTPException(status_code=400, detail="PKCE verification failed")
+        # A leaked auth code being redeemed without the PKCE verifier.
+        _reject(400, "PKCE verification failed", "pkce_failed")
 
     user_id = uuid.UUID(code_data["user_id"])
     client_app_id = (
@@ -521,19 +559,25 @@ async def select_workspace_and_issue_tokens(
     )
     user = await db.get(User, user_id)
     if not user or not user.is_active:
-        raise HTTPException(status_code=404, detail="User not found")
+        _reject(404, "User not found", "user_not_found", actor=str(user_id))
 
     workspace = await db.get(Workspace, body.workspace_id)
     if not workspace:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        _reject(404, "Workspace not found", "workspace_not_found", actor=str(user_id))
 
     try:
         tokens = await auth_service.issue_tokens(
             db, user, workspace.id, workspace.slug, client_app_id=client_app_id
         )
     except ValueError:
-        raise HTTPException(
-            status_code=403, detail="Cannot issue tokens for this workspace"
+        # Non-member or org-not-permitted — a code minted for one identity
+        # being pointed at a workspace it has no standing in.
+        _reject(
+            403,
+            "Cannot issue tokens for this workspace",
+            "issuance_refused",
+            actor=str(user_id),
+            workspace_id=str(body.workspace_id),
         )
 
     return tokens
