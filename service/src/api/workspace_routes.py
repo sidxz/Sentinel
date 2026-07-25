@@ -20,7 +20,7 @@ from src.schemas.workspace import (
     WorkspaceResponse,
     WorkspaceUpdateRequest,
 )
-from src.services import workspace_service
+from src.services import activity_service, workspace_service
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -54,6 +54,16 @@ async def create_workspace(
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    await activity_service.log_activity(
+        db,
+        action="workspace_created",
+        target_type="workspace",
+        target_id=workspace.id,
+        actor_id=user.user_id,
+        workspace_id=workspace.id,
+        detail={"name": workspace.name, "slug": workspace.slug},
+    )
+    await db.commit()
     return workspace
 
 
@@ -88,11 +98,21 @@ async def update_workspace(
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
     try:
-        return await workspace_service.update_workspace(
+        workspace = await workspace_service.update_workspace(
             db, workspace_id, name=body.name, description=body.description
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    await activity_service.log_activity(
+        db,
+        action="workspace_updated",
+        target_type="workspace",
+        target_id=workspace_id,
+        actor_id=user.user_id,
+        workspace_id=workspace_id,
+    )
+    await db.commit()
+    return workspace
 
 
 @router.delete("/{workspace_id}", status_code=204)
@@ -103,7 +123,18 @@ async def delete_workspace(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "owner")
+    workspace = await workspace_service.get_workspace(db, workspace_id)
     await workspace_service.delete_workspace(db, workspace_id)
+    if workspace:
+        await activity_service.log_activity(
+            db,
+            action="workspace_deleted",
+            target_type="workspace",
+            target_id=workspace_id,
+            actor_id=user.user_id,
+            detail={"name": workspace.name, "slug": workspace.slug},
+        )
+        await db.commit()
 
 
 # --- Members ---
@@ -148,6 +179,16 @@ async def invite_member(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    await activity_service.log_activity(
+        db,
+        action="member_invited",
+        target_type="user",
+        target_id=membership.user_id,
+        actor_id=user.user_id,
+        workspace_id=workspace_id,
+        detail={"email": body.email, "role": body.role},
+    )
+    await db.commit()
     return membership
 
 
@@ -162,7 +203,7 @@ async def update_member_role(
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
     try:
-        return await workspace_service.update_member_role(
+        result = await workspace_service.update_member_role(
             db, workspace_id, user_id, role=body.role, actor_role=user.workspace_role
         )
     except ValueError as e:
@@ -170,6 +211,17 @@ async def update_member_role(
         if "not found" in detail.lower():
             raise HTTPException(status_code=404, detail=detail)
         raise HTTPException(status_code=403, detail=detail)
+    await activity_service.log_activity(
+        db,
+        action="member_role_changed",
+        target_type="user",
+        target_id=user_id,
+        actor_id=user.user_id,
+        workspace_id=workspace_id,
+        detail={"role": body.role},
+    )
+    await db.commit()
+    return result
 
 
 @router.delete("/{workspace_id}/members/{user_id}", status_code=204)
@@ -190,3 +242,12 @@ async def remove_member(
         if "not found" in detail.lower():
             raise HTTPException(status_code=404, detail=detail)
         raise HTTPException(status_code=403, detail=detail)
+    await activity_service.log_activity(
+        db,
+        action="member_removed",
+        target_type="user",
+        target_id=user_id,
+        actor_id=user.user_id,
+        workspace_id=workspace_id,
+    )
+    await db.commit()

@@ -93,6 +93,22 @@ def test_create_group_audited(monkeypatch, activity):
     assert activity[0]["workspace_id"] == WS_ID
 
 
+def test_update_group_audited(monkeypatch, activity):
+    from src.api import group_routes
+
+    async def _update(_db, group_id, workspace_id, **kw):
+        return _group_ns()
+
+    monkeypatch.setattr(group_routes.group_service, "update_group", _update)
+    resp = _build_app().patch(
+        f"/workspaces/{WS_ID}/groups/{GROUP_ID}", json={"name": "renamed"}
+    )
+    assert resp.status_code == 200
+    assert activity[0]["action"] == "group_updated"
+    assert activity[0]["target_id"] == GROUP_ID
+    assert activity[0]["actor_id"] == ACTOR_ID
+
+
 def test_delete_group_audited(monkeypatch, activity):
     from src.api import group_routes
 

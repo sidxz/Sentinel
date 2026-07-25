@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.logging_events import log_audit
+from src.logging_events import log_audit, log_security
 from src.middleware.rate_limit import limiter, service_or_ip_key
 
 from src.api.dependencies import (
@@ -60,6 +60,21 @@ async def check_permissions(
             resource_id=item.resource_id,
             action=item.action,
         )
+        if not allowed:
+            # Stream-only: entity-ACL denials include legitimate UI-affordance
+            # checks (hot path), so they get a security event but no activity
+            # row — unlike the rarer RBAC action_denied.
+            log_security(
+                "permission.check.denied",
+                outcome="denied",
+                caller_service=svc.service_name,
+                actor=str(user.user_id),
+                workspace_id=str(user.workspace_id),
+                service_name=item.service_name,
+                resource_type=item.resource_type,
+                resource_id=str(item.resource_id),
+                action=item.action,
+            )
         results.append(
             PermissionCheckResult(
                 service_name=item.service_name,
@@ -140,6 +155,17 @@ async def share_resource(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    # An ACL grant — the mirror of share_revoked below; without this, shares
+    # are invisible while unshares are recorded.
+    log_audit(
+        "permission.resource.shared",
+        caller_service=svc.service_name,
+        permission_id=str(permission_id),
+        grantee_type=body.grantee_type,
+        grantee_id=str(body.grantee_id),
+        permission=body.permission,
+        granted_by=str(user.user_id),
+    )
     return {"status": "ok"}
 
 

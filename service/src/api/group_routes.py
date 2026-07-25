@@ -93,11 +93,21 @@ async def update_group(
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
     try:
-        return await group_service.update_group(
+        group = await group_service.update_group(
             db, group_id, workspace_id, name=body.name, description=body.description
         )
     except ValueError as e:
         raise _to_http(e)
+    await activity_service.log_activity(
+        db,
+        action="group_updated",
+        target_type="group",
+        target_id=group_id,
+        actor_id=user.user_id,
+        workspace_id=workspace_id,
+    )
+    await db.commit()
+    return group
 
 
 @router.delete("/{group_id}", status_code=204)
