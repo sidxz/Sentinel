@@ -184,34 +184,47 @@ async def update_user(
     name: str | None = None,
     is_active: bool | None = None,
     is_admin: bool | None = None,
-) -> User | None:
+) -> tuple[User | None, list[str]]:
+    """Apply the changes and return (user, audit actions for what ACTUALLY
+    changed). Flushes but does not commit — the caller commits mutation and
+    audit rows in ONE transaction, so a privilege change can never land
+    unaudited."""
     user = await db.get(User, user_id)
     if not user:
-        return None
+        return None, []
+    actions: list[str] = []
     revoke = False
     deactivated = False
     activated = False
-    if name is not None:
+    if name is not None and name != user.name:
         user.name = name
+        actions.append("user_updated")
     if is_active is not None and is_active != user.is_active:
         user.is_active = is_active
         if not is_active:
             revoke = True
             deactivated = True
+            actions.append("user_deactivated")
         else:
             activated = True
+            actions.append("user_activated")
     if is_admin is not None and is_admin != user.is_admin:
         user.is_admin = is_admin
         if not is_admin:
             revoke = True
-    await db.commit()
+            actions.append("user_demoted_admin")
+        else:
+            actions.append("user_promoted_admin")
+    await db.flush()
+    # Redis side effects before commit: if the commit later fails, we've
+    # over-revoked (safe direction), never under-revoked.
     if revoke:
         await token_service.revoke_all_user_tokens(str(user_id))
     if deactivated:
         await token_service.mark_user_deactivated(str(user_id))
     elif activated:
         await token_service.mark_user_activated(str(user_id))
-    return user
+    return user, actions
 
 
 async def list_workspaces(
@@ -631,18 +644,20 @@ async def execute_import(
         except Exception as e:
             errors.append(f"Error processing {email}: {str(e)}")
 
-    if users_created or memberships_added:
-        await activity_service.log_activity(
-            db,
-            action="batch_import",
-            target_type="system",
-            target_id=uuid.uuid4(),
-            actor_id=actor_id,
-            detail={
-                "users_created": users_created,
-                "memberships_added": memberships_added,
-            },
-        )
+    # Always audited — an import where every row errored is still an admin
+    # feeding a user CSV into the system and must leave a record.
+    await activity_service.log_activity(
+        db,
+        action="batch_import",
+        target_type="system",
+        target_id=uuid.uuid4(),
+        actor_id=actor_id,
+        detail={
+            "users_created": users_created,
+            "memberships_added": memberships_added,
+            "errors": len(errors),
+        },
+    )
 
     await db.commit()
     return {

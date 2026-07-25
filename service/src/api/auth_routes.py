@@ -103,10 +103,20 @@ async def _log_login_failure(
 ) -> None:
     """Best-effort admin-visible audit row for a failed sign-in.
 
+    Also the single emit point for the auth.login.failed security-stream
+    event — both flows (user and admin) route through here, so the stream
+    and the DB row can't drift apart.
+
     Rolls back first so the audit row is the ONLY thing committed (a failed
     flow may have flushed partial state, e.g. a half-linked user). Must never
     mask the original error path.
     """
+    stream_fields: dict = {"provider": provider, "flow": flow}
+    if email and "@" in email:
+        stream_fields["email_domain"] = email.split("@", 1)[-1]
+    if error_type:
+        stream_fields["error_type"] = error_type
+    log_security("auth.login.failed", outcome="failure", reason=reason, **stream_fields)
     try:
         await db.rollback()
         detail: dict = {
@@ -245,12 +255,6 @@ async def callback(
                 None,
             )
             if not primary:
-                log_security(
-                    "auth.login.failed",
-                    outcome="failure",
-                    reason="email_not_verified",
-                    provider=provider,
-                )
                 await _log_login_failure(db, request, provider, "email_not_verified")
                 return _error_page(
                     403,
@@ -267,12 +271,6 @@ async def callback(
             # OIDC providers (Google, EntraID) — parse ID token
             userinfo = token.get("userinfo", {})
             if not auth_service.is_email_verified_claim(userinfo):
-                log_security(
-                    "auth.login.failed",
-                    outcome="failure",
-                    reason="email_not_verified",
-                    provider=provider,
-                )
                 await _log_login_failure(db, request, provider, "email_not_verified")
                 return _error_page(
                     403,
@@ -288,13 +286,6 @@ async def callback(
 
         org = await organization_service.resolve_organization(db, email)
         if org is None:
-            log_security(
-                "auth.login.failed",
-                outcome="failure",
-                reason="org_not_permitted",
-                provider=provider,
-                email_domain=email.split("@", 1)[-1] if "@" in email else None,
-            )
             await _log_login_failure(
                 db, request, provider, "org_not_permitted", email=email
             )
@@ -318,12 +309,6 @@ async def callback(
                 provider_data=profile,
             )
         except auth_service.CrossProviderEmailConflict:
-            log_security(
-                "auth.login.failed",
-                outcome="failure",
-                reason="cross_provider_conflict",
-                provider=provider,
-            )
             await _log_login_failure(
                 db, request, provider, "cross_provider_conflict", email=email
             )
@@ -417,13 +402,6 @@ async def callback(
             url=f"{redirect_uri}{separator}{urlencode(redirect_params)}"
         )
     except Exception as e:
-        log_security(
-            "auth.login.failed",
-            outcome="failure",
-            reason="callback_error",
-            provider=provider,
-            error_type=type(e).__name__,
-        )
         logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
         await _log_login_failure(
             db, request, provider, "callback_error", error_type=type(e).__name__
@@ -612,6 +590,7 @@ async def refresh_token(
 async def logout(
     request: Request,
     user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     # Revoke all refresh token families using identity from already-validated JWT
     await token_service.revoke_all_user_tokens(str(user.user_id))
@@ -631,6 +610,20 @@ async def logout(
         actor=str(user.user_id),
         reason="logout",
     )
+    # Admin-visible row so logins and logouts balance in the activity feed.
+    # Best-effort: an audit failure must not block sign-out.
+    try:
+        await activity_service.log_activity(
+            db,
+            action="user_logout",
+            target_type="user",
+            target_id=user.user_id,
+            actor_id=user.user_id,
+            workspace_id=user.workspace_id,
+        )
+        await db.commit()
+    except Exception:
+        log_security("audit.write_failed", outcome="failure", reason="logout_audit_row")
     response = JSONResponse({"ok": True})
     response.headers["Clear-Site-Data"] = '"cookies", "storage"'
     return response
@@ -801,6 +794,13 @@ async def admin_callback(
             },
         )
         await db.commit()
+        log_security(
+            "auth.login.succeeded",
+            outcome="success",
+            provider=provider,
+            actor=str(user.id),
+            flow="admin",
+        )
 
         admin_token = create_admin_token(
             user_id=user.id, email=user.email, name=user.name
@@ -839,10 +839,34 @@ async def admin_me(admin: dict = Depends(require_admin)):
 
 
 @router.post("/admin/logout")
-async def admin_logout(request: Request, admin: dict = Depends(require_admin)):
+async def admin_logout(
+    request: Request,
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     # Blacklist the admin token so it can't be replayed
     if jti := admin.get("jti"):
         await token_service.blacklist_access_token(jti, admin["exp"])
+    log_security(
+        "auth.token.revoked",
+        outcome="success",
+        actor=admin["sub"],
+        reason="admin_logout",
+    )
+    # The counterpart to the admin_login row this flow always wrote.
+    try:
+        await activity_service.log_activity(
+            db,
+            action="admin_logout",
+            target_type="user",
+            target_id=uuid.UUID(admin["sub"]),
+            actor_id=uuid.UUID(admin["sub"]),
+        )
+        await db.commit()
+    except Exception:
+        log_security(
+            "audit.write_failed", outcome="failure", reason="admin_logout_audit_row"
+        )
     response = JSONResponse({"ok": True})
     response.headers["Clear-Site-Data"] = '"cookies", "storage"'
     response.delete_cookie(

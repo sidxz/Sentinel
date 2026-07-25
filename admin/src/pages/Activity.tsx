@@ -48,6 +48,7 @@ export function Activity() {
 
   const actions = [
     "user_login", "admin_login",
+    "user_logout", "admin_logout",
     "login_failed", "admin_login_failed",
     "refresh_context_changed", "refresh_reuse_detected",
     "token_family_revoked", "action_denied",

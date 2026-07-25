@@ -332,7 +332,7 @@ async def update_user(
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    user = await admin_service.update_user(
+    user, actions = await admin_service.update_user(
         db,
         user_id,
         name=body.name,
@@ -342,30 +342,18 @@ async def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    action = None
-    if body.is_admin is True:
-        action = "user_promoted_admin"
-    elif body.is_admin is False:
-        action = "user_demoted_admin"
-    elif body.is_active is True:
-        action = "user_activated"
-    elif body.is_active is False:
-        action = "user_deactivated"
-    elif body.name is not None:
-        action = "user_updated"
-
-    if action:
-        try:
-            await activity_service.log_activity(
-                db,
-                action=action,
-                target_type="user",
-                target_id=user_id,
-                actor_id=uuid.UUID(admin["sub"]),
-            )
-            await db.commit()
-        except Exception:
-            await db.rollback()
+    # One transaction for mutation + audit rows: a promote/demote can never
+    # commit while its audit record is silently dropped. One row per actual
+    # change (a combined is_admin+is_active request logs both).
+    for action in actions:
+        await activity_service.log_activity(
+            db,
+            action=action,
+            target_type="user",
+            target_id=user_id,
+            actor_id=uuid.UUID(admin["sub"]),
+        )
+    await db.commit()
 
     return await admin_service.get_user_detail(db, user_id)
 

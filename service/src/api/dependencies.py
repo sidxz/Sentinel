@@ -6,7 +6,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.jwt import _AUD_ACCESS, _AUD_ADMIN, _AUD_AUTHZ, decode_token
 from src.database import get_db
+from src.logging_events import log_security
 from src.middleware.request_context import bind_identity
+
+
+def _reject(
+    status_code: int,
+    detail: str,
+    *,
+    guard: str,
+    reason: str,
+    level: str | None = None,
+    **fields,
+) -> None:
+    """Log-and-raise for auth-guard denials — every 401/403 from a dependency
+    must leave a security-stream trace. Routine, high-volume rejects (missing
+    or expired tokens) pass level="info"; sharp signals keep the default
+    warning."""
+    log_security(
+        "auth.guard.rejected",
+        outcome="denied",
+        reason=reason,
+        level=level,
+        guard=guard,
+        **fields,
+    )
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 @dataclass(frozen=True)
@@ -47,9 +72,13 @@ def verify_service_scope(ctx: ServiceKeyContext, service_name: str) -> None:
     so all members share one permission namespace.
     """
     if ctx.effective_scope != service_name:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Service key is not authorized for service '{service_name}'",
+        _reject(
+            403,
+            f"Service key is not authorized for service '{service_name}'",
+            guard="verify_service_scope",
+            reason="service_scope_mismatch",
+            caller_service=ctx.service_name,
+            requested_service=service_name,
         )
 
 
@@ -68,8 +97,12 @@ async def require_service_context(
     if key:
         result = await service_app_service.validate_key(key, db)
         if not result:
-            raise HTTPException(
-                status_code=401, detail="Invalid or missing service API key"
+            # Service-key brute force / leaked-key probing signal.
+            _reject(
+                401,
+                "Invalid or missing service API key",
+                guard="require_service_context",
+                reason="invalid_service_key",
             )
         service_name, app_id, realm_slug = result
         bind_identity(request, caller_service=service_name)
@@ -90,9 +123,12 @@ async def require_service_context(
                 app_id=app_id,
             )
 
-    raise HTTPException(
-        status_code=401,
-        detail="Missing service API key or unregistered origin",
+    _reject(
+        401,
+        "Missing service API key or unregistered origin",
+        guard="require_service_context",
+        reason="no_service_credentials",
+        origin=origin,
     )
 
 
@@ -106,7 +142,13 @@ async def require_service_key(
     """
     # Security: Origin-based auth is lower trust — reject for service key-only endpoints
     if ctx.origin_authenticated:
-        raise HTTPException(status_code=401, detail="Service key required")
+        _reject(
+            401,
+            "Service key required",
+            guard="require_service_key",
+            reason="origin_auth_insufficient",
+            caller_service=ctx.service_name,
+        )
     return ctx
 
 
@@ -114,13 +156,32 @@ async def require_admin(request: Request, db: AsyncSession = Depends(get_db)) ->
     """FastAPI dependency that requires a valid admin JWT cookie."""
     token = request.cookies.get("admin_token")
     if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        # info: the admin SPA probes /admin/me on every load before login.
+        _reject(
+            401,
+            "Not authenticated",
+            guard="require_admin",
+            reason="missing_admin_cookie",
+            level="info",
+        )
     try:
         payload = decode_token(token, audience=_AUD_ADMIN)
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        _reject(
+            401,
+            "Invalid or expired token",
+            guard="require_admin",
+            reason="invalid_admin_token",
+            level="info",
+        )
     if not payload.get("admin"):
-        raise HTTPException(status_code=403, detail="Not an admin")
+        _reject(
+            403,
+            "Not an admin",
+            guard="require_admin",
+            reason="not_admin",
+            actor=payload.get("sub"),
+        )
 
     from src.services.token_service import (
         is_access_token_blacklisted,
@@ -130,25 +191,49 @@ async def require_admin(request: Request, db: AsyncSession = Depends(get_db)) ->
     # Check admin token revocation (jti denylist)
     if jti := payload.get("jti"):
         if await is_access_token_blacklisted(jti):
-            raise HTTPException(status_code=401, detail="Token has been revoked")
+            # A revoked admin token still being presented — sharp signal.
+            _reject(
+                401,
+                "Token has been revoked",
+                guard="require_admin",
+                reason="admin_token_revoked",
+                actor=payload.get("sub"),
+            )
 
     # Re-check user is active + still admin at request time. Flipping is_admin or
     # is_active must take effect immediately, not only after the cookie expires.
     user_id = payload.get("sub")
     if user_id:
         if await is_user_deactivated(user_id):
-            raise HTTPException(status_code=401, detail="User account is deactivated")
+            _reject(
+                401,
+                "User account is deactivated",
+                guard="require_admin",
+                reason="user_deactivated",
+                actor=user_id,
+            )
         from src.models.user import User
 
         user = await db.get(User, uuid.UUID(user_id))
         if user is None or not user.is_active or not user.is_admin:
-            raise HTTPException(status_code=401, detail="Admin privileges revoked")
+            # A de-admined/deactivated user still holding a valid cookie.
+            _reject(
+                401,
+                "Admin privileges revoked",
+                guard="require_admin",
+                reason="admin_privileges_revoked",
+                actor=user_id,
+            )
 
     # CSRF: require X-Requested-With header on state-changing methods
     if request.method in ("POST", "PATCH", "PUT", "DELETE"):
         if not request.headers.get("X-Requested-With"):
-            raise HTTPException(
-                status_code=403, detail="Missing X-Requested-With header"
+            _reject(
+                403,
+                "Missing X-Requested-With header",
+                guard="require_admin",
+                reason="csrf_header_missing",
+                actor=payload.get("sub"),
             )
 
     identity_kwargs: dict = {}
@@ -166,23 +251,54 @@ async def get_current_user(request: Request) -> CurrentUser:
     """FastAPI dependency: extract user context from Bearer JWT."""
     auth = request.headers.get("Authorization")
     if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
+        _reject(
+            401,
+            "Missing Bearer token",
+            guard="get_current_user",
+            reason="missing_token",
+            level="info",
+        )
     token = auth.removeprefix("Bearer ")
     if len(token) > 8192:
-        raise HTTPException(status_code=401, detail="Token too large")
+        _reject(
+            401,
+            "Token too large",
+            guard="get_current_user",
+            reason="oversized_token",
+        )
     try:
         # Security: only accept access tokens — authz tokens must not be usable here
         payload = decode_token(token, audience=_AUD_ACCESS)
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        # info: expired access tokens are routine (SDKs refresh on 401);
+        # brute force still shows as event-count, not level.
+        _reject(
+            401,
+            "Invalid or expired token",
+            guard="get_current_user",
+            reason="invalid_token",
+            level="info",
+        )
 
     # Security: enforce token type to prevent cross-type confusion
     if payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Invalid token type")
+        _reject(
+            401,
+            "Invalid token type",
+            guard="get_current_user",
+            reason="wrong_token_type",
+            actor=payload.get("sub"),
+        )
 
     # Security: reject tokens missing required claims
     if not all(k in payload for k in ("sub", "wid", "wrole")):
-        raise HTTPException(status_code=401, detail="Token missing required claims")
+        _reject(
+            401,
+            "Token missing required claims",
+            guard="get_current_user",
+            reason="missing_claims",
+            actor=payload.get("sub"),
+        )
 
     await _enforce_token_hygiene(payload)
 
@@ -214,10 +330,22 @@ async def _enforce_token_hygiene(payload: dict) -> None:
 
     if jti := payload.get("jti"):
         if await is_access_token_blacklisted(jti):
-            raise HTTPException(status_code=401, detail="Token has been revoked")
+            _reject(
+                401,
+                "Token has been revoked",
+                guard="token_hygiene",
+                reason="token_revoked",
+                actor=payload.get("sub"),
+            )
     if user_id := payload.get("sub"):
         if await is_user_deactivated(user_id):
-            raise HTTPException(status_code=401, detail="User account is deactivated")
+            _reject(
+                401,
+                "User account is deactivated",
+                guard="token_hygiene",
+                reason="user_deactivated",
+                actor=user_id,
+            )
 
 
 async def get_user_for_service_call(
@@ -234,31 +362,71 @@ async def get_user_for_service_call(
     """
     auth = request.headers.get("Authorization")
     if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
+        _reject(
+            401,
+            "Missing Bearer token",
+            guard="get_user_for_service_call",
+            reason="missing_token",
+            level="info",
+            caller_service=svc_ctx.service_name,
+        )
     token = auth.removeprefix("Bearer ")
     if len(token) > 8192:
-        raise HTTPException(status_code=401, detail="Token too large")
+        _reject(
+            401,
+            "Token too large",
+            guard="get_user_for_service_call",
+            reason="oversized_token",
+            caller_service=svc_ctx.service_name,
+        )
     try:
         payload = decode_token(token, audience=[_AUD_ACCESS, _AUD_AUTHZ])
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        _reject(
+            401,
+            "Invalid or expired token",
+            guard="get_user_for_service_call",
+            reason="invalid_token",
+            level="info",
+            caller_service=svc_ctx.service_name,
+        )
 
     token_type = payload.get("type")
     if token_type not in ("access", "authz"):
-        raise HTTPException(status_code=401, detail="Invalid token type")
+        _reject(
+            401,
+            "Invalid token type",
+            guard="get_user_for_service_call",
+            reason="wrong_token_type",
+            actor=payload.get("sub"),
+            caller_service=svc_ctx.service_name,
+        )
 
     # Security: reject tokens missing required claims
     if not all(k in payload for k in ("sub", "wid", "wrole")):
-        raise HTTPException(status_code=401, detail="Token missing required claims")
+        _reject(
+            401,
+            "Token missing required claims",
+            guard="get_user_for_service_call",
+            reason="missing_claims",
+            actor=payload.get("sub"),
+            caller_service=svc_ctx.service_name,
+        )
 
     await _enforce_token_hygiene(payload)
 
     if token_type == "authz":
         token_svc = payload.get("svc")
         if not token_svc or token_svc != svc_ctx.effective_scope:
-            raise HTTPException(
-                status_code=403,
-                detail="Authz token was issued for a different service",
+            # A token minted for service A replayed against service B.
+            _reject(
+                403,
+                "Authz token was issued for a different service",
+                guard="get_user_for_service_call",
+                reason="authz_service_mismatch",
+                actor=payload.get("sub"),
+                caller_service=svc_ctx.service_name,
+                token_svc=token_svc,
             )
 
     bind_identity(
@@ -331,33 +499,67 @@ async def get_current_user_flexible(
     else:
         auth = request.headers.get("Authorization")
         if not auth or not auth.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Missing Bearer token")
+            _reject(
+                401,
+                "Missing Bearer token",
+                guard="get_current_user_flexible",
+                reason="missing_token",
+                level="info",
+            )
         token = auth.removeprefix("Bearer ")
         audiences = [_AUD_ACCESS, _AUD_AUTHZ] if has_valid_service_key else _AUD_ACCESS
         valid_types = ("access", "authz") if has_valid_service_key else ("access",)
     if len(token) > 8192:
-        raise HTTPException(status_code=401, detail="Token too large")
+        _reject(
+            401,
+            "Token too large",
+            guard="get_current_user_flexible",
+            reason="oversized_token",
+        )
 
     try:
         payload = decode_token(token, audience=audiences)
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        _reject(
+            401,
+            "Invalid or expired token",
+            guard="get_current_user_flexible",
+            reason="invalid_token",
+            level="info",
+        )
 
     token_type = payload.get("type")
     if token_type not in valid_types:
-        raise HTTPException(status_code=401, detail="Invalid token type")
+        _reject(
+            401,
+            "Invalid token type",
+            guard="get_current_user_flexible",
+            reason="wrong_token_type",
+            actor=payload.get("sub"),
+        )
 
     if not all(k in payload for k in ("sub", "wid", "wrole")):
-        raise HTTPException(status_code=401, detail="Token missing required claims")
+        _reject(
+            401,
+            "Token missing required claims",
+            guard="get_current_user_flexible",
+            reason="missing_claims",
+            actor=payload.get("sub"),
+        )
 
     await _enforce_token_hygiene(payload)
 
     if token_type == "authz" and has_valid_service_key:
         token_svc = payload.get("svc")
         if not token_svc or token_svc != service_key_effective_scope:
-            raise HTTPException(
-                status_code=403,
-                detail="Authz token was issued for a different service",
+            _reject(
+                403,
+                "Authz token was issued for a different service",
+                guard="get_current_user_flexible",
+                reason="authz_service_mismatch",
+                actor=payload.get("sub"),
+                caller_service=service_key_service_name,
+                token_svc=token_svc,
             )
 
     bind_identity(
