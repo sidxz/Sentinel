@@ -35,6 +35,16 @@
   --sidebar-active: #bd1414;
   --sidebar-hover: #e01e1e;
   --sidebar-muted: #ffd1d1;
+  /* chart palette — validated (CVD + contrast) against --card per theme */
+  --chart-series: #2a78d6;
+  --chart-critical: #d03b3b;
+  /* sequential blue ramp (choropleth), light: low→high = light→dark */
+  --map-zero: #f4f4f5;
+  --map-1: #cde2fb;
+  --map-2: #86b6ef;
+  --map-3: #3987e5;
+  --map-4: #1c5cab;
+  --map-5: #0d366b;
 }
 
 .dark {
@@ -63,6 +73,16 @@
   --sidebar-active: #bd1414;
   --sidebar-hover: #e01e1e;
   --sidebar-muted: #ffd1d1;
+  /* chart palette — blue re-stepped for the dark surface */
+  --chart-series: #3987e5;
+  --chart-critical: #d03b3b;
+  /* dark flips the ramp anchor: near-zero recedes into the surface */
+  --map-zero: #1f1f23;
+  --map-1: #0d366b;
+  --map-2: #1c5cab;
+  --map-3: #3987e5;
+  --map-4: #86b6ef;
+  --map-5: #cde2fb;
 }
 
 @theme inline {
@@ -90,6 +110,8 @@
   --color-sidebar-active: var(--sidebar-active);
   --color-sidebar-hover: var(--sidebar-hover);
   --color-sidebar-muted: var(--sidebar-muted);
+  --color-chart-series: var(--chart-series);
+  --color-chart-critical: var(--chart-critical);
 
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;

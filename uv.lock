@@ -488,6 +488,12 @@ wheels = [
 ]
 
 [[package]]
+name = "geoip2fast"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/07/2a346a6a3294e1a1f6c1852f17ae555160d6f41d8636ea00c2ae0a89a8ec/geoip2fast-1.2.2.tar.gz", hash = "sha256:38815700cedfeb197d51b4b8733b0d4f7965b36de15147c125527124f8b45d6b", size = 9655302, upload-time = "2024-06-21T04:59:04.978Z" }
+
+[[package]]
 name = "ghp-import"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1446,6 +1452,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "authlib" },
     { name = "fastapi" },
+    { name = "geoip2fast" },
     { name = "httpx" },
     { name = "itsdangerous" },
     { name = "nh3" },
@@ -1466,6 +1473,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "authlib", specifier = ">=1.4.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "geoip2fast", specifier = ">=1.2.2" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
     { name = "nh3", specifier = ">=0.2.14" },

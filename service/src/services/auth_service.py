@@ -16,7 +16,7 @@ from src.schemas.validators import sanitize_url, strip_html
 from src.models.group import GroupMembership
 from src.models.user import SocialAccount, User
 from src.models.workspace import WorkspaceMembership
-from src.services import organization_service, token_service
+from src.services import activity_service, organization_service, token_service
 
 
 class CrossProviderEmailConflict(Exception):
@@ -217,6 +217,8 @@ async def issue_tokens(
 async def rotate_refresh_token(
     db: AsyncSession,
     refresh_token_str: str,
+    ip: str | None = None,
+    user_agent: str | None = None,
 ) -> dict[str, str]:
     """Consume a refresh token and issue a new token pair.
 
@@ -248,6 +250,29 @@ async def rotate_refresh_token(
         )
         if family_id:
             await token_service.revoke_token_family(family_id)
+        # Best-effort admin-visible audit row — the theft signal must land in
+        # the activity log, but logging failure must not mask the 401.
+        try:
+            actor_uuid = uuid.UUID(str(actor)) if actor else None
+            await activity_service.log_activity(
+                db,
+                action="refresh_reuse_detected",
+                target_type="user" if actor_uuid else "system",
+                target_id=actor_uuid or uuid.UUID(int=0),
+                actor_id=actor_uuid,
+                detail={
+                    "family_id": family_id,
+                    "ip": ip,
+                    "user_agent": user_agent,
+                },
+            )
+            await db.commit()
+        except Exception:
+            log_security(
+                "audit.write_failed",
+                outcome="failure",
+                reason="refresh_reuse_audit_row",
+            )
         raise ValueError("Refresh token already used or expired")
 
     user_id, family_id, workspace_id, client_app_id = result
@@ -328,6 +353,39 @@ async def rotate_refresh_token(
     except Exception:
         await token_service.revoke_token_family(family_id)
         raise
+
+    # Session-context anomaly signal: same token family suddenly refreshing
+    # from a different ip/user-agent (possible token theft). Deliberately
+    # OUTSIDE the fail-closed block above — telemetry failure must never
+    # revoke a healthy family or break the refresh.
+    if ip or user_agent:
+        try:
+            prev = await token_service.swap_refresh_context(
+                family_id, ip or "", (user_agent or "")[:200]
+            )
+            if prev is not None:
+                await activity_service.log_activity(
+                    db,
+                    action="refresh_context_changed",
+                    target_type="user",
+                    target_id=user.id,
+                    actor_id=user.id,
+                    workspace_id=workspace_id,
+                    detail={
+                        "family_id": family_id,
+                        "ip": ip,
+                        "user_agent": (user_agent or "")[:200],
+                        "prev_ip": prev.get("ip"),
+                        "prev_user_agent": prev.get("ua"),
+                    },
+                )
+                await db.commit()
+        except Exception:
+            log_security(
+                "audit.write_failed",
+                outcome="failure",
+                reason="refresh_context_audit_row",
+            )
 
     log_security(
         "auth.token.refreshed",

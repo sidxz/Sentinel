@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { getStats, getActivity } from "../api/client";
+import { getStats, getActivity, getActivitySummary } from "../api/client";
 import { StatusBadge } from "../components/Badge";
+import { SignInsChart, ActivityMixChart } from "../components/charts";
 import type { ActivityLog } from "../types/api";
 
 export function Dashboard() {
@@ -9,6 +10,10 @@ export function Dashboard() {
   const { data: activityData } = useQuery({
     queryKey: ["activity-dashboard"],
     queryFn: () => getActivity({ page: 1, page_size: 15 }),
+  });
+  const { data: summary } = useQuery({
+    queryKey: ["activity-summary"],
+    queryFn: () => getActivitySummary(30),
   });
   const activity = activityData?.items;
 
@@ -42,6 +47,32 @@ export function Dashboard() {
             <div className="text-xs text-muted-foreground mt-1">{c.label}</div>
           </Link>
         ))}
+      </div>
+
+      {/* Security charts */}
+      <div className="grid grid-cols-2 gap-6">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-baseline justify-between mb-1">
+            <h2 className="text-sm font-medium text-muted-foreground">Sign-in activity</h2>
+            <span className="text-xs text-muted-foreground">Last 30 days</span>
+          </div>
+          {summary ? (
+            <SignInsChart items={summary.items} days={summary.days} />
+          ) : (
+            <div className="h-40 bg-muted/50 rounded animate-pulse" />
+          )}
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-baseline justify-between mb-1">
+            <h2 className="text-sm font-medium text-muted-foreground">Activity mix</h2>
+            <span className="text-xs text-muted-foreground">Last 30 days</span>
+          </div>
+          {summary ? (
+            <ActivityMixChart items={summary.items} days={summary.days} />
+          ) : (
+            <div className="h-40 bg-muted/50 rounded animate-pulse" />
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-6">

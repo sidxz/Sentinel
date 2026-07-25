@@ -7,6 +7,7 @@ import { Activity } from "./pages/Activity";
 import { ClientAppDetail } from "./pages/ClientAppDetail";
 import { ClientApps } from "./pages/ClientApps";
 import { Dashboard } from "./pages/Dashboard";
+import { Insights } from "./pages/Insights";
 import { ServiceAppDetail } from "./pages/ServiceAppDetail";
 import { ServiceApps } from "./pages/ServiceApps";
 import { Permissions } from "./pages/Permissions";
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/realms" element={<Realms />} />
           <Route path="/realms/:id" element={<RealmDetail />} />
           <Route path="/activity" element={<Activity />} />
+          <Route path="/insights" element={<Insights />} />
           <Route path="/system" element={<SystemHealth />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

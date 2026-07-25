@@ -92,6 +92,50 @@ def _error_page(status_code: int, title: str, message: str) -> HTMLResponse:
     return resp
 
 
+async def _log_login_failure(
+    db: AsyncSession,
+    request: Request,
+    provider: str,
+    reason: str,
+    flow: str = "user",
+    email: str | None = None,
+    error_type: str | None = None,
+) -> None:
+    """Best-effort admin-visible audit row for a failed sign-in.
+
+    Rolls back first so the audit row is the ONLY thing committed (a failed
+    flow may have flushed partial state, e.g. a half-linked user). Must never
+    mask the original error path.
+    """
+    try:
+        await db.rollback()
+        detail: dict = {
+            "provider": provider,
+            "reason": reason,
+            "ip": get_client_ip(request),
+            "user_agent": request.headers.get("user-agent", "")[:200],
+        }
+        if email:
+            detail["email"] = email
+        if error_type:
+            detail["error_type"] = error_type
+        await activity_service.log_activity(
+            db,
+            action="admin_login_failed" if flow == "admin" else "login_failed",
+            target_type="system",
+            target_id=uuid.UUID(int=0),
+            detail=detail,
+        )
+        await db.commit()
+    except Exception:
+        logger.warning(
+            "audit.write_failed",
+            category="app",
+            reason="login_failure_audit_row",
+            exc_info=True,
+        )
+
+
 @router.get("/providers", response_model=ProviderListResponse)
 async def list_providers():
     return ProviderListResponse(providers=get_configured_providers())
@@ -196,6 +240,7 @@ async def callback(
                     reason="email_not_verified",
                     provider=provider,
                 )
+                await _log_login_failure(db, request, provider, "email_not_verified")
                 return _error_page(
                     403,
                     "Email Not Verified",
@@ -217,6 +262,7 @@ async def callback(
                     reason="email_not_verified",
                     provider=provider,
                 )
+                await _log_login_failure(db, request, provider, "email_not_verified")
                 return _error_page(
                     403,
                     "Email Not Verified",
@@ -237,6 +283,9 @@ async def callback(
                 reason="org_not_permitted",
                 provider=provider,
                 email_domain=email.split("@", 1)[-1] if "@" in email else None,
+            )
+            await _log_login_failure(
+                db, request, provider, "org_not_permitted", email=email
             )
             return _error_page(
                 403,
@@ -264,6 +313,9 @@ async def callback(
                 reason="cross_provider_conflict",
                 provider=provider,
             )
+            await _log_login_failure(
+                db, request, provider, "cross_provider_conflict", email=email
+            )
             return _error_page(
                 409,
                 "Email Already Used",
@@ -281,6 +333,7 @@ async def callback(
             detail={
                 "provider": provider,
                 "ip": get_client_ip(request),
+                "user_agent": request.headers.get("user-agent", "")[:200],
             },
         )
         await db.commit()
@@ -351,6 +404,9 @@ async def callback(
             error_type=type(e).__name__,
         )
         logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
+        await _log_login_failure(
+            db, request, provider, "callback_error", error_type=type(e).__name__
+        )
         return _error_page(
             500,
             "Authentication Failed",
@@ -491,7 +547,12 @@ async def refresh_token(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        tokens = await auth_service.rotate_refresh_token(db, body.refresh_token)
+        tokens = await auth_service.rotate_refresh_token(
+            db,
+            body.refresh_token,
+            ip=get_client_ip(request),
+            user_agent=request.headers.get("user-agent", "")[:200],
+        )
     except Exception:
         logger.error(
             "app.error.unhandled",
@@ -575,6 +636,9 @@ async def admin_callback(
                 None,
             )
             if not primary:
+                await _log_login_failure(
+                    db, request, provider, "email_not_verified", flow="admin"
+                )
                 return RedirectResponse(
                     url=f"{settings.admin_url}/login?error=email_not_verified",
                     status_code=302,
@@ -587,6 +651,9 @@ async def admin_callback(
         else:
             userinfo = token.get("userinfo", {})
             if not auth_service.is_email_verified_claim(userinfo):
+                await _log_login_failure(
+                    db, request, provider, "email_not_verified", flow="admin"
+                )
                 return RedirectResponse(
                     url=f"{settings.admin_url}/login?error=email_not_verified",
                     status_code=302,
@@ -635,6 +702,9 @@ async def admin_callback(
             identity_user is not None and identity_user.is_admin
         ) or email in settings.admin_email_list
         if not is_admin_eligible:
+            await _log_login_failure(
+                db, request, provider, "not_admin", flow="admin", email=email
+            )
             return RedirectResponse(
                 url=f"{settings.admin_url}/login?error=not_admin",
                 status_code=302,
@@ -652,12 +722,23 @@ async def admin_callback(
                 provider_data=profile,
             )
         except auth_service.CrossProviderEmailConflict:
+            await _log_login_failure(
+                db,
+                request,
+                provider,
+                "cross_provider_conflict",
+                flow="admin",
+                email=email,
+            )
             return RedirectResponse(
                 url=f"{settings.admin_url}/login?error=email_conflict",
                 status_code=302,
             )
 
         if not user.is_admin:
+            await _log_login_failure(
+                db, request, provider, "not_admin", flow="admin", email=email
+            )
             return RedirectResponse(
                 url=f"{settings.admin_url}/login?error=not_admin",
                 status_code=302,
@@ -672,6 +753,7 @@ async def admin_callback(
             detail={
                 "provider": provider,
                 "ip": get_client_ip(request),
+                "user_agent": request.headers.get("user-agent", "")[:200],
             },
         )
         await db.commit()
@@ -694,6 +776,14 @@ async def admin_callback(
         raise
     except Exception as e:
         logger.error("app.error.unhandled", category="app", error=str(e), exc_info=True)
+        await _log_login_failure(
+            db,
+            request,
+            provider,
+            "callback_error",
+            flow="admin",
+            error_type=type(e).__name__,
+        )
         return JSONResponse(
             status_code=500, content={"detail": "Authentication failed"}
         )

@@ -2,8 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { addUserToWorkspace, getAllWorkspaces, getUserDetail, revokeUserTokens, updateUser } from "../api/client";
+import { addUserToWorkspace, getActivityInsights, getAllWorkspaces, getUserDetail, revokeUserTokens, updateUser } from "../api/client";
 import { RoleBadge, StatusBadge } from "../components/Badge";
+import { BarList } from "../components/charts";
+import { WorldMap } from "../components/WorldMap";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
 import { Button } from "@/components/ui/button";
@@ -32,6 +34,12 @@ export function UserDetail() {
     queryKey: ["all-workspaces"],
     queryFn: getAllWorkspaces,
     enabled: showAddWorkspace,
+  });
+
+  const { data: insights } = useQuery({
+    queryKey: ["user-insights", id],
+    queryFn: () => getActivityInsights(30, id),
+    enabled: !!id,
   });
 
   const updateName = useMutation({
@@ -193,6 +201,34 @@ export function UserDetail() {
           </div>
         </div>
       </div>
+
+      {/* Sign-in locations (30d) */}
+      {insights && insights.total > 0 && (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-baseline justify-between mb-2">
+            <h3 className="text-sm font-medium text-muted-foreground">Sign-in locations</h3>
+            <span className="text-xs text-muted-foreground">Last 30 days</span>
+          </div>
+          {insights.countries.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-4 text-center">
+              All {insights.total} sign-in{insights.total === 1 ? "" : "s"} came from private or
+              unresolvable addresses
+            </div>
+          ) : (
+            <div className="grid grid-cols-[2fr_1fr] gap-6 items-start">
+              <WorldMap countries={insights.countries} />
+              <div>
+                <BarList rows={insights.countries.map((c) => [c.name, c.count])} labelWidth={140} />
+                {insights.unresolved > 0 && (
+                  <div className="text-xs text-muted-foreground mt-3 px-1">
+                    {insights.unresolved} from private/unresolvable addresses
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Social accounts */}
       {user.social_accounts.length > 0 && (

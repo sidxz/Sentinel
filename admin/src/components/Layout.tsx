@@ -5,6 +5,7 @@ import {
   Boxes,
   Building2,
   Cpu,
+  Globe,
   LayoutDashboard,
   LogOut,
   Moon,
@@ -31,6 +32,7 @@ const NAV = [
   { to: "/service-apps", label: "Services", Icon: Server },
   { to: "/realms", label: "Realms", Icon: Boxes },
   { to: "/activity", label: "Activity", Icon: Activity },
+  { to: "/insights", label: "Insights", Icon: Globe },
   { to: "/system", label: "System", Icon: Cpu },
   { to: "/settings", label: "Settings", Icon: Settings },
 ] as const;

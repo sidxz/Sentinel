@@ -196,3 +196,179 @@ async def test_successful_refresh_emits_token_refreshed_event():
     assert evt["outcome"] == "success"
     assert evt["category"] == "security"
     assert evt.get("actor") == str(user.id)
+
+
+# ---------------------------------------------------------------------------
+# Refresh context tracking (per-family ip/UA anomaly signal)
+# ---------------------------------------------------------------------------
+
+
+class _FakeRedis:
+    def __init__(self):
+        self.store: dict[str, str] = {}
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def set(self, key, value, ex=None):
+        self.store[key] = value
+
+
+@pytest.mark.asyncio
+async def test_swap_refresh_context_first_seen_and_change():
+    from src.services import token_service
+
+    fake = _FakeRedis()
+    with patch(
+        "src.services.token_service.get_redis", new=AsyncMock(return_value=fake)
+    ):
+        # First sighting establishes the baseline silently.
+        assert await token_service.swap_refresh_context("fam1", "1.1.1.1", "ua") is None
+        # Same context — quiet.
+        assert await token_service.swap_refresh_context("fam1", "1.1.1.1", "ua") is None
+        # Changed ip — previous context returned.
+        prev = await token_service.swap_refresh_context("fam1", "2.2.2.2", "ua")
+        assert prev == {"ip": "1.1.1.1", "ua": "ua"}
+        # Families are independent: another family starts its own baseline.
+        assert await token_service.swap_refresh_context("fam2", "9.9.9.9", "ua") is None
+
+
+@pytest.mark.asyncio
+async def test_context_change_writes_activity_row():
+    """A refresh from a new ip/UA on the same family must log
+    refresh_context_changed with the previous context, and commit it."""
+    from src.auth.jwt import create_refresh_token
+
+    user = _fake_user()
+    workspace_id = uuid.uuid4()
+    family_id = str(uuid.uuid4())
+    refresh_token = create_refresh_token(user_id=user.id, family_id=family_id)
+
+    db = _fake_db_for_rotate(user, workspace_id)
+    db.commit = AsyncMock()
+
+    async def fake_consume(_jti):
+        return (user.id, family_id, workspace_id, None)
+
+    async def fake_store(**_kwargs):
+        pass
+
+    with (
+        patch(
+            "src.services.auth_service.token_service.consume_refresh_token",
+            new=fake_consume,
+        ),
+        patch(
+            "src.services.auth_service.token_service.store_refresh_token",
+            new=fake_store,
+        ),
+        patch(
+            "src.services.auth_service.token_service.swap_refresh_context",
+            new=AsyncMock(return_value={"ip": "1.1.1.1", "ua": "old-ua"}),
+        ),
+        patch(
+            "src.services.activity_service.log_activity", new_callable=AsyncMock
+        ) as log_activity,
+        capture_logs(),
+    ):
+        result = await auth_service.rotate_refresh_token(
+            db, refresh_token, ip="2.2.2.2", user_agent="new-ua"
+        )
+
+    assert "access_token" in result
+    kwargs = log_activity.await_args.kwargs
+    assert kwargs["action"] == "refresh_context_changed"
+    assert kwargs["target_id"] == user.id
+    assert kwargs["detail"]["ip"] == "2.2.2.2"
+    assert kwargs["detail"]["prev_ip"] == "1.1.1.1"
+    assert kwargs["detail"]["prev_user_agent"] == "old-ua"
+    assert kwargs["detail"]["family_id"] == family_id
+    db.commit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_context_telemetry_failure_never_revokes_family():
+    """The context check sits OUTSIDE the fail-closed rotation block: a Redis
+    hiccup must neither 401 the refresh nor revoke the healthy family."""
+    from src.auth.jwt import create_refresh_token
+
+    user = _fake_user()
+    workspace_id = uuid.uuid4()
+    family_id = str(uuid.uuid4())
+    refresh_token = create_refresh_token(user_id=user.id, family_id=family_id)
+
+    db = _fake_db_for_rotate(user, workspace_id)
+
+    async def fake_consume(_jti):
+        return (user.id, family_id, workspace_id, None)
+
+    async def fake_store(**_kwargs):
+        pass
+
+    revoke = AsyncMock()
+    with (
+        patch(
+            "src.services.auth_service.token_service.consume_refresh_token",
+            new=fake_consume,
+        ),
+        patch(
+            "src.services.auth_service.token_service.store_refresh_token",
+            new=fake_store,
+        ),
+        patch(
+            "src.services.auth_service.token_service.revoke_token_family",
+            new=revoke,
+        ),
+        patch(
+            "src.services.auth_service.token_service.swap_refresh_context",
+            new=AsyncMock(side_effect=ConnectionError("redis down")),
+        ),
+        capture_logs(),
+    ):
+        result = await auth_service.rotate_refresh_token(
+            db, refresh_token, ip="2.2.2.2", user_agent="ua"
+        )
+
+    assert "access_token" in result
+    revoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_refresh_reuse_writes_activity_row():
+    """Token reuse (theft signal) must land in the admin activity log, not just
+    the log stream — and still 401."""
+    from src.auth.jwt import create_refresh_token
+
+    user = _fake_user()
+    family_id = str(uuid.uuid4())
+    refresh_token = create_refresh_token(user_id=user.id, family_id=family_id)
+
+    db = MagicMock()
+    db.commit = AsyncMock()
+
+    with (
+        patch(
+            "src.services.auth_service.token_service.consume_refresh_token",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "src.services.auth_service.token_service.revoke_token_family",
+            new=AsyncMock(),
+        ),
+        patch(
+            "src.services.activity_service.log_activity", new_callable=AsyncMock
+        ) as log_activity,
+        capture_logs(),
+    ):
+        with pytest.raises(ValueError, match="already used or expired"):
+            await auth_service.rotate_refresh_token(
+                db, refresh_token, ip="6.6.6.6", user_agent="evil-ua"
+            )
+
+    kwargs = log_activity.await_args.kwargs
+    assert kwargs["action"] == "refresh_reuse_detected"
+    assert kwargs["target_id"] == user.id
+    assert kwargs["actor_id"] == user.id
+    assert kwargs["detail"]["family_id"] == family_id
+    assert kwargs["detail"]["ip"] == "6.6.6.6"
+    db.commit.assert_awaited()

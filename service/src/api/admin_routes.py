@@ -77,6 +77,7 @@ from src.schemas.realm import (
 from src.services import (
     admin_service,
     activity_service,
+    insights_service,
     workspace_service,
     group_service,
     permission_service,
@@ -101,6 +102,23 @@ router = APIRouter(
 @router.get("/stats", response_model=AdminStatsResponse)
 async def get_stats(db: AsyncSession = Depends(get_db)):
     return await admin_service.get_stats(db)
+
+
+@router.get("/activity/summary")
+async def get_activity_summary(
+    days: int = Query(30, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+):
+    return {"days": days, "items": await activity_service.daily_counts(db, days)}
+
+
+@router.get("/activity/insights")
+async def get_activity_insights(
+    days: int = Query(30, ge=1, le=90),
+    user_id: uuid.UUID | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    return await insights_service.signin_insights(db, days=days, actor_id=user_id)
 
 
 @router.get("/activity", response_model=PaginatedResponse)

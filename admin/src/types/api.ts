@@ -173,6 +173,30 @@ export interface Stats {
   top_workspaces: TopWorkspace[];
 }
 
+export interface ActivityDailyCount {
+  day: string; // ISO date, UTC bucket
+  action: string;
+  count: number;
+}
+
+export interface NamedCount {
+  name: string;
+  count: number;
+}
+
+export interface CountryCount extends NamedCount {
+  code: string; // ISO 3166-1 alpha-2
+}
+
+export interface SignInInsights {
+  days: number;
+  total: number;
+  browsers: NamedCount[];
+  os: NamedCount[];
+  countries: CountryCount[];
+  unresolved: number; // sign-ins from private/unresolvable addresses
+}
+
 export interface ActivityLog {
   id: string;
   action: string;
@@ -181,6 +205,7 @@ export interface ActivityLog {
   actor_email: string | null;
   target_type: string;
   target_id: string;
+  target_label: string | null;
   workspace_id: string | null;
   detail: Record<string, unknown> | null;
   created_at: string;

@@ -1,12 +1,49 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.logging_events import log_audit
 from src.models.activity import ActivityLog
+from src.models.client_app import ClientApp
+from src.models.group import Group
+from src.models.organization import Organization
+from src.models.realm import Realm
+from src.models.role import Role
+from src.models.service_app import ServiceApp
 from src.models.user import User
+from src.models.workspace import Workspace
+
+# target_type → model with a human-readable name; types not listed (system,
+# resource_permission, export, …) fall back to the raw id in the UI.
+_TARGET_MODELS = {
+    "user": User,
+    "workspace": Workspace,
+    "group": Group,
+    "role": Role,
+    "realm": Realm,
+    "organization": Organization,
+    "client_app": ClientApp,
+    "service_app": ServiceApp,
+}
+
+
+async def _attach_target_labels(db: AsyncSession, items: list[dict]) -> None:
+    """Resolve target_id → display name in one query per target type on the page.
+    Deleted targets simply resolve to None (UI falls back to the id)."""
+    by_type: dict[str, set[uuid.UUID]] = {}
+    for it in items:
+        if it["target_type"] in _TARGET_MODELS and it["target_id"] is not None:
+            by_type.setdefault(it["target_type"], set()).add(it["target_id"])
+    labels: dict[tuple[str, uuid.UUID], str] = {}
+    for tt, ids in by_type.items():
+        model = _TARGET_MODELS[tt]
+        rows = (await db.execute(select(model).where(model.id.in_(ids)))).scalars()
+        for row in rows:
+            labels[(tt, row.id)] = row.name or getattr(row, "email", None)
+    for it in items:
+        it["target_label"] = labels.get((it["target_type"], it["target_id"]))
 
 
 def _emit_audit(payload: dict) -> None:
@@ -134,7 +171,28 @@ async def list_paginated(
         }
         for log, actor_name, actor_email in result.all()
     ]
+    await _attach_target_labels(db, items)
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+async def daily_counts(db: AsyncSession, days: int = 30) -> list[dict]:
+    """Per-day, per-action event counts for the last ``days`` days (dashboard charts)."""
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    # Reuse ONE labeled expression: date_trunc's unit binds as a parameter, so
+    # repeating the call gives Postgres textually different expressions and a
+    # GroupingError. Grouping by the label sidesteps it.
+    day = func.date_trunc("day", ActivityLog.created_at).label("day")
+    stmt = (
+        select(day, ActivityLog.action, func.count().label("count"))
+        .where(ActivityLog.created_at >= cutoff)
+        .group_by(day, ActivityLog.action)
+        .order_by(day)
+    )
+    result = await db.execute(stmt)
+    return [
+        {"day": day.date().isoformat(), "action": action, "count": count}
+        for day, action, count in result.all()
+    ]
 
 
 async def list_recent(db: AsyncSession, limit: int = 20) -> list[dict]:
@@ -147,7 +205,7 @@ async def list_recent(db: AsyncSession, limit: int = 20) -> list[dict]:
         .limit(limit)
     )
     result = await db.execute(stmt)
-    return [
+    items = [
         {
             "id": log.id,
             "action": log.action,
@@ -162,3 +220,5 @@ async def list_recent(db: AsyncSession, limit: int = 20) -> list[dict]:
         }
         for log, actor_name, actor_email in result.all()
     ]
+    await _attach_target_labels(db, items)
+    return items

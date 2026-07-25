@@ -1,5 +1,6 @@
 """Refresh token rotation and access token revocation via Redis."""
 
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -16,6 +17,28 @@ _FAMILY_AJTIS_PREFIX = "rta:"  # rta:{family_id} → set of access jtis (all rot
 _BLACKLIST_PREFIX = "bl:"  # bl:{jti} → "1"
 _CLIENT_APP_PREFIX = "cap:"  # cap:{client_app_id} → set of family_ids
 _USER_FAMILIES_PREFIX = "uf:"  # uf:{user_id} → set of family_ids
+_REFRESH_CTX_PREFIX = "rctx:"  # rctx:{family_id} → JSON {ip, ua} last seen
+
+
+async def swap_refresh_context(family_id: str, ip: str, user_agent: str) -> dict | None:
+    """Record the client context (ip + user-agent) last seen for a token family.
+
+    Keyed per family (i.e. per device/session), so multiple devices refreshing
+    for the same user never cross-trigger. Returns the previous context iff it
+    differs from the new one — a changed context on the SAME family is the
+    anomaly signal (possible token theft) — else None.
+    """
+    r = await get_redis()
+    key = f"{_REFRESH_CTX_PREFIX}{family_id}"
+    new = json.dumps({"ip": ip, "ua": user_agent}, sort_keys=True)
+    old = await r.get(key)
+    await r.set(key, new, ex=settings.refresh_token_expire_days * 86400)
+    if old is None or old == new:
+        return None
+    try:
+        return json.loads(old)
+    except ValueError:
+        return None
 
 
 async def get_redis() -> redis.Redis:

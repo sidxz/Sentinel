@@ -98,6 +98,16 @@ export const adminLogout = () =>
 
 export const getStats = () => request<Stats>("/admin/stats");
 
+export const getActivitySummary = (days = 30) =>
+  request<{ days: number; items: import("../types/api").ActivityDailyCount[] }>(
+    `/admin/activity/summary?days=${days}`,
+  );
+
+export const getActivityInsights = (days = 30, userId?: string) =>
+  request<import("../types/api").SignInInsights>(
+    `/admin/activity/insights?days=${days}${userId ? `&user_id=${userId}` : ""}`,
+  );
+
 export const getActivity = (params: {
   page?: number;
   page_size?: number;
