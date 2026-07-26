@@ -42,7 +42,13 @@ interface SignInTipProps {
   payload?: { dataKey?: string | number; value?: number }[];
 }
 
-function SignInTooltip({ active, label, payload }: SignInTipProps) {
+function StackTooltip({
+  active,
+  label,
+  payload,
+  okLabel,
+  failLabel,
+}: SignInTipProps & { okLabel: string; failLabel: string }) {
   if (!active || !payload?.length) return null;
   const get = (key: string) => payload.find((p) => p.dataKey === key)?.value ?? 0;
   return (
@@ -51,19 +57,97 @@ function SignInTooltip({ active, label, payload }: SignInTipProps) {
       <div className="flex items-center gap-1.5">
         <span className="w-2.5 h-0.5 rounded bg-chart-series" />
         <span className="font-semibold">{get("ok")}</span>
-        <span className="text-muted-foreground">sign-ins</span>
+        <span className="text-muted-foreground">{okLabel}</span>
       </div>
       <div className="flex items-center gap-1.5">
         <span className="w-2.5 h-0.5 rounded bg-chart-critical" />
         <span className="font-semibold">{get("fail")}</span>
-        <span className="text-muted-foreground">failed</span>
+        <span className="text-muted-foreground">{failLabel}</span>
       </div>
     </div>
   );
 }
 
+/** Stacked daily bar chart (ok series + fail series) with legend, empty state,
+ *  and an sr-only table carrying every value for non-pointer access. */
+export function DailyStackChart({
+  data,
+  days,
+  okLabel,
+  failLabel,
+  emptyText,
+}: {
+  data: { day: string; ok: number; fail: number }[];
+  days: number;
+  okLabel: string;
+  failLabel: string;
+  emptyText: string;
+}) {
+  const empty = data.every((d) => d.ok === 0 && d.fail === 0);
+
+  return (
+    <div>
+      <div className="flex items-center gap-4 mb-2 justify-end text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-[2px] bg-chart-series" />
+          {okLabel}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-[2px] bg-chart-critical" />
+          <TriangleAlert className="w-3 h-3 text-chart-critical" />
+          {failLabel}
+        </span>
+      </div>
+
+      {empty ? (
+        <div className="h-36 flex items-center justify-center text-sm text-muted-foreground">
+          {emptyText}
+        </div>
+      ) : (
+        <>
+          <ResponsiveContainer width="100%" height={170}>
+            <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -20 }} barCategoryGap="25%">
+              <CartesianGrid vertical={false} stroke="var(--border)" />
+              <XAxis
+                dataKey="day"
+                tickFormatter={fmtDay}
+                interval={Math.max(1, Math.floor(days / 5))}
+                tick={AXIS_TICK}
+                tickLine={false}
+                axisLine={{ stroke: "var(--border)" }}
+              />
+              <YAxis allowDecimals={false} tick={AXIS_TICK} tickLine={false} axisLine={false} />
+              <Tooltip
+                content={<StackTooltip okLabel={okLabel.toLowerCase()} failLabel={failLabel.toLowerCase()} />}
+                cursor={{ fill: "var(--muted)", opacity: 0.6 }}
+                isAnimationActive={false}
+              />
+              {/* card-colored stroke = the surface gap between touching segments */}
+              <Bar dataKey="fail" stackId="a" fill="var(--chart-critical)" stroke="var(--card)" strokeWidth={1} maxBarSize={24} />
+              <Bar dataKey="ok" stackId="a" fill="var(--chart-series)" stroke="var(--card)" strokeWidth={1} radius={[3, 3, 0, 0]} maxBarSize={24} />
+            </BarChart>
+          </ResponsiveContainer>
+
+          {/* table fallback: every value reachable without hover */}
+          <table className="sr-only">
+            <caption>{`Daily ${okLabel.toLowerCase()} and ${failLabel.toLowerCase()}, last ${days} days`}</caption>
+            <thead>
+              <tr><th>Day</th><th>{okLabel}</th><th>{failLabel}</th></tr>
+            </thead>
+            <tbody>
+              {data.map((d) => (
+                <tr key={d.day}><td>{d.day}</td><td>{d.ok}</td><td>{d.fail}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** Daily sign-in volume (blue) with failed attempts (status-critical) stacked
- *  at the baseline. An sr-only table carries every value for non-pointer access. */
+ *  at the baseline. Delegates to DailyStackChart. */
 export function SignInsChart({ items, days = 30 }: { items: ActivityDailyCount[]; days?: number }) {
   const data = useMemo(() => {
     const byDay = new Map<string, { ok: number; fail: number }>();
@@ -77,66 +161,14 @@ export function SignInsChart({ items, days = 30 }: { items: ActivityDailyCount[]
     return [...byDay.entries()].map(([day, v]) => ({ day, ...v }));
   }, [items, days]);
 
-  const empty = data.every((d) => d.ok === 0 && d.fail === 0);
-
   return (
-    <div>
-      <div className="flex items-center gap-4 mb-2 justify-end text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-[2px] bg-chart-series" />
-          Sign-ins
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-[2px] bg-chart-critical" />
-          <TriangleAlert className="w-3 h-3 text-chart-critical" />
-          Failed
-        </span>
-      </div>
-
-      {empty ? (
-        <div className="h-36 flex items-center justify-center text-sm text-muted-foreground">
-          No sign-in activity in the last {days} days
-        </div>
-      ) : (
-        <>
-          <ResponsiveContainer width="100%" height={170}>
-            <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -20 }} barCategoryGap="25%">
-              <CartesianGrid vertical={false} stroke="var(--border)" />
-              <XAxis
-                dataKey="day"
-                tickFormatter={fmtDay}
-                interval={6}
-                tick={AXIS_TICK}
-                tickLine={false}
-                axisLine={{ stroke: "var(--border)" }}
-              />
-              <YAxis allowDecimals={false} tick={AXIS_TICK} tickLine={false} axisLine={false} />
-              <Tooltip
-                content={<SignInTooltip />}
-                cursor={{ fill: "var(--muted)", opacity: 0.6 }}
-                isAnimationActive={false}
-              />
-              {/* card-colored stroke = the surface gap between touching segments */}
-              <Bar dataKey="fail" stackId="a" fill="var(--chart-critical)" stroke="var(--card)" strokeWidth={1} maxBarSize={24} />
-              <Bar dataKey="ok" stackId="a" fill="var(--chart-series)" stroke="var(--card)" strokeWidth={1} radius={[3, 3, 0, 0]} maxBarSize={24} />
-            </BarChart>
-          </ResponsiveContainer>
-
-          {/* table fallback: every value reachable without hover */}
-          <table className="sr-only">
-            <caption>Daily sign-ins and failed attempts, last {days} days</caption>
-            <thead>
-              <tr><th>Day</th><th>Sign-ins</th><th>Failed</th></tr>
-            </thead>
-            <tbody>
-              {data.map((d) => (
-                <tr key={d.day}><td>{d.day}</td><td>{d.ok}</td><td>{d.fail}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-    </div>
+    <DailyStackChart
+      data={data}
+      days={days}
+      okLabel="Sign-ins"
+      failLabel="Failed"
+      emptyText={`No sign-in activity in the last ${days} days`}
+    />
   );
 }
 
@@ -201,4 +233,34 @@ export function ActivityMixChart({ items, days = 30 }: { items: ActivityDailyCou
   }
 
   return <BarList rows={rows} />;
+}
+
+/** Allowed vs denied action checks per day. Fills missing days with zeros. */
+export function ActionsTrendChart({
+  items,
+  days,
+}: {
+  items: { day: string; allowed: number; denied: number }[];
+  days: number;
+}) {
+  const data = useMemo(() => {
+    const byDay = new Map(lastNDays(days).map((d) => [d, { ok: 0, fail: 0 }]));
+    for (const it of items) {
+      const b = byDay.get(it.day);
+      if (b) {
+        b.ok = it.allowed;
+        b.fail = it.denied;
+      }
+    }
+    return [...byDay.entries()].map(([day, v]) => ({ day, ...v }));
+  }, [items, days]);
+  return (
+    <DailyStackChart
+      data={data}
+      days={days}
+      okLabel="Allowed"
+      failLabel="Denied"
+      emptyText={`No action checks in the last ${days} days`}
+    />
+  );
 }
