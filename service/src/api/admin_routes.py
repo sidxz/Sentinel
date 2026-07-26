@@ -3,6 +3,7 @@ import io
 import time
 import uuid
 from datetime import datetime
+from typing import Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
@@ -75,6 +76,7 @@ from src.schemas.realm import (
     RealmUpdateRequest,
 )
 from src.services import (
+    actions_insights_service,
     admin_service,
     activity_service,
     insights_service,
@@ -119,6 +121,17 @@ async def get_activity_insights(
     db: AsyncSession = Depends(get_db),
 ):
     return await insights_service.signin_insights(db, days=days, actor_id=user_id)
+
+
+@router.get("/actions/insights")
+async def get_actions_insights(
+    days: Literal[7, 30, 90] = Query(30),
+    workspace_id: uuid.UUID | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    return await actions_insights_service.actions_insights(
+        db, days=days, workspace_id=workspace_id
+    )
 
 
 @router.get("/activity", response_model=PaginatedResponse)
