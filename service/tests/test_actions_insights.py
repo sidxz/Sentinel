@@ -9,14 +9,19 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 
-from src.database import Base
+from src.api.admin_routes import router as admin_router
+from src.api.dependencies import require_admin
+from src.database import Base, get_db
 from src.models.activity import ActivityLog
 from src.models.role import (
     ActionUsage,
@@ -24,6 +29,7 @@ from src.models.role import (
 from src.models.user import User
 from src.models.workspace import Workspace
 from src.services.actions_insights_service import actions_insights
+from src.services import actions_insights_service
 
 
 @compiles(JSONB, "sqlite")
@@ -341,3 +347,55 @@ async def test_unused_roles(db):
     assert by_name["empty"]["assignees"] == 0
     assert by_name["empty"]["no_assignees"] is True
     assert by_name["idle"]["workspace_name"] == ws.name
+
+
+def test_actions_insights_route_parameter_validation():
+    """Route-level test for GET /admin/actions/insights parameter validation.
+
+    Regression test for Pydantic v2 query-string coercion issue: query strings
+    don't auto-coerce to Literal values. The route must validate explicitly.
+    """
+    app = FastAPI()
+    app.include_router(admin_router)
+
+    # Override require_admin to allow unauthenticated requests
+    async def mock_require_admin():
+        return {"sub": "admin-user"}
+
+    # Override get_db to a no-op
+    async def mock_get_db():
+        yield object()
+
+    app.dependency_overrides[require_admin] = mock_require_admin
+    app.dependency_overrides[get_db] = mock_get_db
+
+    # Monkeypatch actions_insights to return stub data
+    with patch.object(actions_insights_service, "actions_insights") as mock_insights:
+        mock_insights.return_value = {"days": 30, "top_actions": []}
+
+        client = TestClient(app)
+
+        # Valid days: 7, 30, 90 (including default)
+        resp = client.get("/admin/actions/insights?days=30")
+        assert resp.status_code == 200, f"days=30 failed: {resp.text}"
+
+        resp = client.get("/admin/actions/insights?days=90")
+        assert resp.status_code == 200, f"days=90 failed: {resp.text}"
+
+        resp = client.get("/admin/actions/insights?days=7")
+        assert resp.status_code == 200, f"days=7 failed: {resp.text}"
+
+        # No param: uses default (30)
+        resp = client.get("/admin/actions/insights")
+        assert resp.status_code == 200, f"no days param failed: {resp.text}"
+
+        # Invalid days: should return 422
+        resp = client.get("/admin/actions/insights?days=15")
+        assert resp.status_code == 422, (
+            f"days=15 should fail with 422, got {resp.status_code}"
+        )
+
+        resp = client.get("/admin/actions/insights?days=100")
+        assert resp.status_code == 422, (
+            f"days=100 should fail with 422, got {resp.status_code}"
+        )

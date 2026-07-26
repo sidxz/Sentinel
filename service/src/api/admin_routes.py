@@ -3,7 +3,6 @@ import io
 import time
 import uuid
 from datetime import datetime
-from typing import Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
@@ -125,10 +124,12 @@ async def get_activity_insights(
 
 @router.get("/actions/insights")
 async def get_actions_insights(
-    days: Literal[7, 30, 90] = Query(30),
+    days: int = Query(30),
     workspace_id: uuid.UUID | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
+    if days not in (7, 30, 90):
+        raise HTTPException(status_code=422, detail="days must be 7, 30, or 90")
     return await actions_insights_service.actions_insights(
         db, days=days, workspace_id=workspace_id
     )
