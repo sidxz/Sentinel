@@ -9,12 +9,24 @@ granted-but-never-used pairs and roles nobody exercises.
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.activity import ActivityLog
-from src.models.role import ActionUsage
+from src.models.group import GroupMembership
+from src.models.role import (
+    ActionUsage,
+    GroupRole,
+    Role,
+    RoleAction,
+    ServiceAction,
+    UserRole,
+)
 from src.models.user import User
+from src.models.workspace import Workspace
+
+
+_DORMANT_LIMIT = 50
 
 
 def _day_iso(d) -> str:
@@ -103,6 +115,138 @@ async def actions_insights(
         await db.execute(select(func.min(ActionUsage.day)))
     ).scalar_one_or_none()
 
+    # ── dormant grants: granted (user, service, action) pairs w/ no usage ──
+    direct = (
+        select(
+            UserRole.user_id.label("user_id"),
+            ServiceAction.service_name.label("service_name"),
+            ServiceAction.action.label("action"),
+            Role.name.label("role_name"),
+            Role.workspace_id.label("workspace_id"),
+        )
+        .select_from(Role)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .join(RoleAction, RoleAction.role_id == Role.id)
+        .join(ServiceAction, RoleAction.service_action_id == ServiceAction.id)
+    )
+    via_group = (
+        select(
+            GroupMembership.user_id.label("user_id"),
+            ServiceAction.service_name.label("service_name"),
+            ServiceAction.action.label("action"),
+            Role.name.label("role_name"),
+            Role.workspace_id.label("workspace_id"),
+        )
+        .select_from(Role)
+        .join(GroupRole, GroupRole.role_id == Role.id)
+        .join(GroupMembership, GroupMembership.group_id == GroupRole.group_id)
+        .join(RoleAction, RoleAction.role_id == Role.id)
+        .join(ServiceAction, RoleAction.service_action_id == ServiceAction.id)
+    )
+    if workspace_id:
+        direct = direct.where(Role.workspace_id == workspace_id)
+        via_group = via_group.where(Role.workspace_id == workspace_id)
+    granted = direct.union(via_group).subquery("granted")
+
+    used = (
+        select(1)
+        .where(
+            ActionUsage.user_id == granted.c.user_id,
+            ActionUsage.workspace_id == granted.c.workspace_id,
+            ActionUsage.service_name == granted.c.service_name,
+            ActionUsage.action == granted.c.action,
+            ActionUsage.day >= since,
+        )
+        .exists()
+    )
+    dormant_base = (
+        select(
+            granted.c.user_id,
+            User.email,
+            User.name,
+            granted.c.service_name,
+            granted.c.action,
+            granted.c.role_name,
+            granted.c.workspace_id,
+            Workspace.name.label("workspace_name"),
+        )
+        .join(User, User.id == granted.c.user_id)
+        .join(Workspace, Workspace.id == granted.c.workspace_id)
+        .where(~used)
+    )
+    dormant_total = (
+        await db.execute(select(func.count()).select_from(dormant_base.subquery()))
+    ).scalar_one()
+    dormant_rows = (
+        await db.execute(
+            dormant_base.order_by(
+                granted.c.service_name, granted.c.action, User.email
+            ).limit(_DORMANT_LIMIT)
+        )
+    ).all()
+
+    # ── unused roles: no assignee exercised any of the role's actions ──
+    direct_use = (
+        select(1)
+        .select_from(UserRole)
+        .join(RoleAction, RoleAction.role_id == UserRole.role_id)
+        .join(ServiceAction, ServiceAction.id == RoleAction.service_action_id)
+        .join(
+            ActionUsage,
+            and_(
+                ActionUsage.user_id == UserRole.user_id,
+                ActionUsage.workspace_id == Role.workspace_id,
+                ActionUsage.service_name == ServiceAction.service_name,
+                ActionUsage.action == ServiceAction.action,
+                ActionUsage.day >= since,
+            ),
+        )
+        .where(UserRole.role_id == Role.id)
+    )
+    group_use = (
+        select(1)
+        .select_from(GroupRole)
+        .join(GroupMembership, GroupMembership.group_id == GroupRole.group_id)
+        .join(RoleAction, RoleAction.role_id == GroupRole.role_id)
+        .join(ServiceAction, ServiceAction.id == RoleAction.service_action_id)
+        .join(
+            ActionUsage,
+            and_(
+                ActionUsage.user_id == GroupMembership.user_id,
+                ActionUsage.workspace_id == Role.workspace_id,
+                ActionUsage.service_name == ServiceAction.service_name,
+                ActionUsage.action == ServiceAction.action,
+                ActionUsage.day >= since,
+            ),
+        )
+        .where(GroupRole.role_id == Role.id)
+    )
+    direct_assignees = (
+        select(func.count()).where(UserRole.role_id == Role.id).scalar_subquery()
+    )
+    group_assignees = (
+        select(func.count())
+        .select_from(GroupRole)
+        .join(GroupMembership, GroupMembership.group_id == GroupRole.group_id)
+        .where(GroupRole.role_id == Role.id)
+        .scalar_subquery()
+    )
+    unused_stmt = (
+        select(
+            Role.id,
+            Role.name,
+            Role.workspace_id,
+            Workspace.name.label("workspace_name"),
+            (direct_assignees + group_assignees).label("assignees"),
+        )
+        .join(Workspace, Workspace.id == Role.workspace_id)
+        .where(~exists(direct_use), ~exists(group_use))
+        .order_by(Workspace.name, Role.name)
+    )
+    if workspace_id:
+        unused_stmt = unused_stmt.where(Role.workspace_id == workspace_id)
+    unused_rows = (await db.execute(unused_stmt)).all()
+
     return {
         "days": days,
         "since": since.isoformat(),
@@ -116,7 +260,31 @@ async def actions_insights(
             for u, e, n, c in top_users
         ],
         "trend": [{"day": d, **v} for d, v in sorted(trend.items())],
-        # filled in by the role-mining pass (Task 2)
-        "dormant_grants": {"total": 0, "items": []},
-        "unused_roles": [],
+        "dormant_grants": {
+            "total": dormant_total,
+            "items": [
+                {
+                    "user_id": str(r.user_id),
+                    "email": r.email,
+                    "name": r.name,
+                    "service_name": r.service_name,
+                    "action": r.action,
+                    "role_name": r.role_name,
+                    "workspace_id": str(r.workspace_id),
+                    "workspace_name": r.workspace_name,
+                }
+                for r in dormant_rows
+            ],
+        },
+        "unused_roles": [
+            {
+                "id": str(r.id),
+                "name": r.name,
+                "workspace_id": str(r.workspace_id),
+                "workspace_name": r.workspace_name,
+                "assignees": r.assignees,
+                "no_assignees": r.assignees == 0,
+            }
+            for r in unused_rows
+        ],
     }
