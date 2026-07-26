@@ -43,8 +43,9 @@ import { AddItemsDialog, batchAdd, type PickerItem } from "../components/AddItem
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ActionsInsightsView } from "./ActionsInsights";
 
-const TABS = ["Members", "Groups", "Roles", "Access"] as const;
+const TABS = ["Members", "Groups", "Roles", "Access", "Usage"] as const;
 type Tab = (typeof TABS)[number];
 
 const selectClass =
@@ -188,6 +189,7 @@ export function WorkspaceDetail() {
       {tab === "Groups" && <GroupsTab workspaceId={id!} />}
       {tab === "Roles" && <RolesTab workspaceId={id!} />}
       {tab === "Access" && <AccessTab workspaceId={id!} />}
+      {tab === "Usage" && <ActionsInsightsView workspaceId={id!} />}
 
       {/* Edit modal */}
       <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Workspace">
