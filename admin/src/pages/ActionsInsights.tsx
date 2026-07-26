@@ -125,6 +125,7 @@ export function ActionsInsightsView({ workspaceId }: { workspaceId?: string }) {
             <button
               key={r}
               onClick={() => setDays(r)}
+              aria-pressed={days === r}
               className={`px-3 py-1 text-xs ${
                 days === r
                   ? "bg-primary text-primary-foreground"
@@ -205,6 +206,7 @@ export function ActionsInsightsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Usage</h1>
         <select
+          aria-label="Workspace"
           value={workspaceId ?? ""}
           onChange={(e) => setWorkspaceId(e.target.value || undefined)}
           className="px-2 py-1.5 border border-border bg-background rounded text-xs text-foreground"
