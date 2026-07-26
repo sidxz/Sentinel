@@ -6,6 +6,7 @@ import { useTheme } from "./lib/theme";
 import { Activity } from "./pages/Activity";
 import { ClientAppDetail } from "./pages/ClientAppDetail";
 import { ClientApps } from "./pages/ClientApps";
+import { ActionsInsightsPage } from "./pages/ActionsInsights";
 import { Dashboard } from "./pages/Dashboard";
 import { Insights } from "./pages/Insights";
 import { ServiceAppDetail } from "./pages/ServiceAppDetail";
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/realms/:id" element={<RealmDetail />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/insights" element={<Insights />} />
+          <Route path="/usage" element={<ActionsInsightsPage />} />
           <Route path="/system" element={<SystemHealth />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

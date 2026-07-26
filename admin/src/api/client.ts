@@ -108,6 +108,11 @@ export const getActivityInsights = (days = 30, userId?: string) =>
     `/admin/activity/insights?days=${days}${userId ? `&user_id=${userId}` : ""}`,
   );
 
+export const getActionsInsights = (days = 30, workspaceId?: string) =>
+  request<import("../types/api").ActionsInsights>(
+    `/admin/actions/insights?days=${days}${workspaceId ? `&workspace_id=${workspaceId}` : ""}`,
+  );
+
 export const getActivity = (params: {
   page?: number;
   page_size?: number;

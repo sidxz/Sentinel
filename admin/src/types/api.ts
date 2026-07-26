@@ -197,6 +197,57 @@ export interface SignInInsights {
   unresolved: number; // sign-ins from private/unresolvable addresses
 }
 
+export interface ActionCount {
+  service_name: string;
+  action: string;
+  count: number;
+}
+
+export interface ActionUserCount {
+  user_id: string;
+  email: string;
+  name: string;
+  count: number;
+}
+
+export interface ActionTrendPoint {
+  day: string; // YYYY-MM-DD
+  allowed: number;
+  denied: number;
+}
+
+export interface DormantGrant {
+  user_id: string;
+  email: string;
+  name: string;
+  service_name: string;
+  action: string;
+  role_name: string;
+  workspace_id: string;
+  workspace_name: string;
+}
+
+export interface UnusedRole {
+  id: string;
+  name: string;
+  workspace_id: string;
+  workspace_name: string;
+  assignees: number;
+  no_assignees: boolean;
+}
+
+export interface ActionsInsights {
+  days: number;
+  since: string;
+  data_since: string | null;
+  top_actions: ActionCount[];
+  by_service: { service_name: string; count: number }[];
+  top_users: ActionUserCount[];
+  trend: ActionTrendPoint[];
+  dormant_grants: { total: number; items: DormantGrant[] };
+  unused_roles: UnusedRole[];
+}
+
 export interface ActivityLog {
   id: string;
   action: string;

@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import {
   Activity,
   AppWindow,
+  BarChart3,
   Boxes,
   Building2,
   Cpu,
@@ -33,6 +34,7 @@ const NAV = [
   { to: "/realms", label: "Realms", Icon: Boxes },
   { to: "/activity", label: "Activity", Icon: Activity },
   { to: "/insights", label: "Insights", Icon: Globe },
+  { to: "/usage", label: "Usage", Icon: BarChart3 },
   { to: "/system", label: "System", Icon: Cpu },
   { to: "/settings", label: "Settings", Icon: Settings },
 ] as const;
