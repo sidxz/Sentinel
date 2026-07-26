@@ -58,7 +58,7 @@ setup: ## One-time setup: keys, TLS certs, env files, deps, dev containers
 		echo "· .env.prod already exists"; \
 	fi
 	@# ── Dev dependencies + containers ───────────────────────────────
-	uv sync && cd service && uv sync --extra dev
+	uv sync --extra dev
 	cd admin && npm install
 	docker compose up -d identity-postgres identity-redis
 	@until [ "$$(docker compose ps identity-postgres --format '{{.Health}}')" = "healthy" ]; do sleep 1; done

@@ -9,6 +9,10 @@ dependencies = ["sentinel-auth", "sentinel-auth-sdk", "uvicorn[standard]>=0.34.0
 [project.optional-dependencies]
 dev = [
     "ruff>=0.8",
+    "aiosqlite>=0.21",
+    "pytest>=9.0",
+    "pytest-asyncio>=1.4",
+    "respx>=0.22",
 ]
 docs = [
     "mkdocs>=1.6",
