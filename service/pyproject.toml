@@ -23,6 +23,11 @@ dependencies = [
     "geoip2fast>=1.2.2",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "aiosqlite>=0.21",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
