@@ -6,6 +6,7 @@ from sentinel_auth.authz_middleware import AuthzMiddleware
 from sentinel_auth.dependencies import get_token
 from sentinel_auth.middleware import JWTAuthMiddleware
 from sentinel_auth.permissions import PermissionClient
+from sentinel_auth.proxy import create_proxy_router
 from sentinel_auth.roles import RoleClient
 from sentinel_auth.sentinel import Sentinel
 from sentinel_auth.types import AuthenticatedUser, SentinelError, WorkspaceContext
@@ -24,5 +25,6 @@ __all__ = [
     "SystemAuth",
     "WorkspaceContext",
     "__version__",
+    "create_proxy_router",
     "get_token",
 ]

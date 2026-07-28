@@ -16,6 +16,72 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ---
 
+## [0.18.0] – 2026-07-28 — Usage analytics, log coverage, private-network deployment
+
+Three strands: an action-usage analytics surface (admin Usage dashboard backed
+by a new insights endpoint and a daily usage rollup), a log-coverage audit that
+instruments the token and authorization surfaces end to end, and reverse-proxy
+SDK helpers so Sentinel can run with no browser-reachable address
+(ClusterIP-only / internal overlay network).
+
+### Breaking changes
+
+None.
+
+### Service
+
+- **Added** `GET /admin/actions/insights` — action-usage analytics for the
+  admin panel: per-action/per-service usage aggregates over a new
+  `action_usage` daily rollup, allowed-vs-denied trends, and dormant-grant /
+  unused-role mining (grants and roles with no recorded use).
+- **Added** RBAC check verdict recording: allowed checks land in the
+  `action_usage` rollup, denials become `action_denied` activity events.
+- **Added** security events across the token surface (issue, refresh, revoke,
+  denylist hits), entity-ACL verdict audits, owner-path workspace/group
+  mutation audits, guard-denial logging, and logout symmetry (log-coverage
+  tranches A–C).
+- **Added** tier-1 activity enrichment: login-failure audit events and
+  refresh-context (IP / user-agent) on token refresh.
+- **Fixed** `GET /admin/actions/insights` query-string coercion (pydantic
+  `Literal` query params 422'd on valid values); regression test added.
+
+### Admin panel
+
+- **Added** Usage dashboard — action analytics (usage trends, top actions,
+  allowed/denied split) plus dormant-grant and unused-role mining, with a
+  per-workspace Usage tab in workspace detail.
+- **Fixed** Activity page event rendering gaps surfaced by the tier-1
+  enrichment; new Insights page for login/refresh context.
+
+### Python SDK
+
+- **Added** `Sentinel.proxy_router()` / `create_proxy_router()` — a FastAPI
+  reverse-proxy router for private-network deployments where browsers cannot
+  reach Sentinel. Forwards only the browser-facing surface: `POST
+  /authz/resolve` (service key injected — doubles as the mint endpoint) and the
+  read-only directory endpoints (members, groups, group members, `/users/me`)
+  with the caller's tokens passed through. `X-Forwarded-For`/`User-Agent` are
+  forwarded so Sentinel's access logs and rate limits still see real client IPs
+  (pair with `BEHIND_PROXY`/`TRUSTED_PROXY_COUNT` on the service).
+
+### JS SDKs
+
+- **Added** `@sentinel-auth/nextjs/proxy` — `createSentinelProxy()` route-handler
+  factory for `app/api/sentinel/[...path]/route.ts`, implementing the same
+  allowlist/key-injection rules as the Python proxy router.
+- **Documented** that `SentinelAuthzConfig.sentinelUrl` may be a same-origin
+  path (e.g. `"/api/sentinel"`) pointing at one of the reverse-proxy helpers,
+  with `mintEndpoint: "/api/sentinel/authz/resolve"`; regression tests lock in
+  that all browser calls stay same-origin in that configuration.
+
+### Docs
+
+- **Added** `deployment/private-network.md` — running Sentinel ClusterIP-only
+  in Kubernetes / Docker Swarm: proxy wiring, client-IP preservation, and the
+  GitHub-IdP / admin-access / rate-limit caveats.
+
+---
+
 ## [0.17.2] – 2026-07-20 — CORS preflight allows X-Authz-Token
 
 Patch for browser authz-mode: the JS SDK's member-directory and share-dialog

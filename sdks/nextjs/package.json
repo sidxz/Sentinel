@@ -29,6 +29,11 @@
       "types": "./dist/authz-middleware.d.ts",
       "import": "./dist/authz-middleware.js",
       "require": "./dist/authz-middleware.cjs"
+    },
+    "./proxy": {
+      "types": "./dist/proxy.d.ts",
+      "import": "./dist/proxy.js",
+      "require": "./dist/proxy.cjs"
     }
   },
   "main": "./dist/index.cjs",

@@ -619,3 +619,49 @@ describe('SentinelAuthz — consumeReturnTo', () => {
     expect(client().consumeReturnTo()).toBeNull()
   })
 })
+
+describe('SentinelAuthz with a relative (same-origin proxy) sentinelUrl', () => {
+  // Private-network deployments: the browser cannot reach Sentinel, so
+  // sentinelUrl points at the app's own reverse-proxy mount (e.g. the
+  // @sentinel-auth/nextjs createSentinelProxy or Python SDK proxy_router).
+  // These lock in that every browser call stays same-origin.
+  let store: AuthzMemoryStore
+  let client: SentinelAuthz
+
+  beforeEach(() => {
+    store = new AuthzMemoryStore()
+    client = new SentinelAuthz({
+      sentinelUrl: '/api/sentinel',
+      mintEndpoint: '/api/sentinel/authz/resolve',
+      storage: store,
+      autoRefresh: false,
+    })
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    client.destroy()
+    vi.restoreAllMocks()
+  })
+
+  it('resolve posts to the proxy path, not an absolute URL', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify(resolveResponse), { status: 200 }),
+    )
+    await client.resolve('idp-token-123', 'google')
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/api/sentinel/authz/resolve')
+  })
+
+  it('directory reads hit the proxy path with dual-token headers', async () => {
+    store.setTokens('idp-token', makeJwt(authzPayload), 'google', 'ws-1')
+    store.setUserIdentity({ email: 'alice@acme.com', name: 'Alice' })
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify([]), { status: 200 }),
+    )
+    await client.searchMembers('jan', 10)
+    const [url, init] = vi.mocked(fetch).mock.calls[0]
+    expect(url).toBe('/api/sentinel/workspaces/ws-1/members?q=jan&limit=10')
+    const headers = new Headers((init as RequestInit).headers)
+    expect(headers.get('X-Authz-Token')).toBe(makeJwt(authzPayload))
+  })
+})

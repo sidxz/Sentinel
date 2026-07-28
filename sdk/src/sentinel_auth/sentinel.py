@@ -162,6 +162,21 @@ class Sentinel:
             self._authz = AuthzClient(self.base_url, self.service_key)
         return self._authz
 
+    def proxy_router(self, timeout: float = 10.0):
+        """Reverse-proxy router for private-network Sentinel deployments.
+
+        Forwards the browser-facing Sentinel surface (discovery/mint via
+        ``/authz/resolve`` with the service key injected, plus the read-only
+        workspace-directory endpoints with the caller's tokens passed through)
+        so the frontend can use a same-origin ``sentinelUrl``. See
+        :mod:`sentinel_auth.proxy`.
+
+        Usage: ``app.include_router(sentinel.proxy_router(), prefix="/api/sentinel")``
+        """
+        from sentinel_auth.proxy import create_proxy_router
+
+        return create_proxy_router(self.base_url, self.service_key, timeout=timeout)
+
     # -- Middleware -----------------------------------------------------------
 
     def protect(

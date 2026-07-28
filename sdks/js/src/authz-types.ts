@@ -31,8 +31,19 @@ export const IdpConfigs = {
 } as const
 
 export interface SentinelAuthzConfig {
-  /** Base URL of the Sentinel service (e.g. "http://localhost:9003").
-   *  Used by the browser only to DISCOVER workspaces for an IdP token. */
+  /** Base URL the browser uses to reach Sentinel (e.g. "http://localhost:9003").
+   *
+   * Used only for the browser-facing reads: workspace discovery
+   * (``/authz/resolve`` without a workspace) and the directory helpers
+   * (members/groups/``/users/me``). It is NOT used for redirects, issuer, or
+   * JWKS derivation.
+   *
+   * Private-network deployments: when Sentinel has no browser-reachable
+   * address, set this to a same-origin path (e.g. ``"/api/sentinel"``) served
+   * by your backend's reverse proxy — ``createSentinelProxy`` from
+   * ``@sentinel-auth/nextjs/proxy`` or ``Sentinel.proxy_router()`` from the
+   * Python SDK — and set ``mintEndpoint`` to ``"/api/sentinel/authz/resolve"``.
+   */
   sentinelUrl: string
   /**
    * URL of YOUR backend's mint endpoint. Required.
