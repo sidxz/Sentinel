@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -327,3 +327,125 @@ async def test_first_login_seeds_both_sets_silently():
     log_activity.assert_not_awaited()
     assert fake.sets[f"seen:cty:{UID}"] == {"US"}
     assert fake.sets[f"seen:dev:{UID}"] == {"curl|Other"}
+
+
+def _stuffing_settings(monkeypatch):
+    monkeypatch.setattr(settings, "signal_stuffing_failures", 3)
+    monkeypatch.setattr(settings, "signal_stuffing_distinct_emails", 2)
+
+
+@pytest.mark.asyncio
+async def test_stuffing_fires_on_spread_not_volume(monkeypatch):
+    from src.services import signal_service
+
+    _stuffing_settings(monkeypatch)
+    fake = FakeRedis()
+    with (
+        patch.object(signal_service, "get_redis", AsyncMock(return_value=fake)),
+        patch(
+            "src.services.activity_service.log_activity", new_callable=AsyncMock
+        ) as log_activity,
+    ):
+        # 3 failures, ONE email — volume without spread: quiet.
+        for _ in range(3):
+            await signal_service.on_login_failure(
+                AsyncMock(), ip="198.51.100.7", user_agent="UA", email="a@x.com"
+            )
+        log_activity.assert_not_awaited()
+        # A second distinct email crosses both thresholds: one signal.
+        await signal_service.on_login_failure(
+            AsyncMock(), ip="198.51.100.7", user_agent="UA", email="b@x.com"
+        )
+        stuffing = [
+            c.kwargs
+            for c in log_activity.await_args_list
+            if c.kwargs["action"] == "credential_stuffing_suspected"
+        ]
+        assert len(stuffing) == 1
+        d = stuffing[0]["detail"]
+        assert d["failures"] == 4 and d["distinct_emails"] == 2
+        assert stuffing[0]["target_type"] == "system"
+        assert stuffing[0]["actor_id"] is None
+        # Further failures in the same window stay quiet (flag marker).
+        await signal_service.on_login_failure(
+            AsyncMock(), ip="198.51.100.7", user_agent="UA", email="c@x.com"
+        )
+        assert (
+            len(
+                [
+                    c
+                    for c in log_activity.await_args_list
+                    if c.kwargs["action"] == "credential_stuffing_suspected"
+                ]
+            )
+            == 1
+        )
+
+
+@pytest.mark.asyncio
+async def test_stuffing_counters_are_per_ip(monkeypatch):
+    from src.services import signal_service
+
+    _stuffing_settings(monkeypatch)
+    fake = FakeRedis()
+    with (
+        patch.object(signal_service, "get_redis", AsyncMock(return_value=fake)),
+        patch(
+            "src.services.activity_service.log_activity", new_callable=AsyncMock
+        ) as log_activity,
+    ):
+        for i, ip in enumerate(["1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"]):
+            await signal_service.on_login_failure(
+                AsyncMock(), ip=ip, user_agent="UA", email=f"u{i}@x.com"
+            )
+    log_activity.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_login_failure_helper_feeds_counters():
+    """_log_login_failure calls on_login_failure by default…"""
+    from src.api.auth_routes import _log_login_failure
+
+    db = AsyncMock()
+    with (
+        patch("src.services.activity_service.log_activity", new_callable=AsyncMock),
+        patch(
+            "src.api.auth_routes.signal_service.on_login_failure",
+            new_callable=AsyncMock,
+        ) as on_failure,
+    ):
+        request = MagicMock()
+        request.client.host = "203.0.113.9"
+        request.headers = {"user-agent": "TestUA/1.0"}
+        await _log_login_failure(
+            db, request, provider="google", reason="org_not_permitted", email="e@x.com"
+        )
+    on_failure.assert_awaited_once()
+    kw = on_failure.await_args.kwargs
+    assert kw["ip"] == "203.0.113.9" and kw["email"] == "e@x.com"
+
+
+@pytest.mark.asyncio
+async def test_login_failure_helper_can_skip_counters():
+    """…and count_for_stuffing=False keeps config-shaped rejects out of them."""
+    from src.api.auth_routes import _log_login_failure
+
+    db = AsyncMock()
+    with (
+        patch("src.services.activity_service.log_activity", new_callable=AsyncMock),
+        patch(
+            "src.api.auth_routes.signal_service.on_login_failure",
+            new_callable=AsyncMock,
+        ) as on_failure,
+    ):
+        request = MagicMock()
+        request.client.host = "203.0.113.9"
+        request.headers = {"user-agent": "TestUA/1.0"}
+        await _log_login_failure(
+            db,
+            request,
+            provider="google",
+            reason="redirect_uri_not_allowed",
+            count_for_stuffing=False,
+        )
+    on_failure.assert_not_awaited()

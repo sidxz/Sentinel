@@ -31,6 +31,7 @@ from src.services import (
     auth_code_service,
     auth_service,
     organization_service,
+    signal_service,
     token_service,
     workspace_service,
 )
@@ -100,6 +101,7 @@ async def _log_login_failure(
     flow: str = "user",
     email: str | None = None,
     error_type: str | None = None,
+    count_for_stuffing: bool = True,
 ) -> None:
     """Best-effort admin-visible audit row for a failed sign-in.
 
@@ -137,6 +139,13 @@ async def _log_login_failure(
             detail=detail,
         )
         await db.commit()
+        if count_for_stuffing:
+            await signal_service.on_login_failure(
+                db,
+                ip=detail["ip"],
+                user_agent=detail["user_agent"],
+                email=email,
+            )
     except Exception:
         logger.warning(
             "audit.write_failed",
