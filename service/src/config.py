@@ -121,6 +121,13 @@ class Settings(BaseSettings):
         parse(v)  # raises ValueError on a malformed limit string
         return v
 
+    # Tier-1 security signals (detect-only; see docs/ai-security-roadmap.md)
+    signals_enabled: bool = True
+    signal_impossible_travel_kmh: int = 900  # implied speed above this → signal
+    signal_stuffing_window_minutes: int = 15  # sliding window for failure counters
+    signal_stuffing_failures: int = 10  # failures per IP in window, AND:
+    signal_stuffing_distinct_emails: int = 5  # distinct emails per IP in window
+
     # Admin
     admin_emails: str = ""
     admin_url: str = "http://localhost:9004"
