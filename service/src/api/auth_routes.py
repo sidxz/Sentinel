@@ -102,23 +102,30 @@ async def _log_login_failure(
     email: str | None = None,
     error_type: str | None = None,
     count_for_stuffing: bool = True,
+    stream_event: str = "auth.login.failed",
+    **stream_extra: str,
 ) -> None:
     """Best-effort admin-visible audit row for a failed sign-in.
 
-    Also the single emit point for the auth.login.failed security-stream
-    event — both flows (user and admin) route through here, so the stream
-    and the DB row can't drift apart.
+    Also the single emit point for the login-failure security-stream event —
+    every flow (user, admin, and pre-callback start rejects) routes through
+    here, so the stream and the DB row can't drift apart. Start rejects pass
+    ``stream_event="auth.login.rejected"`` (outcome "denied"); everything else
+    keeps the default ``auth.login.failed`` (outcome "failure"). Any extra
+    kwargs (e.g. ``client_id``, ``redirect_uri``) flow to both the stream
+    fields and the DB detail dict.
 
     Rolls back first so the audit row is the ONLY thing committed (a failed
     flow may have flushed partial state, e.g. a half-linked user). Must never
     mask the original error path.
     """
-    stream_fields: dict = {"provider": provider, "flow": flow}
+    stream_fields: dict = {"provider": provider, "flow": flow, **stream_extra}
     if email and "@" in email:
         stream_fields["email_domain"] = email.split("@", 1)[-1]
     if error_type:
         stream_fields["error_type"] = error_type
-    log_security("auth.login.failed", outcome="failure", reason=reason, **stream_fields)
+    outcome = "denied" if stream_event == "auth.login.rejected" else "failure"
+    log_security(stream_event, outcome=outcome, reason=reason, **stream_fields)
     try:
         await db.rollback()
         detail: dict = {
@@ -131,6 +138,7 @@ async def _log_login_failure(
             detail["email"] = email
         if error_type:
             detail["error_type"] = error_type
+        detail.update(stream_extra)
         await activity_service.log_activity(
             db,
             action="admin_login_failed" if flow == "admin" else "login_failed",
@@ -174,6 +182,14 @@ async def login(
 ):
     configured = get_configured_providers()
     if provider not in configured:
+        await _log_login_failure(
+            db,
+            request,
+            provider,
+            "provider_not_configured",
+            count_for_stuffing=False,
+            stream_event="auth.login.rejected",
+        )
         return _error_page(
             400,
             "Provider Not Available",
@@ -181,6 +197,14 @@ async def login(
         )
 
     if code_challenge_method != "S256":
+        await _log_login_failure(
+            db,
+            request,
+            provider,
+            "pkce_method_rejected",
+            count_for_stuffing=False,
+            stream_event="auth.login.rejected",
+        )
         return _error_page(
             400,
             "Unsupported Challenge Method",
@@ -202,14 +226,15 @@ async def login(
     if not client_app:
         # Probe signal: unknown client_id or unregistered redirect_uri —
         # indefinitely repeatable enumeration attempts must leave a trace.
-        log_security(
-            "auth.login.rejected",
-            outcome="denied",
-            reason="redirect_uri_not_allowed",
-            provider=provider,
+        await _log_login_failure(
+            db,
+            request,
+            provider,
+            "redirect_uri_not_allowed",
+            count_for_stuffing=False,
+            stream_event="auth.login.rejected",
             client_id=str(client_id),
             redirect_uri=redirect_uri,
-            source_ip=get_client_ip(request),
         )
         return _error_page(
             400,
@@ -649,9 +674,20 @@ async def logout(
 
 @router.get("/admin/login/{provider}")
 @limiter.limit(settings.rate_limit_auth_admin)
-async def admin_login(provider: str, request: Request):
+async def admin_login(
+    provider: str, request: Request, db: AsyncSession = Depends(get_db)
+):
     configured = get_configured_providers()
     if provider not in configured:
+        await _log_login_failure(
+            db,
+            request,
+            provider,
+            "provider_not_configured",
+            flow="admin",
+            count_for_stuffing=False,
+            stream_event="auth.login.rejected",
+        )
         raise HTTPException(
             status_code=400, detail=f"Provider '{provider}' is not configured"
         )

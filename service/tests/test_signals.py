@@ -576,3 +576,91 @@ async def test_rotate_calls_travel_signal_on_context_change(_ephemeral_keys):
     on_changed.assert_awaited_once()
     kw = on_changed.await_args.kwargs
     assert kw["user_id"] == user.id and kw["ip"] == "9.9.9.9"
+
+
+# ---------------------------------------------------------------------------
+# Start-endpoint audit gap: login-start rejects route through
+# _log_login_failure with stream_event="auth.login.rejected"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_start_reject_writes_row_with_rejected_stream_event():
+    from structlog.testing import capture_logs
+
+    from src.api.auth_routes import _log_login_failure
+
+    db = AsyncMock()
+    request = MagicMock()
+    request.client.host = "203.0.113.9"
+    request.headers = {"user-agent": "TestUA/1.0"}
+    with (
+        patch(
+            "src.services.activity_service.log_activity", new_callable=AsyncMock
+        ) as log_activity,
+        patch(
+            "src.api.auth_routes.signal_service.on_login_failure",
+            new_callable=AsyncMock,
+        ) as on_failure,
+        capture_logs() as logs,
+    ):
+        await _log_login_failure(
+            db,
+            request,
+            provider="google",
+            reason="redirect_uri_not_allowed",
+            count_for_stuffing=False,
+            stream_event="auth.login.rejected",
+            client_id="abc",
+            redirect_uri="https://evil.example/cb",
+        )
+    kw = log_activity.await_args.kwargs
+    assert kw["action"] == "login_failed"
+    assert kw["detail"]["reason"] == "redirect_uri_not_allowed"
+    assert kw["detail"]["redirect_uri"] == "https://evil.example/cb"
+    on_failure.assert_not_awaited()
+    rejected = [e for e in logs if e.get("event") == "auth.login.rejected"]
+    assert rejected and rejected[0]["outcome"] == "denied"
+    assert rejected[0]["redirect_uri"] == "https://evil.example/cb"
+
+
+def test_login_start_rejects_unknown_provider_and_logs():
+    """Endpoint-level: GET /auth/login/{bogus} 400s AND writes the audit row."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from starlette.middleware.sessions import SessionMiddleware
+
+    from src.api.auth_routes import router
+    from src.database import get_db
+
+    app = FastAPI()
+    app.add_middleware(SessionMiddleware, secret_key="test-secret")
+    from slowapi.errors import RateLimitExceeded
+
+    from src.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+    app.include_router(router)
+
+    async def _db():
+        yield AsyncMock()
+
+    app.dependency_overrides[get_db] = _db
+
+    with patch(
+        "src.services.activity_service.log_activity", new_callable=AsyncMock
+    ) as log_activity:
+        client = TestClient(app)
+        resp = client.get(
+            "/auth/login/bogus",
+            params={
+                "client_id": str(uuid.uuid4()),
+                "redirect_uri": "https://x.example/cb",
+                "code_challenge": "c" * 43,
+            },
+        )
+    assert resp.status_code == 400
+    kw = log_activity.await_args.kwargs
+    assert kw["action"] == "login_failed"
+    assert kw["detail"]["reason"] == "provider_not_configured"
