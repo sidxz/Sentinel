@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { getActivity, getAllWorkspaces, getUsers } from "../api/client";
 import type { ActivityLog } from "../types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export function Activity() {
+  const [searchParams] = useSearchParams();
   const [page, setPage] = useState(1);
-  const [action, setAction] = useState("");
+  const [action, setAction] = useState(searchParams.get("action") ?? "");
   const [targetType, setTargetType] = useState("");
   const [workspaceId, setWorkspaceId] = useState("");
   const [fromDate, setFromDate] = useState("");
@@ -52,6 +54,8 @@ export function Activity() {
     "login_failed", "admin_login_failed",
     "refresh_context_changed", "refresh_reuse_detected",
     "token_family_revoked", "action_denied",
+    "login_impossible_travel", "login_new_country", "login_new_device",
+    "credential_stuffing_suspected",
     "user_activated", "user_deactivated", "user_updated",
     "user_promoted_admin", "user_demoted_admin",
     "workspace_created", "workspace_updated", "workspace_deleted",

@@ -49,6 +49,12 @@ export function Dashboard() {
         ))}
       </div>
 
+      {summary ? (
+        <SecuritySignalsCard items={summary.items} days={summary.days} />
+      ) : (
+        <div className="h-28 bg-muted/50 rounded-lg animate-pulse" />
+      )}
+
       {/* Security charts */}
       <div className="grid grid-cols-2 gap-6">
         <div className="rounded-lg border border-border bg-card p-4">
@@ -176,6 +182,51 @@ function ActivityEntry({ entry }: { entry: ActivityLog }) {
           ))}
       </div>
       <span className="text-xs text-muted-foreground shrink-0">{ago}</span>
+    </div>
+  );
+}
+
+const SIGNAL_TILES = [
+  { action: "login_impossible_travel", label: "Impossible travel", high: true },
+  { action: "credential_stuffing_suspected", label: "Credential stuffing", high: true },
+  { action: "login_new_country", label: "New countries", high: false },
+  { action: "login_new_device", label: "New devices", high: false },
+];
+
+function SecuritySignalsCard({ items, days = 30 }: { items: import("../types/api").ActivityDailyCount[]; days?: number }) {
+  const counts = new Map<string, number>();
+  for (const it of items) counts.set(it.action, (counts.get(it.action) ?? 0) + it.count);
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-baseline justify-between mb-3">
+        <h2 className="text-sm font-medium text-muted-foreground">Security signals</h2>
+        <span className="text-xs text-muted-foreground">Last {days} days</span>
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        {SIGNAL_TILES.map((t) => {
+          const n = counts.get(t.action) ?? 0;
+          return (
+            <Link
+              key={t.action}
+              to={`/activity?action=${t.action}`}
+              className="rounded-md border border-border p-3 transition-colors hover:bg-muted/50"
+            >
+              <div
+                className={`text-2xl font-bold tabular-nums ${
+                  n === 0
+                    ? "text-muted-foreground"
+                    : t.high
+                      ? "text-red-600 dark:text-red-400"
+                      : ""
+                }`}
+              >
+                {n}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">{t.label}</div>
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }
