@@ -6,7 +6,7 @@ Loggers are fetched per call (no module-level cache) so structlog.testing
 
 import structlog
 
-VALID_OUTCOMES = frozenset({"success", "failure", "denied", "error"})
+VALID_OUTCOMES = frozenset({"success", "failure", "denied", "error", "anomaly"})
 
 
 def log_security(event, *, outcome, reason=None, level=None, **fields) -> None:

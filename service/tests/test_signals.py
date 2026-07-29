@@ -212,3 +212,32 @@ async def test_disabled_flag_short_circuits(monkeypatch):
         await signal_service.on_login_success(
             AsyncMock(), user_id=UID, ip="203.0.113.9", user_agent="UA"
         )
+
+
+@pytest.mark.asyncio
+async def test_travel_signal_emits_stream_event():
+    from src.services import signal_service
+
+    fake = FakeRedis()
+    # Seen in the US one hour ago; now "in" Russia (≈7600 km) → ≈7600 km/h.
+    fake.kv[f"geo:last:{UID}"] = json.dumps({"country": "US", "ts": NOW - 3600})
+    p1, p2, p3, p4 = _patched(fake, ("RU", "Russia"))
+    with (
+        p1,
+        p2,
+        p3,
+        p4,
+        patch.object(signal_service, "log_security") as log_security_mock,
+    ):
+        await signal_service.on_login_success(
+            AsyncMock(), user_id=UID, ip="203.0.113.9", user_agent="Mozilla/5.0"
+        )
+    # Verify stream event was emitted with correct parameters
+    log_security_mock.assert_called_once()
+    call_args = log_security_mock.call_args
+    assert call_args[0][0] == "auth.signal.impossible_travel"
+    assert call_args[1]["outcome"] == "anomaly"
+    assert call_args[1]["severity"] == "high"
+    assert call_args[1]["source_ip"] == "203.0.113.9"
+    assert call_args[1]["actor"] == str(UID)
+    assert "user_agent" not in call_args[1]  # Excluded from stream
