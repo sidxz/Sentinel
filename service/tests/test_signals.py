@@ -622,6 +622,7 @@ async def test_start_reject_writes_row_with_rejected_stream_event():
     rejected = [e for e in logs if e.get("event") == "auth.login.rejected"]
     assert rejected and rejected[0]["outcome"] == "denied"
     assert rejected[0]["redirect_uri"] == "https://evil.example/cb"
+    assert rejected[0]["source_ip"] == "203.0.113.9"
 
 
 def test_login_start_rejects_unknown_provider_and_logs():

@@ -119,7 +119,12 @@ async def _log_login_failure(
     flow may have flushed partial state, e.g. a half-linked user). Must never
     mask the original error path.
     """
-    stream_fields: dict = {"provider": provider, "flow": flow, **stream_extra}
+    stream_fields: dict = {
+        "provider": provider,
+        "flow": flow,
+        "source_ip": get_client_ip(request),
+        **stream_extra,
+    }
     if email and "@" in email:
         stream_fields["email_domain"] = email.split("@", 1)[-1]
     if error_type:
