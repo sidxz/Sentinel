@@ -241,3 +241,89 @@ async def test_travel_signal_emits_stream_event():
     assert call_args[1]["source_ip"] == "203.0.113.9"
     assert call_args[1]["actor"] == str(UID)
     assert "user_agent" not in call_args[1]  # Excluded from stream
+
+
+@pytest.mark.asyncio
+async def test_new_country_signal_after_seed():
+    from src.services import signal_service
+
+    fake = FakeRedis()
+    fake.sets[f"seen:cty:{UID}"] = {"US"}  # already-seen baseline
+    p1, p2, p3, p4 = _patched(fake, ("DE", "Germany"))
+    with p1, p2, p3, p4 as log_activity:
+        await signal_service.on_login_success(
+            AsyncMock(), user_id=UID, ip="203.0.113.9", user_agent="UA"
+        )
+    cty = [
+        c.kwargs
+        for c in log_activity.await_args_list
+        if c.kwargs["action"] == "login_new_country"
+    ]
+    assert len(cty) == 1
+    assert cty[0]["detail"]["country"] == "DE"
+    assert cty[0]["detail"]["severity"] == "medium"
+    assert fake.sets[f"seen:cty:{UID}"] == {"US", "DE"}
+
+
+@pytest.mark.asyncio
+async def test_known_country_is_quiet():
+    from src.services import signal_service
+
+    fake = FakeRedis()
+    fake.sets[f"seen:cty:{UID}"] = {"US"}
+    p1, p2, p3, p4 = _patched(fake, ("US", "United States"))
+    with p1, p2, p3, p4 as log_activity:
+        await signal_service.on_login_success(
+            AsyncMock(), user_id=UID, ip="203.0.113.9", user_agent="UA"
+        )
+    assert not [
+        c
+        for c in log_activity.await_args_list
+        if c.kwargs["action"] == "login_new_country"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_new_device_signal_uses_family_key():
+    from src.services import signal_service
+
+    chrome_mac = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    )
+    firefox_win = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0"
+    fake = FakeRedis()
+    fake.sets[f"seen:dev:{UID}"] = {"Chrome|macOS"}
+    p1, p2, p3, p4 = _patched(fake, ("US", "United States"))
+    with p1, p2, p3, p4 as log_activity:
+        # Same family (Chrome/macOS, newer build) — quiet.
+        await signal_service.on_login_success(
+            AsyncMock(), user_id=UID, ip="203.0.113.9", user_agent=chrome_mac
+        )
+        # New family — signal.
+        await signal_service.on_login_success(
+            AsyncMock(), user_id=UID, ip="203.0.113.9", user_agent=firefox_win
+        )
+    dev = [
+        c.kwargs
+        for c in log_activity.await_args_list
+        if c.kwargs["action"] == "login_new_device"
+    ]
+    assert len(dev) == 1
+    assert dev[0]["detail"]["device"] == "Firefox|Windows"
+    assert dev[0]["detail"]["severity"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_first_login_seeds_both_sets_silently():
+    from src.services import signal_service
+
+    fake = FakeRedis()
+    p1, p2, p3, p4 = _patched(fake, ("US", "United States"))
+    with p1, p2, p3, p4 as log_activity:
+        await signal_service.on_login_success(
+            AsyncMock(), user_id=UID, ip="203.0.113.9", user_agent="curl/8.0"
+        )
+    log_activity.assert_not_awaited()
+    assert fake.sets[f"seen:cty:{UID}"] == {"US"}
+    assert fake.sets[f"seen:dev:{UID}"] == {"curl|Other"}
