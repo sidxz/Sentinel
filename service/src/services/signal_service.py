@@ -6,6 +6,7 @@ the auth flow proceeds untouched (same contract as swap_refresh_context).
 Detection never sits in the authz decision path.
 """
 
+import contextlib
 import json
 import time
 import uuid
@@ -85,6 +86,8 @@ async def on_login_success(
             },
         )
     except Exception:
+        with contextlib.suppress(Exception):
+            await db.rollback()
         logger.warning(
             "signal.evaluate_failed",
             category="app",
@@ -111,6 +114,8 @@ async def on_refresh_ip_changed(
         r = await get_redis()
         await _check_travel(db, r, user_id, geo[0], ip, user_agent, workspace_id)
     except Exception:
+        with contextlib.suppress(Exception):
+            await db.rollback()
         logger.warning(
             "signal.evaluate_failed",
             category="app",
@@ -157,6 +162,8 @@ async def on_login_failure(
             },
         )
     except Exception:
+        with contextlib.suppress(Exception):
+            await db.rollback()
         logger.warning(
             "signal.evaluate_failed",
             category="app",
@@ -243,5 +250,9 @@ async def _emit(db, *, action, signal, severity, user_id, detail, workspace_id=N
     if user_id:
         stream["actor"] = str(user_id)
     log_security(
-        f"auth.signal.{signal}", outcome="anomaly", severity=severity, **stream
+        f"auth.signal.{signal}",
+        outcome="anomaly",
+        severity=severity,
+        level="warning" if severity == "high" else None,
+        **stream,
     )

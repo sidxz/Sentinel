@@ -241,6 +241,36 @@ async def test_travel_signal_emits_stream_event():
     assert call_args[1]["source_ip"] == "203.0.113.9"
     assert call_args[1]["actor"] == str(UID)
     assert "user_agent" not in call_args[1]  # Excluded from stream
+    assert call_args[1]["level"] == "warning"  # high severity streams at warning
+
+
+@pytest.mark.asyncio
+async def test_fail_open_heals_session_after_emit_error():
+    """If _emit's DB work (log_activity/commit) blows up, on_login_success must
+    still fail open AND leave the session usable for whatever the caller does
+    next (e.g. ClientApp re-validation) — not stuck in pending-rollback."""
+    from src.services import signal_service
+
+    fake = FakeRedis()
+    # Seed a fast US -> RU jump so the travel rule fires and reaches _emit.
+    fake.kv[f"geo:last:{UID}"] = json.dumps({"country": "US", "ts": NOW - 3600})
+    p1, p2, p3, _p4 = _patched(fake, ("RU", "Russia"))
+    db = AsyncMock()
+    with (
+        p1,
+        p2,
+        p3,
+        patch(
+            "src.services.activity_service.log_activity",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("db down"),
+        ),
+    ):
+        # Must not raise.
+        await signal_service.on_login_success(
+            db, user_id=UID, ip="203.0.113.9", user_agent="UA"
+        )
+    db.rollback.assert_awaited()
 
 
 @pytest.mark.asyncio
