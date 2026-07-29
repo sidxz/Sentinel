@@ -342,6 +342,12 @@ async def callback(
             },
         )
         await db.commit()
+        await signal_service.on_login_success(
+            db,
+            user_id=user.id,
+            ip=get_client_ip(request),
+            user_agent=request.headers.get("user-agent", "")[:200],
+        )
 
         # Retrieve redirect_uri, PKCE challenge, and client binding from session
         redirect_uri = request.session.pop("redirect_uri", None)
@@ -803,6 +809,12 @@ async def admin_callback(
             },
         )
         await db.commit()
+        await signal_service.on_login_success(
+            db,
+            user_id=user.id,
+            ip=get_client_ip(request),
+            user_agent=request.headers.get("user-agent", "")[:200],
+        )
         log_security(
             "auth.login.succeeded",
             outcome="success",

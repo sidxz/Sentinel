@@ -16,7 +16,12 @@ from src.schemas.validators import sanitize_url, strip_html
 from src.models.group import GroupMembership
 from src.models.user import SocialAccount, User
 from src.models.workspace import WorkspaceMembership
-from src.services import activity_service, organization_service, token_service
+from src.services import (
+    activity_service,
+    organization_service,
+    signal_service,
+    token_service,
+)
 
 
 class CrossProviderEmailConflict(Exception):
@@ -426,6 +431,13 @@ async def rotate_refresh_token(
                     },
                 )
                 await db.commit()
+                await signal_service.on_refresh_ip_changed(
+                    db,
+                    user_id=user.id,
+                    workspace_id=workspace_id,
+                    ip=ip or "",
+                    user_agent=(user_agent or "")[:200],
+                )
         except Exception:
             log_security(
                 "audit.write_failed",

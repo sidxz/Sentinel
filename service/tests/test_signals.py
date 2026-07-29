@@ -449,3 +449,130 @@ async def test_login_failure_helper_can_skip_counters():
             count_for_stuffing=False,
         )
     on_failure.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# rotate_refresh_token -> on_refresh_ip_changed wiring
+# ---------------------------------------------------------------------------
+
+
+def _write_keypair(tmp_path):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    priv = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    pub = key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    priv_path = tmp_path / "private.pem"
+    pub_path = tmp_path / "public.pem"
+    priv_path.write_bytes(priv)
+    pub_path.write_bytes(pub)
+    return priv_path, pub_path
+
+
+@pytest.fixture
+def _ephemeral_keys(tmp_path, monkeypatch):
+    """Swap JWT key paths for temp files so this test doesn't depend on keys/."""
+    from src.auth import key_provider
+
+    priv_path, pub_path = _write_keypair(tmp_path)
+    monkeypatch.setattr(settings, "jwt_private_key_path", priv_path)
+    monkeypatch.setattr(settings, "jwt_public_key_path", pub_path)
+    key_provider.reset_cache()
+    yield
+    key_provider.reset_cache()
+
+
+def _fake_user_for_rotate():
+    user = MagicMock()
+    user.id = uuid.uuid4()
+    user.email = "test@example.com"
+    user.name = "Test User"
+    user.is_active = True
+    user.is_admin = False
+    user.organization_id = None
+    return user
+
+
+def _fake_db_for_rotate(user, workspace_id):
+    """Mock DB that lets ``rotate_refresh_token`` progress past its queries."""
+    workspace = MagicMock()
+    workspace.id = workspace_id
+    workspace.slug = "test-ws"
+
+    membership = MagicMock()
+    membership.role = "editor"
+
+    db = MagicMock()
+    db.get = AsyncMock(side_effect=[user, workspace])
+
+    membership_result = MagicMock()
+    membership_result.scalar_one_or_none.return_value = membership
+
+    allows_org_scalars = MagicMock()
+    allows_org_scalars.all.return_value = []
+    allows_org_result = MagicMock()
+    allows_org_result.scalars.return_value = allows_org_scalars
+
+    groups_result = MagicMock()
+    groups_result.all.return_value = []
+    db.execute = AsyncMock(
+        side_effect=[membership_result, allows_org_result, groups_result]
+    )
+    db.commit = AsyncMock()
+    return db
+
+
+@pytest.mark.asyncio
+async def test_rotate_calls_travel_signal_on_context_change(_ephemeral_keys):
+    """rotate_refresh_token must hand changed-context refreshes to the signal
+    service (travel rule), after the refresh_context_changed row."""
+    from src.auth.jwt import create_refresh_token
+    from src.services import auth_service
+
+    user = _fake_user_for_rotate()
+    workspace_id = uuid.uuid4()
+    family_id = str(uuid.uuid4())
+    refresh_token = create_refresh_token(user_id=user.id, family_id=family_id)
+
+    db = _fake_db_for_rotate(user, workspace_id)
+
+    async def fake_consume(_jti):
+        return (user.id, family_id, workspace_id, None)
+
+    async def fake_store(**_kwargs):
+        pass
+
+    with (
+        patch(
+            "src.services.auth_service.token_service.consume_refresh_token",
+            new=fake_consume,
+        ),
+        patch(
+            "src.services.auth_service.token_service.store_refresh_token",
+            new=fake_store,
+        ),
+        patch(
+            "src.services.auth_service.token_service.swap_refresh_context",
+            new=AsyncMock(return_value={"ip": "1.1.1.1", "ua": "old"}),
+        ),
+        patch(
+            "src.services.auth_service.signal_service.on_refresh_ip_changed",
+            new_callable=AsyncMock,
+        ) as on_changed,
+        patch("src.services.activity_service.log_activity", new_callable=AsyncMock),
+    ):
+        await auth_service.rotate_refresh_token(
+            db, refresh_token, ip="9.9.9.9", user_agent="new-ua"
+        )
+
+    on_changed.assert_awaited_once()
+    kw = on_changed.await_args.kwargs
+    assert kw["user_id"] == user.id and kw["ip"] == "9.9.9.9"
