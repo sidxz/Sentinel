@@ -151,3 +151,43 @@ def test_delete_realm_invalidates_cache_only_after_commit(monkeypatch):
     resp = TestClient(app).delete(f"/admin/realms/{realm.id}", headers=_XRW)
     assert resp.status_code == 204
     _assert_invalidated_after_commit(events)
+
+
+def test_create_service_app_refreshes_origins_after_commit(monkeypatch):
+    """A service app created with allowed_origins in one shot must enter the
+    in-memory CORS origin set immediately — not on the next restart/PATCH.
+
+    Regression: POST /service-apps was the only origin-affecting admin route
+    that never called refresh_origins, so a fresh app's origins stayed dark
+    until the process restarted or a sibling route rebuilt the set.
+    """
+    events: list[str] = []
+    svc_app = _service_app()
+    svc_app.allowed_origins = ["http://localhost:3003"]
+    svc_app.created_by = uuid.uuid4()
+    app = _build_app(monkeypatch, events, svc_app)
+
+    async def _create(db, **_kwargs):
+        return svc_app, "sk_plaintext_key"
+
+    monkeypatch.setattr(admin_routes.service_app_service, "create_service_app", _create)
+
+    async def _refresh(_db):
+        events.append("refresh_origins")
+
+    monkeypatch.setattr(admin_routes, "refresh_origins", _refresh)
+
+    resp = TestClient(app).post(
+        "/admin/service-apps",
+        json={
+            "name": "Docs",
+            "service_name": "docs",
+            "allowed_origins": ["http://localhost:3003"],
+        },
+        headers=_XRW,
+    )
+    assert resp.status_code == 201
+    assert "refresh_origins" in events, (
+        "created origins never enter the CORS set until restart/PATCH"
+    )
+    assert events.index("commit") < events.index("refresh_origins")

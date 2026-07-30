@@ -1411,6 +1411,7 @@ async def create_service_app(
     await db.commit()
     await db.refresh(app)
     await service_app_service.invalidate_cache()
+    await refresh_origins(db)
     return ServiceAppCreateResponse(
         id=app.id,
         name=app.name,
