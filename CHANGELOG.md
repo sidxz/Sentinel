@@ -16,6 +16,59 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ---
 
+## [0.19.0] – 2026-07-29 — Tier-1 security signals
+
+Detect-only anomaly detection over the auth surface (the Tier 1 rules from
+the AI-security roadmap): impossible travel, new-country / new-device
+first-seen flags, and credential-stuffing detection — pure arithmetic over
+events Sentinel already records, no ML, no model, and never in the
+authorization decision path. Every rule is fail-open: a telemetry failure can
+never break or block an auth flow.
+
+### Breaking changes
+
+None. (JS/Python SDKs are republished unchanged for version alignment.)
+
+### Service
+
+- **Added** security-signal engine (`signal_service`) evaluated on login
+  success, refresh-context change, and login failure:
+  - `login_impossible_travel` (high) — country change at an implied speed
+    above `SIGNAL_IMPOSSIBLE_TRAVEL_KMH` (default 900), computed via a static
+    country-centroid haversine; per-country-pair damper suppresses VPN
+    ping-pong repeats for 6 h.
+  - `login_new_country` (medium) / `login_new_device` (low) — first-seen
+    flags per user (device = browser/OS family, so version bumps don't fire);
+    a user's first login seeds silently.
+  - `credential_stuffing_suspected` (high) — per-IP failure counters:
+    ≥ `SIGNAL_STUFFING_FAILURES` (10) failures **and**
+    ≥ `SIGNAL_STUFFING_DISTINCT_EMAILS` (5) distinct emails within
+    `SIGNAL_STUFFING_WINDOW_MINUTES` (15), one signal per window.
+  - Signals are ordinary activity rows plus `auth.signal.*` security-stream
+    events (new `anomaly` outcome; high severity streams at warning level).
+    Master switch: `SIGNALS_ENABLED` (default on). Detect-only — no
+    enforcement, no blocking, no auto-revocation.
+- **Added** audit rows for login START rejects (unknown provider, non-S256
+  PKCE, unregistered redirect_uri, admin provider) — previously stream-only
+  or silent, invisible to the admin panel. These config-shaped rejects do not
+  feed stuffing counters. All login failure/reject stream events now carry
+  `source_ip`.
+- **Fixed** `POST /admin/service-apps` never refreshed the in-memory CORS
+  origin set — a service app created with `allowed_origins` in one shot had a
+  correct DB row, but its origins stayed dark until a restart or an unrelated
+  app edit rebuilt the set. Now refreshes on create, matching the other four
+  origin-affecting routes.
+
+### Admin panel
+
+- **Added** Security signals card on the Dashboard — per-signal counts over
+  the last 30 days, deep-linking to the Activity page pre-filtered to that
+  signal (`/activity?action=…` is now honored as an initial filter).
+- **Added** the four signal actions to the Activity filter dropdown and the
+  "Auth anomalies" dashboard chart bucket.
+
+---
+
 ## [0.18.0] – 2026-07-28 — Usage analytics, log coverage, private-network deployment
 
 Three strands: an action-usage analytics surface (admin Usage dashboard backed
