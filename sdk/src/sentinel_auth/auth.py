@@ -64,6 +64,18 @@ class RequestAuth:
         return self.user.groups
 
     @property
+    def org_id(self) -> uuid.UUID | None:
+        return self.user.org_id
+
+    @property
+    def org_slug(self) -> str | None:
+        return self.user.org_slug
+
+    @property
+    def org_is_public(self) -> bool:
+        return self.user.org_is_public
+
+    @property
     def is_admin(self) -> bool:
         return self.user.is_admin
 

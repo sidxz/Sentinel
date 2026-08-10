@@ -246,6 +246,9 @@ class AuthzMiddleware(BaseHTTPMiddleware):
                 workspace_slug=authz_payload.get("wslug", ""),
                 workspace_role=authz_payload["wrole"],
                 groups=[],
+                org_id=uuid.UUID(authz_payload["oid"]) if authz_payload.get("oid") else None,
+                org_slug=authz_payload.get("oslug"),
+                org_is_public=bool(authz_payload.get("opub", False)),
             )
             request.state.token = authz_token
             request.state.idp_token = idp_token

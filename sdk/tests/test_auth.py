@@ -66,6 +66,25 @@ class TestForwardedProperties:
         assert RequestAuth(user=_make_user("viewer"), _token=TOKEN).is_editor is False
 
 
+def test_request_auth_forwards_org_fields():
+    oid = uuid.uuid4()
+    user = AuthenticatedUser(
+        user_id=uuid.uuid4(),
+        email="a@x.com",
+        name="A",
+        workspace_id=uuid.uuid4(),
+        workspace_slug="ws",
+        workspace_role="editor",
+        org_id=oid,
+        org_slug="abbvie",
+        org_is_public=True,
+    )
+    auth = RequestAuth(user=user, _token="tok")
+    assert auth.org_id == oid
+    assert auth.org_slug == "abbvie"
+    assert auth.org_is_public is True
+
+
 class TestHasRole:
     def test_delegates_to_user(self):
         auth = RequestAuth(user=_make_user("admin"), _token=TOKEN)

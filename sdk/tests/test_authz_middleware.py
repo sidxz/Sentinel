@@ -230,6 +230,103 @@ class TestAuthzMiddleware:
         assert "different service" in resp.json()["detail"].lower()
 
 
+class TestAuthzMiddlewareOrgClaims:
+    """Org claims (oid/oslug/opub) are parsed from the authz-token payload."""
+
+    def test_org_claims_parsed(self, idp_keypair, sentinel_keypair):
+        idp_priv, idp_pub = idp_keypair
+        sentinel_priv, sentinel_pub = sentinel_keypair
+        now = datetime.datetime.now(datetime.UTC)
+        idp_sub = "google|12345"
+        org_id = uuid.uuid4()
+
+        idp_token = pyjwt.encode(
+            {
+                "sub": idp_sub,
+                "aud": TEST_IDP_AUDIENCE,
+                "email": "alice@acme.com",
+                "name": "Alice",
+                "iat": now,
+                "exp": now + datetime.timedelta(hours=1),
+            },
+            idp_priv,
+            algorithm="RS256",
+        )
+        authz_payload = {
+            "sub": str(uuid.uuid4()),
+            "idp_sub": idp_sub,
+            "svc": TEST_SERVICE_NAME,
+            "wid": str(uuid.uuid4()),
+            "wslug": "acme",
+            "wrole": "editor",
+            "actions": ["read"],
+            "aud": "sentinel:authz",
+            "iat": now,
+            "exp": now + datetime.timedelta(minutes=5),
+        }
+        authz_payload["oid"] = str(org_id)
+        authz_payload["oslug"] = "abbvie"
+        authz_payload["opub"] = True
+        authz_token = pyjwt.encode(authz_payload, sentinel_priv, algorithm="RS256")
+
+        captured_user = None
+
+        async def protected(request: Request) -> JSONResponse:
+            nonlocal captured_user
+            captured_user = request.state.user
+            return JSONResponse({"email": captured_user.email})
+
+        app = Starlette(routes=[Route("/protected", protected)])
+        app.add_middleware(
+            AuthzMiddleware,
+            service_name=TEST_SERVICE_NAME,
+            idp_audience=TEST_IDP_AUDIENCE,
+            idp_public_key=idp_pub,
+            sentinel_public_key=sentinel_pub,
+        )
+        client = TestClient(app)
+        resp = client.get(
+            "/protected",
+            headers={"Authorization": f"Bearer {idp_token}", "X-Authz-Token": authz_token},
+        )
+
+        assert resp.status_code == 200
+        assert captured_user.org_id == org_id
+        assert captured_user.org_slug == "abbvie"
+        assert captured_user.org_is_public is True
+
+    def test_missing_org_claims_default_none(self, idp_keypair, sentinel_keypair, dual_tokens):
+        _, idp_pub = idp_keypair
+        _, sentinel_pub = sentinel_keypair
+        idp_token, authz_token = dual_tokens
+
+        captured_user = None
+
+        async def protected(request: Request) -> JSONResponse:
+            nonlocal captured_user
+            captured_user = request.state.user
+            return JSONResponse({"email": captured_user.email})
+
+        app = Starlette(routes=[Route("/protected", protected)])
+        app.add_middleware(
+            AuthzMiddleware,
+            service_name=TEST_SERVICE_NAME,
+            idp_audience=TEST_IDP_AUDIENCE,
+            idp_public_key=idp_pub,
+            sentinel_public_key=sentinel_pub,
+        )
+        client = TestClient(app)
+        resp = client.get(
+            "/protected",
+            headers={"Authorization": f"Bearer {idp_token}", "X-Authz-Token": authz_token},
+        )
+
+        assert resp.status_code == 200
+        assert captured_user.org_id is None
+        assert captured_user.org_slug is None
+        assert captured_user.org_is_public is False
+
+
 class _FakeSentinel:
     """Minimal stand-in exposing what AuthzMiddleware reads from a Sentinel."""
 
