@@ -16,6 +16,14 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ---
 
+## [0.20.0] - 2026-08-10
+
+### Added
+- **SDK:** `AuthenticatedUser`/`RequestAuth` now expose `org_id`, `org_slug`, `org_is_public`, parsed from the `oid`/`oslug`/`opub` claims in both access and authz tokens (previously decoded and discarded). Absent claims yield `None`/`False` — no breaking change.
+- **Service:** `GET /organizations` on the internal (service-key) listener — enabled-org directory for client apps (`?include_disabled=1` for all).
+
+---
+
 ## [0.19.0] – 2026-07-29 — Tier-1 security signals
 
 Detect-only anomaly detection over the auth surface (the Tier 1 rules from
