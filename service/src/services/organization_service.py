@@ -310,3 +310,15 @@ async def workspaces_allowing_org(
         .distinct()
     )
     return list((await db.execute(stmt)).scalars().all())
+
+
+async def list_orgs_for_directory(
+    db: AsyncSession, include_disabled: bool = False
+) -> list[Organization]:
+    """Lean org list for the internal directory endpoint (no counts)."""
+    stmt = select(Organization).order_by(
+        Organization.is_public.desc(), Organization.name
+    )
+    if not include_disabled:
+        stmt = stmt.where(Organization.enabled.is_(True))
+    return list((await db.execute(stmt)).scalars())

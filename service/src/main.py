@@ -15,6 +15,7 @@ from src.api.authz_routes import idp_router as authz_idp_router
 from src.api.authz_routes import router as authz_router
 from src.api.realm_routes import router as realm_router
 from src.api.group_routes import router as group_router
+from src.api.internal_org_routes import router as internal_org_router
 from src.api.permission_routes import router as permission_router
 from src.api.role_routes import router as role_router
 from src.api.user_routes import router as user_router
@@ -211,6 +212,7 @@ INTERNAL_ROUTERS = [
     permission_router,
     authz_router,
     role_router,
+    internal_org_router,
 ]
 
 
