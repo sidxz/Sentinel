@@ -68,3 +68,30 @@ class TestWorkspaceContext:
         ctx = WorkspaceContext(workspace_id=wid, workspace_slug="s", user_id=uid, role="admin")
         assert ctx.workspace_id == wid
         assert ctx.role == "admin"
+
+
+def _user(**overrides):
+    base = dict(
+        user_id=uuid.uuid4(),
+        email="alice@example.com",
+        name="Alice",
+        workspace_id=uuid.uuid4(),
+        workspace_slug="acme-corp",
+        workspace_role="editor",
+    )
+    base.update(overrides)
+    return AuthenticatedUser(**base)
+
+
+def test_org_fields_default_to_absent():
+    user = _user()
+    assert user.org_id is None
+    assert user.org_slug is None
+    assert user.org_is_public is False
+
+
+def test_org_fields_populated():
+    oid = uuid.uuid4()
+    user = _user(org_id=oid, org_slug="abbvie", org_is_public=False)
+    assert user.org_id == oid
+    assert user.org_slug == "abbvie"

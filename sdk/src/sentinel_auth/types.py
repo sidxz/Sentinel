@@ -24,6 +24,10 @@ class AuthenticatedUser:
         workspace_role: The user's role in the active workspace —
             one of ``'owner'``, ``'admin'``, ``'editor'``, or ``'viewer'``.
         groups: List of group UUIDs the user belongs to in the active workspace.
+        org_id: The organization ID that owns the active workspace, if any
+            (from JWT ``oid`` claim).
+        org_slug: The organization's URL slug (from JWT ``oslug`` claim).
+        org_is_public: Whether the organization is public (from JWT ``opub`` claim).
 
     Example:
         ```python
@@ -45,6 +49,9 @@ class AuthenticatedUser:
     workspace_slug: str
     workspace_role: str
     groups: list[uuid.UUID] = field(default_factory=list)
+    org_id: uuid.UUID | None = None
+    org_slug: str | None = None
+    org_is_public: bool = False
 
     @property
     def is_admin(self) -> bool:

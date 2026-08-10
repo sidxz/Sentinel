@@ -1,6 +1,7 @@
 """Tests for JWTAuthMiddleware."""
 
 import datetime
+import uuid
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -119,6 +120,51 @@ class TestJWTMiddleware:
         data = resp.json()
         assert data["has_token"] is True
         assert data["token"] == valid_token
+
+    def test_org_claims_parsed(self, rsa_keypair, jwt_payload, make_token):
+        org_id = uuid.uuid4()
+        jwt_payload["oid"] = str(org_id)
+        jwt_payload["oslug"] = "abbvie"
+        jwt_payload["opub"] = False
+        _, pub = rsa_keypair
+        token = make_token(jwt_payload)
+
+        captured_user = None
+
+        async def protected(request: Request) -> JSONResponse:
+            nonlocal captured_user
+            captured_user = request.state.user
+            return JSONResponse({"email": captured_user.email})
+
+        app = Starlette(routes=[Route("/protected", protected)])
+        app.add_middleware(JWTAuthMiddleware, public_key=pub)
+        client = TestClient(app)
+        resp = client.get("/protected", headers={"Authorization": f"Bearer {token}"})
+
+        assert resp.status_code == 200
+        assert captured_user.org_id == org_id
+        assert captured_user.org_slug == "abbvie"
+        assert captured_user.org_is_public is False
+
+    def test_missing_org_claims_default_none(self, rsa_keypair, valid_token):
+        _, pub = rsa_keypair
+
+        captured_user = None
+
+        async def protected(request: Request) -> JSONResponse:
+            nonlocal captured_user
+            captured_user = request.state.user
+            return JSONResponse({"email": captured_user.email})
+
+        app = Starlette(routes=[Route("/protected", protected)])
+        app.add_middleware(JWTAuthMiddleware, public_key=pub)
+        client = TestClient(app)
+        resp = client.get("/protected", headers={"Authorization": f"Bearer {valid_token}"})
+
+        assert resp.status_code == 200
+        assert captured_user.org_id is None
+        assert captured_user.org_slug is None
+        assert captured_user.org_is_public is False
 
 
 def _make_jwks_app(base_url: str) -> Starlette:

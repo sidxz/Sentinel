@@ -149,6 +149,9 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                 workspace_slug=payload["wslug"],
                 workspace_role=payload["wrole"],
                 groups=[uuid.UUID(g) for g in payload.get("groups", [])],
+                org_id=uuid.UUID(payload["oid"]) if payload.get("oid") else None,
+                org_slug=payload.get("oslug"),
+                org_is_public=bool(payload.get("opub", False)),
             )
         except (KeyError, ValueError):
             return JSONResponse(status_code=401, content={"detail": "Invalid token claims"})
