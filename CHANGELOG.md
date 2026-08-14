@@ -16,6 +16,38 @@ For versions prior to `0.11.0`, see the git tag history (`git log --oneline -- s
 
 ---
 
+## [0.20.1] - 2026-08-14 — Entra ID sign-in + logging restoration
+
+Entra ID had never actually worked: its tokens carry no `email_verified` claim,
+so the strict verification gate rejected every one of them, on every path. Fixed
+and verified end to end against a live tenant. Separately, in-process startup
+migrations were silently dismantling the service's structured logging on every
+boot — JSON rendering and all `info`-level events, including every successful
+access-log record, were lost for the life of the process.
+
+### Breaking changes
+
+None. (JS/Python SDKs are republished unchanged for version alignment.)
+
+### Fixed
+- **Service:** Microsoft Entra ID sign-in was rejected on every path (`/authz/resolve`, app login, admin login). Entra emits no `email_verified` claim, so the strict `email_verified is True` gate failed closed for all Entra tokens. Claims from the tenant pinned by `ENTRA_TENANT_ID` are now accepted as tenant-verified unless `xms_edov` is explicitly `false`; every other issuer still requires `email_verified: true`. The exemption is keyed on the provider the token was *verified against*, never on a `tid` claim, so no other trusted issuer can inherit it. `validate_idp_token` no longer returns an `email_verified` field at all — verification is a gate, not a payload.
+- **Service:** startup migrations silently destroyed the app's logging configuration. `migrations/env.py` calls `fileConfig(alembic.ini)`, which replaces the root handlers `configure_logging()` had just installed and resets the root level to alembic's `WARN`. Since `main.py` migrates in-process on boot, every deployment lost JSON log rendering and dropped all `info`-level events — including every 2xx `http.access` record — for the life of the process. The app now opts out via `config.attributes["configure_logger"]`; CLI `alembic` runs keep their own logging.
+- **Service:** Tokens without an `email` claim raised `KeyError` → 500. Entra omits `email` for managed work accounts unless the app registration adds it as an optional claim, so Sentinel now falls back to an address-shaped `preferred_username`/`upn` and otherwise refuses sign-in with an actionable message (`no_email_claim`). Identity remains keyed on `sub`.
+- **Admin/API:** `GET /admin/system/settings` reported the Entra provider as `entra`; the identifier is `entra_id` everywhere else (callback paths, `/auth/providers`, `provider` on `/authz/resolve`). Docs listed the admin callback as `{BASE_URL}/auth/callback/entra` — corrected to `entra_id`.
+
+### Security note
+
+For Entra, `ENTRA_TENANT_ID` pinning replaces the missing `email_verified`
+assertion: a token from that one tenant is treated as carrying a tenant-verified
+address. Enable the `xms_edov` optional claim on the app registration to get an
+explicit domain-ownership assertion instead — Sentinel already rejects
+`xms_edov: false`. This matters because an email address drives organization
+resolution and `ADMIN_EMAILS` auto-promotion (which fires only at first
+provisioning of an identity, never on subsequent sign-ins). Google and GitHub
+are unaffected: both attest the address and are still held to that.
+
+---
+
 ## [0.20.0] - 2026-08-10
 
 ### Added
