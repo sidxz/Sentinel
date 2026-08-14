@@ -23,6 +23,8 @@ const KNOWN_ERRORS: Record<string, string> = {
     "Your identity provider did not confirm your email. Verify it and try again.",
   email_conflict:
     "An account with this email already exists under a different sign-in provider. Sign in with your original provider.",
+  no_email_claim:
+    "Your identity provider returned no email address. Add the 'email' optional claim to the application registration.",
 };
 
 function readLoginError(): string | null {

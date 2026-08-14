@@ -28,16 +28,62 @@ class CrossProviderEmailConflict(Exception):
     """Raised when an IdP login's email matches a user from a different provider."""
 
 
-def is_email_verified_claim(userinfo: dict) -> bool:
-    """Strictly check that an OIDC ``email_verified`` claim is the boolean True.
+def is_email_verified_claim(userinfo: dict, provider: str) -> bool:
+    """Check that OIDC claims assert a verified email address.
 
     Per OIDC Core 1.0 §5.1, ``email_verified`` is a boolean. Some IdPs emit
     stringified booleans (``"true"``/``"false"``); the string ``"false"`` is
     truthy in Python and would bypass a naive ``not userinfo.get(...)`` check,
     letting an attacker sign in with a claimed-but-unverified email. Strictly
     compare against ``True`` so any non-boolean value fails closed.
+
+    Microsoft Entra ID emits no ``email_verified`` claim at all — its analogue is
+    the optional ``xms_edov`` ("email domain owner verified") claim. Requiring
+    ``email_verified`` would therefore reject every Entra sign-in. The token has
+    already been signature- and issuer-verified against the ONE tenant this
+    deployment pins (``ENTRA_TENANT_ID``) by the time we get here, so the tenant
+    directory is the verifying authority for addresses it issues: accept a
+    same-tenant token unless ``xms_edov`` is explicitly False, which is Entra
+    telling us the domain is not owner-verified.
+
+    ``provider`` is the IdP the token was actually VERIFIED against (signature +
+    issuer + audience), not a claim inside it. The relaxation is scoped to that
+    provider so trust can never be decided by claim shape alone: another OIDC
+    provider (a self-hosted ``dex``, a future IdP) emitting a ``tid`` equal to our
+    tenant GUID must not inherit Entra's exemption.
     """
-    return userinfo.get("email_verified") is True
+    if userinfo.get("email_verified") is True:
+        return True
+    if provider != "entra_id":
+        return False
+    # ponytail: tenant pin IS the verification. If this deployment ever accepts
+    # multi-tenant Entra issuers (`organizations`/`common`), drop this branch and
+    # require `xms_edov is True` — a foreign tenant vouches only for itself.
+    tenant = settings.entra_tenant_id
+    return (
+        bool(tenant)
+        and userinfo.get("tid") == tenant
+        and userinfo.get("xms_edov") is not False
+    )
+
+
+def extract_email_claim(userinfo: dict) -> str:
+    """Return the email address from OIDC claims, or ``""`` when there is none.
+
+    Entra omits ``email`` for managed work accounts unless the tenant adds it as
+    an optional claim on the app registration — very common on ``*.onmicrosoft``
+    dev tenants, where accounts have no mail attribute at all. ``preferred_username``
+    carries the UPN there, which is the address the user actually signs in with,
+    so fall back to it when it is address-shaped.
+
+    Identity is keyed on ``sub`` (see :func:`find_or_create_user`), never on this
+    value — ``preferred_username`` is mutable and must not be treated as an ID.
+    """
+    email = userinfo.get("email") or ""
+    if email:
+        return email
+    upn = userinfo.get("preferred_username") or userinfo.get("upn") or ""
+    return upn if upn.count("@") == 1 else ""
 
 
 async def find_or_create_user(

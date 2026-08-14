@@ -14,7 +14,25 @@ Sentinel proxies authentication from three identity providers. Provider registra
 
 **GitHub** -- OAuth2 only (not OIDC, no PKCE). User info fetched via GitHub API. If the primary email is not in the profile response, it is fetched from `GET /user/emails`. Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
 
-**Entra ID** -- OIDC with tenant-specific discovery. Set `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, and `ENTRA_TENANT_ID`.
+**Entra ID** -- OIDC with tenant-specific discovery. Set `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, and `ENTRA_TENANT_ID`. The provider identifier is `entra_id`.
+
+Entra's claims differ from the OIDC baseline in two ways that affect sign-in:
+
+- **No `email_verified` claim.** Entra never emits it; its analogue is the optional `xms_edov` ("email domain owner verified") claim. Sentinel pins the issuer to the single tenant in `ENTRA_TENANT_ID`, so a token bearing that `tid` is treated as carrying a tenant-verified address — unless `xms_edov` is explicitly `false`, which is a hard reject. Tokens from any other tenant, and from any other IdP, get no such treatment and must carry `email_verified: true`; the exemption is bound to the provider the signature was verified against, not to the presence of a `tid` claim.
+
+    !!! warning "Enable the `xms_edov` optional claim"
+        Without it, Sentinel is trusting your tenant directory rather than an explicit
+        per-address assertion. That is the normal trust model for a single-tenant
+        deployment, but it means anyone who can influence the directory attribute
+        behind the `email` claim can influence which address Sentinel sees — and the
+        email drives organization resolution and `ADMIN_EMAILS` auto-promotion. Adding
+        `xms_edov` to the app registration's token configuration turns that into a
+        verified assertion Sentinel enforces.
+- **`email` is often absent.** Managed work accounts only receive it if the app registration adds `email` as an optional ID-token claim; `*.onmicrosoft.com` dev-tenant accounts typically have no mail attribute at all. Sentinel then falls back to `preferred_username` (the UPN) when it is address-shaped. Identity is always keyed on `sub`, never on either address.
+
+Since the email domain drives organization resolution, register the org domain that matches the addresses your tenant actually issues (e.g. `tptdevelorg.onmicrosoft.com` for a dev tenant), or sign-in is refused as "not permitted for this email domain".
+
+For AuthZ mode, the browser goes to Entra directly with `response_type=id_token`, so the redirect URI must be registered under the **Web** platform with *ID tokens (used for implicit and hybrid flows)* enabled — a redirect URI registered under the *Single-page application* platform rejects implicit. Alternatively, acquire the ID token however you like (e.g. MSAL with auth code + PKCE) and hand it to `POST /authz/resolve` yourself.
 
 See [How Sentinel Works](how-it-works.md) for the full login flows in both AuthZ and Proxy modes.
 

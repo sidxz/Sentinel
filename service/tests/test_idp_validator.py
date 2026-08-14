@@ -80,8 +80,10 @@ async def test_valid_google_token(rsa_keypair, make_token):
     assert result["sub"] == "google-user-123"
     assert result["email"] == "user@example.com"
     assert result["name"] == "Test User"
-    assert result["email_verified"] is True
     assert result["picture"] == "https://example.com/photo.jpg"
+    # Verification is a gate, not a payload field — nothing downstream should be
+    # able to mistake our verdict for an IdP assertion.
+    assert "email_verified" not in result
 
 
 @pytest.mark.asyncio
@@ -126,6 +128,152 @@ async def test_unverified_email_rejected(rsa_keypair, make_token):
 
     with pytest.raises(IdpValidationError, match="not verified"):
         await validate_idp_token(token, "google", _override_key=public_key)
+
+
+# ---------------------------------------------------------------------------
+# Microsoft Entra ID.
+#
+# Regression: Entra emits NO `email_verified` claim (its analogue is the optional
+# `xms_edov`), and omits `email` for managed work accounts unless the tenant adds
+# it as an optional claim. A strict `email_verified is True` gate plus a bare
+# payload["email"] therefore rejected/500'd every real Entra sign-in.
+# ---------------------------------------------------------------------------
+
+TEST_TENANT = "d3300fae-c9cd-404f-a259-b7f8e5f8998c"
+
+
+@pytest.fixture
+def entra_jwks(rsa_keypair, monkeypatch):
+    """Point the entra_id provider at our test keypair via a mocked JWKS."""
+    import json
+
+    from jwt.algorithms import RSAAlgorithm
+
+    from src.services import idp_validator
+
+    _, public_key = rsa_keypair
+    monkeypatch.setattr(settings, "entra_tenant_id", TEST_TENANT)
+    monkeypatch.setattr(settings, "entra_client_id", "entra-client-id")
+    idp_validator._jwks_cache["entra_id"] = (
+        [json.loads(RSAAlgorithm.to_jwk(public_key))],
+        time.monotonic(),
+    )
+    try:
+        yield
+    finally:
+        idp_validator._jwks_cache.pop("entra_id", None)
+
+
+def _entra_claims(**overrides) -> dict:
+    """Claims as Entra actually issues them: no email_verified, tid present."""
+    return {
+        "sub": "entra-sub-1",
+        "name": "Work User",
+        "tid": TEST_TENANT,
+        "iss": f"https://login.microsoftonline.com/{TEST_TENANT}/v2.0",
+        "aud": "entra-client-id",
+        "preferred_username": "user@tptdevelorg.onmicrosoft.com",
+        **overrides,
+    }
+
+
+@pytest.mark.asyncio
+async def test_entra_token_without_email_verified_is_accepted(make_token, entra_jwks):
+    """Entra emits no email_verified; the pinned tenant is the verifying authority."""
+    token = make_token(_entra_claims(email="user@tptdevelorg.onmicrosoft.com"))
+
+    result = await validate_idp_token(token, "entra_id")
+
+    assert result["sub"] == "entra-sub-1"
+    assert result["email"] == "user@tptdevelorg.onmicrosoft.com"
+
+
+@pytest.mark.asyncio
+async def test_entra_token_falls_back_to_preferred_username(make_token, entra_jwks):
+    """No `email` optional claim (the *.onmicrosoft default) — use the UPN."""
+    token = make_token(_entra_claims())
+
+    result = await validate_idp_token(token, "entra_id")
+
+    assert result["email"] == "user@tptdevelorg.onmicrosoft.com"
+
+
+@pytest.mark.asyncio
+async def test_entra_token_with_xms_edov_false_rejected(make_token, entra_jwks):
+    """xms_edov=False is Entra saying the email domain is NOT owner-verified."""
+    token = make_token(_entra_claims(xms_edov=False))
+
+    with pytest.raises(IdpValidationError, match="not verified"):
+        await validate_idp_token(token, "entra_id")
+
+
+@pytest.mark.asyncio
+async def test_entra_token_from_other_tenant_rejected(make_token, entra_jwks):
+    """A token whose tid is not our pinned tenant gets no email_verified bypass.
+
+    Signature/issuer pinning already blocks foreign tenants; this asserts the
+    claim-level gate does not become the weak link if issuer checking is ever
+    loosened (e.g. multi-tenant `organizations`).
+    """
+    from src.services.auth_service import is_email_verified_claim
+
+    assert (
+        is_email_verified_claim(_entra_claims(tid="some-other-tenant"), "entra_id")
+        is False
+    )
+
+
+@pytest.mark.asyncio
+async def test_token_with_no_address_rejected_cleanly(make_token, entra_jwks):
+    """No email and no address-shaped UPN => actionable error, not a KeyError/500."""
+    token = make_token(_entra_claims(preferred_username="not-an-address"))
+
+    with pytest.raises(IdpValidationError, match="no email address"):
+        await validate_idp_token(token, "entra_id")
+
+
+@pytest.mark.asyncio
+async def test_google_still_requires_email_verified(
+    rsa_keypair, make_token, monkeypatch
+):
+    """The Entra branch must not loosen Google: no tid claim => strict gate stands."""
+    _, public_key = rsa_keypair
+    monkeypatch.setattr(settings, "entra_tenant_id", TEST_TENANT)
+
+    token = make_token(
+        {"sub": "g1", "email": "u@x.test", "email_verified": False, "name": "G"}
+    )
+
+    with pytest.raises(IdpValidationError, match="not verified"):
+        await validate_idp_token(token, "google", _override_key=public_key)
+
+
+@pytest.mark.asyncio
+async def test_another_issuer_cannot_borrow_entras_exemption(
+    make_token, test_oidc_static, monkeypatch
+):
+    """A DIFFERENT trusted OIDC issuer minting `tid = <our Entra tenant>` must not
+    inherit Entra's no-email_verified exemption.
+
+    This is the end-to-end form of the shape-vs-provider trap: the token is validly
+    signed for an issuer we trust (here the gated test_oidc seam; in a real
+    deployment a self-hosted `dex`), and it simply asserts Entra's tenant claim.
+    Trust is decided by the provider the signature was verified against, so the
+    unverified email is rejected.
+    """
+    monkeypatch.setattr(settings, "entra_tenant_id", TEST_TENANT)
+    token = make_token(
+        {
+            "sub": "u1",
+            "email": "victim@corp.test",
+            "tid": TEST_TENANT,  # borrowed claim
+            "iss": "https://rogue.test",
+            "aud": "deployment-wide-client",
+        }
+    )
+
+    with pytest.raises(IdpValidationError, match="not verified"):
+        await validate_idp_token(token, "test_oidc")
 
 
 # ---------------------------------------------------------------------------

@@ -309,7 +309,7 @@ async def callback(
         else:
             # OIDC providers (Google, EntraID) — parse ID token
             userinfo = token.get("userinfo", {})
-            if not auth_service.is_email_verified_claim(userinfo):
+            if not auth_service.is_email_verified_claim(userinfo, provider):
                 await _log_login_failure(db, request, provider, "email_not_verified")
                 return _error_page(
                     403,
@@ -318,10 +318,23 @@ async def callback(
                     "Please verify your email and try again.",
                 )
             provider_user_id = userinfo.get("sub", "")
-            email = userinfo.get("email", "")
+            email = auth_service.extract_email_claim(userinfo)
             name = userinfo.get("name", "")
             avatar_url = userinfo.get("picture")
             profile = dict(userinfo)
+            if not email:
+                # Misconfigured app registration, not a credential attack —
+                # keep it out of the stuffing counter.
+                await _log_login_failure(
+                    db, request, provider, "no_email_claim", count_for_stuffing=False
+                )
+                return _error_page(
+                    403,
+                    "No Email Address",
+                    "Your identity provider did not return an email address. "
+                    "Ask your administrator to add the 'email' optional claim to "
+                    "the application registration.",
+                )
 
         org = await organization_service.resolve_organization(db, email)
         if org is None:
@@ -743,7 +756,7 @@ async def admin_callback(
             avatar_url = profile.get("avatar_url")
         else:
             userinfo = token.get("userinfo", {})
-            if not auth_service.is_email_verified_claim(userinfo):
+            if not auth_service.is_email_verified_claim(userinfo, provider):
                 await _log_login_failure(
                     db, request, provider, "email_not_verified", flow="admin"
                 )
@@ -752,10 +765,23 @@ async def admin_callback(
                     status_code=302,
                 )
             provider_user_id = userinfo.get("sub", "")
-            email = userinfo.get("email", "")
+            email = auth_service.extract_email_claim(userinfo)
             name = userinfo.get("name", "")
             avatar_url = userinfo.get("picture")
             profile = dict(userinfo)
+            if not email:
+                await _log_login_failure(
+                    db,
+                    request,
+                    provider,
+                    "no_email_claim",
+                    flow="admin",
+                    count_for_stuffing=False,
+                )
+                return RedirectResponse(
+                    url=f"{settings.admin_url}/login?error=no_email_claim",
+                    status_code=302,
+                )
 
         # Resolve + persist the admin's org for record-keeping, but do NOT gate
         # admin sign-in on it. Admin access is gated by is_admin (below); hard

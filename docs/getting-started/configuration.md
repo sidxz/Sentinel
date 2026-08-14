@@ -65,9 +65,14 @@ A provider is enabled when both its client ID and secret are set. You can enable
 |----------|-------------|
 | Google | `{BASE_URL}/auth/callback/google` |
 | GitHub | `{BASE_URL}/auth/callback/github` |
-| Entra ID | `{BASE_URL}/auth/callback/entra` |
+| Entra ID | `{BASE_URL}/auth/callback/entra_id` |
+
+The provider identifier is `entra_id` (not `entra`) everywhere: callback paths, the `provider` field on `POST /authz/resolve`, and `GET /auth/providers`.
 
 These callbacks are only used for the admin panel's server-side OAuth flow. In AuthZ mode, your frontend authenticates directly with the IdP.
+
+!!! note "Entra ID: email claim"
+    Entra omits the `email` claim for managed work accounts unless the app registration adds it as an **optional claim** (Token configuration → Add optional claim → ID → `email`). Without it Sentinel falls back to `preferred_username` (the UPN) when that is address-shaped; if neither is present, sign-in is refused with an actionable error. Entra also emits no `email_verified` claim — see [Authentication](../guide/authentication.md#supported-idps).
 
 ---
 

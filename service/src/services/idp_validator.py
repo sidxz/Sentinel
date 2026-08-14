@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives import serialization
 from jwt.algorithms import RSAAlgorithm
 
 from src.config import settings
-from src.services.auth_service import is_email_verified_claim
+from src.services.auth_service import extract_email_claim, is_email_verified_claim
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -227,8 +227,18 @@ async def _validate_oidc_token(
                 f"Invalid token: {last_error}" if last_error else "Invalid token"
             )
 
+    # An address-less token can't be org-gated or provisioned. Say so precisely —
+    # bare KeyError'ing on payload["email"] below surfaced as a 500, and Entra
+    # omits `email` unless the app registration adds it as an optional claim.
+    email = extract_email_claim(payload)
+    if not email:
+        raise IdpValidationError(
+            "IdP token carries no email address — add the 'email' optional claim "
+            "to the application registration (Entra) or request the 'email' scope"
+        )
+
     # Require verified email — strict True (rejects stringified "true"/"false" from buggy IdPs)
-    if not is_email_verified_claim(payload):
+    if not is_email_verified_claim(payload, provider):
         raise IdpValidationError("Email not verified")
 
     # Replay protection: if caller supplied a nonce, require the IdP token to carry it.
@@ -237,9 +247,12 @@ async def _validate_oidc_token(
 
     return {
         "sub": payload["sub"],
-        "email": payload["email"],
+        "email": email,
         "name": payload.get("name", ""),
-        "email_verified": payload.get("email_verified", False),
+        # No `email_verified` key on purpose: reaching this line already means the
+        # gate above passed, so echoing a hardcoded True would be a footgun — a
+        # future caller could read it as "the IdP asserted this", which is exactly
+        # what Entra does NOT do. Verification is a gate here, never a payload.
         "picture": payload.get("picture"),
     }
 
@@ -309,7 +322,6 @@ async def _validate_github_token(idp_token: str) -> dict[str, Any]:
         "sub": f"github|{profile['id']}",
         "email": primary_email,
         "name": profile.get("name") or profile.get("login", ""),
-        "email_verified": True,
         "picture": profile.get("avatar_url"),
     }
 
@@ -352,7 +364,8 @@ async def validate_idp_token(
 
     Returns
     -------
-    dict with keys: ``sub``, ``email``, ``name``, ``email_verified``, ``picture``.
+    dict with keys: ``sub``, ``email``, ``name``, ``picture``. Email verification is
+    a gate (raises below), never a field on the result.
 
     Raises
     ------

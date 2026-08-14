@@ -90,6 +90,14 @@ Configure at least one provider to enable user login. Leave variables empty to d
 | `ENTRA_CLIENT_SECRET` | `""` | No |
 | `ENTRA_TENANT_ID` | `""` | No |
 
+`ENTRA_TENANT_ID` pins the accepted issuer to a single tenant — Sentinel does not
+accept multi-tenant (`organizations` / `common`) issuers. `ENTRA_CLIENT_ID` is the
+audience ID tokens must carry: for AuthZ mode that is the client ID the **browser**
+signs in with, not an `api://…` application ID URI. Per-app binding is set on each
+service app's allowed IdP audiences. See
+[Authentication](../guide/authentication.md#supported-idps) for the `email` /
+`email_verified` claim behaviour.
+
 ---
 
 ## Service

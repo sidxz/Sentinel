@@ -34,7 +34,7 @@ export function Settings() {
         {data.oauth_providers.map((p) => (
           <KV
             key={p.name}
-            label={p.name.charAt(0).toUpperCase() + p.name.slice(1)}
+            label={p.name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
             value={p.configured ? "Configured" : "Not configured"}
             valueClass={
               p.configured ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"

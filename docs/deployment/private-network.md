@@ -81,10 +81,17 @@ The app-backend hop passes XFF through without appending, so it does not count.
 
 - **GitHub as IdP is unsupported** in this topology — its proxy-login flow
   needs a browser-reachable Sentinel. Google/EntraID implicit flows are
-  unaffected.
+  unaffected: the browser talks to the IdP and returns to **your app's** origin,
+  so the IdP never needs a route to Sentinel. Only Sentinel's outbound JWKS
+  fetch does — allow egress to `login.microsoftonline.com` (Entra) or
+  `www.googleapis.com` (Google) in your NetworkPolicy / Azure Firewall.
 - **Admin panel** is internal-only (a feature): reach it via VPN, jumpbox, or
-  `kubectl port-forward`. The Google OAuth redirect URI registered for admin
-  login must match the address admins actually use.
+  `kubectl port-forward`. Note that admin OAuth builds its redirect URI as
+  `{BASE_URL}/auth/admin/callback/{provider}` — with `BASE_URL` set to internal
+  DNS, the IdP bounces the browser to a host it cannot resolve. Either make the
+  admin's local address answer at exactly that host and port (hosts-file entry +
+  `kubectl port-forward`, and register that URI with the IdP), or give the admin
+  surface its own restricted ingress.
 - **`/authz/resolve` rate limit** is keyed by service key, so one app's entire
   login+refresh volume shares a bucket — size `RATE_LIMIT_AUTHZ_RESOLVE`
   accordingly.

@@ -217,7 +217,9 @@ async def system_settings(
     providers = [
         {"name": "google", "configured": bool(settings.google_client_id)},
         {"name": "github", "configured": bool(settings.github_client_id)},
-        {"name": "entra", "configured": bool(settings.entra_client_id)},
+        # Identifier, not a label — must match the provider name used in the
+        # OAuth routes (/auth/login/{provider}) and the SDK's `provider` field.
+        {"name": "entra_id", "configured": bool(settings.entra_client_id)},
     ]
 
     # JWT info
