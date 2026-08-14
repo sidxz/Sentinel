@@ -50,6 +50,9 @@ async def _run_migrations():
 
     def _migrate():
         alembic_cfg = Config("alembic.ini")
+        # Keep OUR logging: env.py's fileConfig() would otherwise wipe the handlers
+        # configure_logging() just installed and drop the root level to WARN.
+        alembic_cfg.attributes["configure_logger"] = False
         command.upgrade(alembic_cfg, "head")
 
     loop = asyncio.get_event_loop()

@@ -14,7 +14,13 @@ config = context.config
 # Override sqlalchemy.url from application settings (avoids credentials in alembic.ini)
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
-if config.config_file_name is not None:
+# fileConfig() REPLACES the process's logging config: it clears root handlers and
+# resets the root level to alembic.ini's `WARN`. Run in-process at app startup
+# (main.py `_run_migrations`) that silently undid configure_logging() for the rest
+# of the process — JSON rendering gone, every info-level event (i.e. all 2xx
+# access logs) dropped. Alembic's own recipe for programmatic use: let the caller
+# opt out via config.attributes. CLI runs pass nothing and keep alembic's logging.
+if config.attributes.get("configure_logger", True) and config.config_file_name:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
