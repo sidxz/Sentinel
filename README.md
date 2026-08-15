@@ -132,7 +132,8 @@ make seed     # (optional) populate test data
 ```bash
 make setup
 vim .env.prod           # set BASE_URL, ADMIN_URL, OAuth creds, ADMIN_EMAILS
-docker compose -f docker-compose.prod.yml up -d
+docker swarm init    # once per host (overlay network + secrets need swarm mode)
+docker stack deploy -c docker-compose.prod.yml sentinel
 ```
 
 ### Next steps
@@ -194,32 +195,32 @@ npm install @sentinel-auth/js @sentinel-auth/react
 ```
 
 ```tsx
-import { AuthzClient } from "@sentinel-auth/js";
-import { SentinelAuthProvider, AuthGuard, useAuth, useUser } from "@sentinel-auth/react";
-
-const client = new AuthzClient({
-  sentinelUrl: "http://localhost:9003",
-  provider: "google",
-  googleClientId: "...",
-});
+import { IdpConfigs } from "@sentinel-auth/js";
+import { AuthzProvider, AuthzGuard, useAuthz, useAuthzUser } from "@sentinel-auth/react";
 
 function App() {
   return (
-    <SentinelAuthProvider client={client}>
-      <AuthGuard fallback={<Login />}>
+    <AuthzProvider
+      config={{
+        sentinelUrl: "http://localhost:9003",
+        mintEndpoint: "/api/auth/mint", // YOUR backend route — holds the service key
+        idps: { google: IdpConfigs.google("your-google-client-id") },
+      }}
+    >
+      <AuthzGuard fallback={<Login />}>
         <Dashboard />
-      </AuthGuard>
-    </SentinelAuthProvider>
+      </AuthzGuard>
+    </AuthzProvider>
   );
 }
 
 function Login() {
-  const { login } = useAuth();
-  return <button onClick={() => login()}>Sign in with Google</button>;
+  const { login } = useAuthz();
+  return <button onClick={() => login("google")}>Sign in with Google</button>;
 }
 
 function Dashboard() {
-  const user = useUser();
+  const user = useAuthzUser();
   return <p>{user.name} ({user.workspaceRole})</p>;
 }
 ```

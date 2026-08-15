@@ -18,6 +18,7 @@ function App() {
   return (
     <AuthzProvider config={{
       sentinelUrl: 'http://localhost:9003',
+      mintEndpoint: '/api/auth/mint', // YOUR backend route — holds the service key
       idps: { google: IdpConfigs.google('your-google-client-id') },
     }}>
       <YourApp />

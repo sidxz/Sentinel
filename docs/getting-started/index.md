@@ -70,7 +70,8 @@ For Docker-based production deployment:
 # Edit it to set your real values:
 vim .env.prod   # BASE_URL, ADMIN_URL, OAuth creds, ADMIN_EMAILS
 
-docker compose -f docker-compose.prod.yml up -d
+docker swarm init    # once per host (overlay network + secrets need swarm mode)
+docker stack deploy -c docker-compose.prod.yml sentinel
 ```
 
 ## Next

@@ -114,6 +114,12 @@ services:
       RATE_LIMIT_AGGREGATE: ${RATE_LIMIT_AGGREGATE:-300/minute}
       RATE_LIMIT_DEFAULT: ${RATE_LIMIT_DEFAULT:-120/minute}
       RATE_LIMIT_AUTHZ_RESOLVE: ${RATE_LIMIT_AUTHZ_RESOLVE:-60/minute}
+      # Security signals (detect-only). Tunable from .env.prod; defaults match config.py.
+      SIGNALS_ENABLED: ${SIGNALS_ENABLED:-true}
+      SIGNAL_IMPOSSIBLE_TRAVEL_KMH: ${SIGNAL_IMPOSSIBLE_TRAVEL_KMH:-900}
+      SIGNAL_STUFFING_WINDOW_MINUTES: ${SIGNAL_STUFFING_WINDOW_MINUTES:-15}
+      SIGNAL_STUFFING_FAILURES: ${SIGNAL_STUFFING_FAILURES:-10}
+      SIGNAL_STUFFING_DISTINCT_EMAILS: ${SIGNAL_STUFFING_DISTINCT_EMAILS:-5}
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
       # OAuth providers (uncomment as needed)

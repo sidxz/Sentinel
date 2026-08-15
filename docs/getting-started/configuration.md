@@ -128,6 +128,20 @@ These callbacks are only used for the admin panel's server-side OAuth flow. In A
 
 ---
 
+## Security Signals
+
+Detect-only anomaly flags (Tier 1 of the [AI security roadmap](../ai-security-roadmap.md)) evaluated on login success, refresh-context change, and login failure. Signals become activity rows + `auth.signal.*` stream events surfaced on the admin Dashboard/Activity pages. They never block or alter an auth decision.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SIGNALS_ENABLED` | `true` | Master switch for all signal rules. |
+| `SIGNAL_IMPOSSIBLE_TRAVEL_KMH` | `900` | Implied travel speed (country-centroid haversine) above which `login_impossible_travel` fires. |
+| `SIGNAL_STUFFING_WINDOW_MINUTES` | `15` | Sliding window for per-IP login-failure counters. |
+| `SIGNAL_STUFFING_FAILURES` | `10` | Failures per IP within the window required for `credential_stuffing_suspected` (AND the distinct-emails threshold). |
+| `SIGNAL_STUFFING_DISTINCT_EMAILS` | `5` | Distinct emails per IP within the window required for `credential_stuffing_suspected`. |
+
+---
+
 ## Admin
 
 | Variable | Default | Description |
