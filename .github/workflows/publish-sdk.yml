@@ -37,6 +37,10 @@ jobs:
         run: cd sdk && uv build --out-dir dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.12.4
+        # v1.12.4 bundles twine 6, which rejects the `Metadata-Version: 2.5`
+        # that current hatchling emits ("not a valid metadata version") — it
+        # failed the 0.20.1 publish while every other artifact went out. v1.14.2
+        # ships twine 7, which accepts 2.5.
+        uses: pypa/gh-action-pypi-publish@v1.14.2
         with:
           packages-dir: sdk/dist/
